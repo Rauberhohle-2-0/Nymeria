@@ -17,7 +17,7 @@ a native macOS window built on SDL3. Rendering is deliberately not implemented.
 
 ## Prerequisites (macOS)
 
-- macOS 11 or newer on Apple Silicon or Intel.
+- macOS 12 or newer on Apple Silicon or Intel.
 - [.NET SDK 10.0.402](https://dotnet.microsoft.com/download/dotnet/10.0).
   `global.json` pins this SDK with patch-level roll-forward.
 

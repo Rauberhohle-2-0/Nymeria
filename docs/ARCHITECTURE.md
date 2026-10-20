@@ -156,8 +156,8 @@ The following choices are implemented:
 - **Windowing:** SDL3 3.4.18 through `SDL3-CS` 3.4.18 and the macOS native
   package `SDL3-CS.MacOS` 3.4.18.
 - **External packages:** the SDL3 binding and macOS native runtime, plus the
-  xUnit test packages `xunit` 2.9.3, `xunit.runner.visualstudio` 3.1.4, and
-  `Microsoft.NET.Test.Sdk` 17.14.1. The tests cover only platform-independent
+  xUnit test packages `xunit` 2.9.3, `xunit.runner.visualstudio` 4.0.1, and
+  `Microsoft.NET.Test.Sdk` 18.11.0. The tests cover only platform-independent
   `WindowOptions` behavior; they do not launch a GUI.
 
 The following choices remain open:
