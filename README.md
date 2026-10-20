@@ -3,17 +3,17 @@
 Nymeria is a small, understandable, cross-platform 3D engine written in C#. It is
 intended to remain approachable and may later be extended for retro-game
 compatibility. The repository currently contains its first runnable application:
-a native macOS window built on SDL3. Rendering is deliberately not implemented.
+a native macOS window built on SDL3 that draws one GPU-rendered triangle.
 
 ## Current status
 
 - **Implemented now:** .NET 10 solution, the `Nymeria.Platform` window API,
-  `examples/HelloWindow`, platform-independent unit tests, CI restore/build/test
-  on macOS, Windows, and Linux, repository checks, and Dependabot updates for
-  GitHub Actions and NuGet.
-- **Planned later:** `Nymeria.Core`, `Nymeria.Graphics`, input, the engine loop,
-  and rendering. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the
-  authoritative distinction.
+  `Nymeria.Graphics` with a Metal triangle renderer, `examples/HelloWindow`,
+  platform-independent unit tests, CI restore/build/test on macOS, Windows, and
+  Linux, repository checks, and Dependabot updates for GitHub Actions and NuGet.
+- **Planned later:** `Nymeria.Core`, input, the engine loop, additional graphics
+  backends, and Windows/Linux rendering. See
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the authoritative distinction.
 
 ## Prerequisites (macOS)
 
@@ -43,14 +43,35 @@ dotnet build Nymeria.slnx
 dotnet run --project examples/HelloWindow/HelloWindow.csproj
 ```
 
-A resizable native window titled `Nymeria` opens at 960 × 540. The client area is
-intentionally blank because this milestone has no renderer. Close the window with
-the red close button or the standard macOS quit shortcut (`Cmd+Q`). The command
-exits with status code `0` on a normal shutdown.
+A resizable native window titled `Nymeria` opens at 960 × 540 and draws one
+red/green/blue triangle on a dark background. Close the window with the red close
+button or the standard macOS quit shortcut (`Cmd+Q`). The command exits with
+status code `0` on a normal shutdown.
 
 The startup path prints an actionable error and exits with status code `1` if the
-native SDL3 library is missing or mismatched, SDL initialization fails, or the
-window cannot be created.
+native SDL3 library is missing or mismatched, SDL initialization fails, the Metal
+GPU backend is unavailable, the window cannot be created or claimed, or a shader
+or pipeline cannot be created.
+
+### GPU triangle example
+
+The triangle is rendered with SDL3's GPU API on the Metal backend. There is no
+direct Metal interop and no software fallback. The shader lives at
+`src/graphics/Nymeria.Graphics/Shaders/Triangle.metal`, is embedded into
+`Nymeria.Graphics`, and is compiled from Metal Shading Language source by SDL at
+startup. No shader compiler or Xcode build step is required.
+
+The example draws a frame, then waits up to 100 ms for window events before
+drawing again. Resizes and other events wake it immediately; idle redraws are
+limited to about ten per second. The triangle is drawn in a centered square
+viewport derived from the swapchain's physical pixels, so it keeps its
+proportions when the window is resized and on high-DPI displays. Minimizing the
+window skips rendering until a drawable is available again.
+
+This path is macOS-only for now. Windows and Linux need their own native SDL3
+packages and shader formats; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+GPU output is validated manually with [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md),
+not in CI.
 
 ## Tests
 
@@ -75,7 +96,7 @@ manually; it is not claimed as a headless CI result.
 .github/        Repository checks and Dependabot configuration
 docs/           Architecture, Git policy, and manual smoke test
 src/core/       Future Nymeria.Core (placeholder)
-src/graphics/   Future Nymeria.Graphics (placeholder)
+src/graphics/   Nymeria.Graphics Metal triangle renderer
 src/platform/   Nymeria.Platform native window project
 examples/       HelloWindow runnable example
 tests/          Nymeria.Platform.Tests unit tests
@@ -93,8 +114,9 @@ tests/          Nymeria.Platform.Tests unit tests
 The `Repository checks` GitHub Actions workflow runs on pushes and pull requests
 to `main`. One job validates the repository foundation, including Markdown links,
 tracked build output, and Dependabot configuration. A second job restores, builds,
-and runs the headless unit tests on macOS, Windows, and Linux. The GUI is not
-launched in CI; window behavior is covered by the manual smoke test.
+and runs the headless unit tests on macOS, Windows, and Linux. The GUI and GPU
+output are not launched or validated in CI; window and triangle behavior is
+covered by the manual smoke test.
 
 Dependabot checks GitHub Actions and NuGet weekly and opens update pull requests.
 The existing `Dependabot auto-merge` workflow squash-merges a Dependabot pull
