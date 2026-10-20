@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/examples/">
+    <Project Path="examples/HelloWindow/HelloWindow.csproj" />
+  </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/platform/">
     <Project Path="src/platform/Nymeria.Platform/Nymeria.Platform.csproj" />

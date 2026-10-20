@@ -24,6 +24,7 @@ extension is a direction, not a current feature.
 - .NET SDK 10.0.402 pinned in `global.json`, targeting `net10.0`.
 - `Nymeria.slnx`, containing the C# projects that exist today.
 - `Nymeria.Platform`, a class library exposing a minimal native window API.
+- `examples/HelloWindow`, a console executable that opens and runs the window.
 - SDL3 windowing through the pinned `SDL3-CS` and `SDL3-CS.MacOS` packages.
 - A `Repository checks` GitHub Actions workflow for repository foundations.
 - Weekly Dependabot updates for GitHub Actions, auto-merged only after
@@ -35,8 +36,8 @@ extension is a direction, not a current feature.
 The following are future work and are **not** implemented or approved in detail:
 
 - `Nymeria.Core` and `Nymeria.Graphics`.
-- A runnable `HelloWindow` example and automated tests.
-- Build and test steps in CI once the example and tests exist.
+- Automated tests.
+- Build and test steps in CI.
 - Input handling and an engine loop.
 - A rendering abstraction and at least one graphics backend.
 
@@ -68,11 +69,11 @@ would require maintainer approval.
 | `docs/` | Authoritative project and architecture decisions. |
 | `.github/` | Repository automation: checks and dependency updates. |
 
-`src/platform/` contains the `Nymeria.Platform` project. `src/core/`,
-`src/graphics/`, `examples/`, and `tests/` still contain `.gitkeep`
-placeholders because they have no source code yet. Git does not track empty
-directories, so these placeholders keep the intended layout visible in a fresh
-clone without introducing speculative scaffolding.
+`src/platform/` contains the `Nymeria.Platform` project and `examples/` contains
+`HelloWindow`. `src/core/`, `src/graphics/`, and `tests/` still contain
+`.gitkeep` placeholders because they have no source code yet. Git does not track
+empty directories, so these placeholders keep the intended layout visible in a
+fresh clone without introducing speculative scaffolding.
 
 ## Windowing
 
@@ -116,8 +117,8 @@ on the other yet.
 
 ## Dependency direction
 
-The following principle guides project references. Only the platform project
-exists today.
+The following principle guides project references. The platform project and the
+example exist today.
 
 ```text
 examples  -----------------------> engine projects
@@ -137,9 +138,9 @@ Nymeria.Graphics     Nymeria.Platform
 - `tests/` may reference the project under test.
 
 `Nymeria.Platform` has no `Nymeria.Core` reference because `Nymeria.Core` does
-not exist and the platform code has no demonstrated need for it. No interfaces or
-abstractions are created to enforce the future direction yet. Adding them
-speculatively would violate YAGNI.
+not exist and the platform code has no demonstrated need for it. `HelloWindow`
+references only `Nymeria.Platform`. No interfaces or abstractions are created to
+enforce the future direction yet. Adding them speculatively would violate YAGNI.
 
 ## Technical choices
 
