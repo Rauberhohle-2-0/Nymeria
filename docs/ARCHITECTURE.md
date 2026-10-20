@@ -28,6 +28,9 @@ extension is a direction, not a current feature.
   presentation claim and provides reusable MSL shader and buffer creation.
 - `examples/HelloTriangle`, a console executable that opens the window and draws
   the triangle with example-owned shaders and geometry.
+- `examples/HelloCube`, a console executable that draws a rotating, perspective-
+  projected, depth-tested cube with example-owned shaders, geometry, matrices,
+  and depth target.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - SDL3 windowing and GPU rendering through the pinned `SDL3-CS` and
   `SDL3-CS.MacOS` packages.
@@ -75,11 +78,11 @@ would require maintainer approval.
 | `.github/` | Repository automation: checks and dependency updates. |
 
 `src/platform/` contains the `Nymeria.Platform` project, `src/graphics/`
-contains `Nymeria.Graphics`, `examples/` contains `HelloTriangle`, and `tests/`
-contains `Nymeria.Platform.Tests`. `src/core/` still contains a `.gitkeep`
-placeholder because it has no source code yet. Git does not track empty
-directories, so the placeholder keeps the intended layout visible in a fresh
-clone without introducing speculative scaffolding.
+contains `Nymeria.Graphics`, `examples/` contains `HelloTriangle` and
+`HelloCube`, and `tests/` contains `Nymeria.Platform.Tests`. `src/core/` still
+contains a `.gitkeep` placeholder because it has no source code yet. Git does not
+track empty directories, so the placeholder keeps the intended layout visible in
+a fresh clone without introducing speculative scaffolding.
 
 ## Windowing
 
@@ -139,12 +142,22 @@ Metal interop, native wrapper, second binding, or software fallback.
 - creates an SDL GPU device with `SDL_CreateGPUDevice(MSL, debug: false, "metal")`;
 - claims the window for presentation and reads its swapchain format.
 
-The triangle demonstration lives in `examples/HelloTriangle`. Its
-`TriangleRenderer` owns the triangle vertex data, the triangle shader resource,
-the vertex buffer, the graphics pipeline, and the draw calls. It uses
-`GpuDevice` for the device, window claim, shader creation, and buffer upload.
+The demonstrations live in `examples/HelloTriangle` and `examples/HelloCube`.
+Each owns its vertex data, shader resource, buffers, pipeline, and draw calls,
+and uses `GpuDevice` for the device, window claim, shader creation, buffer
+upload, and swapchain format. [examples/README.md](../examples/README.md)
+documents their run commands and rendering conventions.
 
-The only shader asset is
+`GpuDevice.CreateShader` accepts an optional uniform-buffer count. SDL needs the
+count to bind data pushed with `SDL_PushGPUVertexUniformData`; shaders that
+declare no uniform buffer leave it at the default of zero.
+
+### HelloTriangle
+
+`TriangleRenderer` owns the triangle vertex data, the triangle shader resource,
+the vertex buffer, the graphics pipeline, and the draw calls.
+
+The triangle shader asset is
 `examples/HelloTriangle/Shaders/Triangle.metal`. It is embedded in the
 `HelloTriangle` assembly under `HelloTriangle.Shaders.Triangle.metal` and
 compiled from MSL source by SDL when the two shader objects are created. No
@@ -165,23 +178,61 @@ centered square viewport and scissor sized from the swapchain texture's physical
 pixels, so resizing and high-DPI drawables do not stretch the triangle and no
 stale window dimensions are used.
 
-`examples/HelloTriangle` draws one frame immediately and then calls
+`HelloTriangle` draws one frame immediately and then calls
 `Window.ProcessEvents(100)` before each subsequent frame. This caps idle redraws
 at about ten per second, while resize and other events wake the loop immediately.
 The loop does not spin.
 
-Ownership and lifetime:
+### HelloCube
 
-- `GpuDevice` owns the GPU device and window claim. `TriangleRenderer` owns the
-  triangle shaders, vertex buffer, and pipeline. It must be created after the
-  window and disposed before it.
-- `TriangleRenderer.Dispose` waits for the GPU to become idle, releases the
-  pipeline, buffer, and shaders, and then disposes the `GpuDevice`, which releases
-  the window claim and destroys the device. Initialization failures release
-  whatever was created in reverse order and then rethrow.
+`CubeRenderer` adds perspective projection, a uniform matrix, and a depth buffer.
+It owns 24 vertices (four per face, duplicated so every face has a solid color),
+36 16-bit indices, the cube shaders, both buffers, the pipeline, and the depth
+texture.
+
+The cube shader asset is `examples/HelloCube/Shaders/Cube.metal`, embedded under
+`HelloCube.Shaders.Cube.metal`. The vertex shader declares one uniform buffer at
+slot 0; the example passes `uniformBufferCount: 1` to `CreateShader` and pushes
+one 64-byte model-view-projection matrix per frame. The fragment shader passes
+the interpolated face color through.
+
+World and eye space are right-handed with +Y up and the camera looking down -Z.
+The example uses `System.Numerics` instead of a custom math library:
+`CreateLookAt` and `CreatePerspectiveFieldOfView` compose with the model matrix
+as `model * view * projection`. The matrix is uploaded unchanged. Because
+`System.Numerics` is row-major with row vectors and MSL is column-major with
+column vectors, MSL reads those bytes as the transpose, making `mvp * position`
+equivalent to `position * mvp` in C#. The projection already maps depth to
+`[0, 1]`, which matches SDL3 GPU and Metal clip space, so there is no y-flip or
+depth remap. `examples/README.md` records the full conventions.
+
+The example picks the first supported depth format among `D32Float`,
+`D24Unorm`, and `D16Unorm`, and uses it for both the depth texture and the
+pipeline's depth-stencil state. Depth testing and depth writes are enabled with
+the `Less` comparison; culling is disabled, so the depth test resolves occlusion.
+The depth target is cleared to `1.0` each frame and not stored. When the
+swapchain's physical size changes, the depth texture is recreated and the GPU is
+idle before the old texture is released.
+
+`HelloCube` renders continuously: it processes events without blocking, renders,
+then delays the rest of a 16 ms frame budget. Rotation is advanced by elapsed
+time with a 0.1 s per-frame cap, so a stalled or throttled frame cannot make the
+cube jump. A minimized window skips rendering. If a zero-sized drawable is
+acquired, the command buffer is submitted empty instead of cancelled, because
+SDL only permits cancellation before swapchain acquisition.
+
+### Ownership and lifetime
+
+- `GpuDevice` owns the GPU device and window claim. Each renderer owns its
+  shaders, geometry buffers, pipeline, and, for the cube, the depth texture. A
+  renderer must be created after the window and disposed before it.
+- Each `Dispose` waits for the GPU to become idle, releases its resources, and
+  then disposes the `GpuDevice`, which releases the window claim and destroys the
+  device. Initialization failures release whatever was created in reverse order
+  and then rethrow.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
-- The renderer creates no per-frame GPU resources. Command buffers and swapchain
+- Neither renderer creates per-frame GPU resources. Command buffers and swapchain
   textures are owned and recycled by SDL.
 
 Limitations in this version:
@@ -191,14 +242,15 @@ Limitations in this version:
   packages, which are not implemented.
 - Apple Silicon and Intel Macs both use Metal. The macOS native package contains
   both architectures.
-- There is no camera, matrix, depth buffer, texture, lighting, or scene graph.
-  The triangle is static clip-space geometry.
+- There is no reusable camera, scene graph, texture, lighting, or material
+  system. `HelloCube` computes one hard-coded model-view-projection matrix; the
+  triangle remains static clip-space geometry.
 - GPU output is not validated by CI. [SMOKE_TEST.md](SMOKE_TEST.md) covers it.
 
 ## Dependency direction
 
 The following principle guides project references. The graphics project, platform
-project, and example exist today.
+project, and examples exist today.
 
 ```text
 examples  -----------------------> engine projects
@@ -219,10 +271,10 @@ Nymeria.Graphics     Nymeria.Platform
 
 `Nymeria.Graphics` and `Nymeria.Platform` have no `Nymeria.Core` reference
 because `Nymeria.Core` does not exist and neither project has a demonstrated need
-for it. They do not reference each other: `HelloTriangle` creates the window and
-passes `Window.Handle` to `TriangleRenderer.Create`, which creates a `GpuDevice`
-in `Nymeria.Graphics`; the dependency remains in the example. No engine project
-references `HelloTriangle`. `HelloTriangle` references both engine projects, and
+for it. They do not reference each other: each example creates the window and
+passes `Window.Handle` to its renderer, which creates a `GpuDevice` in
+`Nymeria.Graphics`; the dependency remains in the example. No engine project
+references an example. Both examples reference both engine projects, and
 `Nymeria.Platform.Tests` references the project under test. No interfaces or
 abstractions are created to enforce the future direction yet. Adding them
 speculatively would violate YAGNI.
@@ -238,8 +290,11 @@ The following choices are implemented:
   package `SDL3-CS.MacOS` 3.4.18.
 - **GPU rendering:** SDL3's GPU API with the Metal backend and MSL shader source,
   reached through `SDL3-CS`. `Nymeria.Graphics` provides the reusable
-  `GpuDevice`; `HelloTriangle` embeds its own `.metal` file and SDL compiles it
+  `GpuDevice`; the examples embed their own `.metal` files and SDL compiles them
   at runtime. No direct Metal interop or shader compiler is used.
+- **Math:** `System.Numerics` vectors and matrices, with no custom math library.
+  `HelloCube` uploads one row-major model-view-projection matrix and lets MSL
+  interpret it as column-major.
 - **External packages:** the SDL3 binding and macOS native runtime, plus the
   xUnit test packages `xunit` 2.9.3, `xunit.runner.visualstudio` 4.0.1, and
   `Microsoft.NET.Test.Sdk` 18.11.0. The tests cover only platform-independent
@@ -251,7 +306,7 @@ The following choices remain open:
   native SDL3 packages, and the shader formats those backends require are not
   implemented.
 - **`Nymeria.Core`:** the project does not exist yet and is not justified by the
-  triangle.
+  examples.
 
 ## KISS and YAGNI
 
@@ -283,7 +338,7 @@ Nymeria follows KISS (Keep It Simple) and YAGNI (You Aren't Gonna Need It):
 
 Both jobs use read-only repository permissions. The workflow is named
 `Repository checks`, so Dependabot auto-merge waits for every matrix leg and the
-foundation job. macOS window and GPU triangle behavior is covered by
+foundation job. macOS window and GPU example behavior is covered by
 [SMOKE_TEST.md](SMOKE_TEST.md) instead of a CI claim.
 
 Results appear on commits and pull requests, and in the repository's **Actions**

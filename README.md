@@ -2,16 +2,17 @@
 
 Nymeria is a small, understandable, cross-platform 3D engine written in C#. It is
 intended to remain approachable and may later be extended for retro-game
-compatibility. The repository currently contains its first runnable application:
-a native macOS window built on SDL3 that draws one GPU-rendered triangle.
+compatibility. The repository currently contains its first runnable applications:
+native macOS windows built on SDL3 that draw a GPU-rendered triangle and a
+rotating, depth-tested cube.
 
 ## Current status
 
 - **Implemented now:** .NET 10 solution, the `Nymeria.Platform` window API,
   `Nymeria.Graphics` with reusable Metal GPU device infrastructure,
-  `examples/HelloTriangle`, platform-independent unit tests, CI
-  restore/build/test on macOS, Windows, and Linux, repository checks, and
-  Dependabot updates for GitHub Actions and NuGet.
+  `examples/HelloTriangle`, `examples/HelloCube`, platform-independent unit
+  tests, CI restore/build/test on macOS, Windows, and Linux, repository checks,
+  and Dependabot updates for GitHub Actions and NuGet.
 - **Planned later:** `Nymeria.Core`, input, the engine loop, additional graphics
   backends, and Windows/Linux rendering. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the authoritative distinction.
@@ -42,34 +43,47 @@ From the repository root:
 dotnet restore Nymeria.slnx
 dotnet build Nymeria.slnx
 dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
+dotnet run --project examples/HelloCube/HelloCube.csproj
 ```
 
-A resizable native window titled `Nymeria` opens at 960 × 540 and draws one
-red/green/blue triangle on a dark background. Close the window with the red close
-button or the standard macOS quit shortcut (`Cmd+Q`). The command exits with
-status code `0` on a normal shutdown.
+A resizable native window titled `Nymeria` opens at 960 × 540. `HelloTriangle`
+draws one red/green/blue triangle. `HelloCube` draws a rotating cube with six
+solid-colored faces, perspective projection, and depth testing. Close either
+window with the red close button or the standard macOS quit shortcut (`Cmd+Q`).
+The command exits with status code `0` on a normal shutdown.
 
 The startup path prints an actionable error and exits with status code `1` if the
 native SDL3 library is missing or mismatched, SDL initialization fails, the Metal
 GPU backend is unavailable, the window cannot be created or claimed, or a shader
 or pipeline cannot be created.
 
-### GPU triangle example
+### GPU examples
 
-The triangle is rendered with SDL3's GPU API on the Metal backend. There is no
-direct Metal interop and no software fallback. `Nymeria.Graphics` provides the
-reusable GPU device; the triangle geometry, renderer, and shader live in
-`examples/HelloTriangle`. The shader is
-`examples/HelloTriangle/Shaders/Triangle.metal`, embedded into
-`HelloTriangle`, and compiled from Metal Shading Language source by SDL at
-startup. No shader compiler or Xcode build step is required.
+Both examples use SDL3's GPU API on the Metal backend. There is no direct Metal
+interop and no software fallback. `Nymeria.Graphics` provides the reusable GPU
+device; each example owns its geometry, renderer, shader, pipeline, and, for the
+cube, its depth target.
 
-The example draws a frame, then waits up to 100 ms for window events before
-drawing again. Resizes and other events wake it immediately; idle redraws are
-limited to about ten per second. The triangle is drawn in a centered square
-viewport derived from the swapchain's physical pixels, so it keeps its
-proportions when the window is resized and on high-DPI displays. Minimizing the
-window skips rendering until a drawable is available again.
+The shaders are `examples/HelloTriangle/Shaders/Triangle.metal` and
+`examples/HelloCube/Shaders/Cube.metal`. They are embedded into their examples
+and compiled from Metal Shading Language source by SDL at startup. No shader
+compiler or Xcode build step is required.
+
+`HelloTriangle` draws a frame, then waits up to 100 ms for window events before
+drawing again, so idle redraws stay near ten per second. It renders in a centered
+square viewport derived from the swapchain's physical pixels, so it keeps its
+proportions on resize and on high-DPI displays.
+
+`HelloCube` renders continuously, targeting about 16 ms per frame, and advances
+its rotation from elapsed time with a 0.1 s per-frame cap. It uses
+`System.Numerics` for a right-handed view and perspective projection, uploads one
+model-view-projection matrix per frame, and clears and tests a depth buffer so
+near faces occlude far ones. Its depth target and pipeline state live in the
+example, not in `Nymeria.Graphics`.
+
+Both examples skip rendering while minimized and recover when a drawable is
+available again. [examples/README.md](examples/README.md) records the matrix
+order, handedness, shader layout, depth convention, and run commands.
 
 This path is macOS-only for now. Windows and Linux need their own native SDL3
 packages and shader formats; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -101,13 +115,14 @@ docs/           Architecture, Git policy, and manual smoke test
 src/core/       Future Nymeria.Core (placeholder)
 src/graphics/   Nymeria.Graphics reusable Metal GPU infrastructure
 src/platform/   Nymeria.Platform native window project
-examples/       HelloTriangle runnable triangle example
+examples/       HelloTriangle and HelloCube runnable examples
 tests/          Nymeria.Platform.Tests unit tests
 ```
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Examples](examples/README.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)
 - [Agent instructions](AGENTS.md)
@@ -118,7 +133,7 @@ The `Repository checks` GitHub Actions workflow runs on pushes and pull requests
 to `main`. One job validates the repository foundation, including Markdown links,
 tracked build output, and Dependabot configuration. A second job restores, builds,
 and runs the headless unit tests on macOS, Windows, and Linux. The GUI and GPU
-output are not launched or validated in CI; window and triangle behavior is
+output are not launched or validated in CI; window and example behavior is
 covered by the manual smoke test.
 
 Dependabot checks GitHub Actions and NuGet weekly and opens update pull requests.
