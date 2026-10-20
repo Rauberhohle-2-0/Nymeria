@@ -40,6 +40,7 @@ jobs:
             "docs/ARCHITECTURE.md"
             "docs/GIT_GUIDELINES.md"
             ".github/dependabot.yml"
+            ".github/workflows/dependabot-auto-merge.yml"
             ".github/workflows/repository-checks.yml"
           )
           required_dirs=(

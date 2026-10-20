@@ -10,6 +10,8 @@ They are the authoritative project instructions.
 - Do not add speculative scaffolding, placeholder C# sources or projects, or
   unrequested implementation.
 - Keep Nymeria in one Git monorepo.
+- The only approved automatic merge is the Dependabot auto-merge workflow, which
+  is gated on `Repository checks`. Do not extend it without approval.
 - Verify every change, commit small logical changes, push them, and confirm the
   actual GitHub Actions result. Never claim an unverified push or check result.
 - Never force-push or rewrite published history without explicit approval.

@@ -43,10 +43,13 @@ The `Repository checks` GitHub Actions workflow runs on pushes and pull requests
 to `main` and validates only the repository foundation. Build and test steps are
 added once real .NET projects exist.
 
-Dependabot checks GitHub Actions weekly and opens update pull requests. It does
-**not** merge or deploy them; a maintainer reviews and merges each pull request.
-NuGet updates are deferred until a `.csproj`, `.slnx`, or NuGet configuration
-exists.
+Dependabot checks GitHub Actions weekly and opens update pull requests. The
+`Dependabot auto-merge` workflow squash-merges a Dependabot pull request only
+after `Repository checks` succeeds on that pull request's current head commit. It
+does not deploy. The organization currently prevents GitHub Actions from
+approving pull requests, so a Dependabot merge is recorded without an automated
+approval review. Human pull requests remain manual. NuGet updates are deferred
+until a `.csproj`, `.slnx`, or NuGet configuration exists.
 
 ## License
 

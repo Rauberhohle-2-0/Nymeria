@@ -162,10 +162,17 @@ maintainer guidance. Removing it from the latest commit is not enough.
 - Do not silently create branches or open, merge, or close pull requests.
 - Request maintainer approval before changing branch strategy or repository
   workflow.
+- The only approved automatic merge path is
+  `.github/workflows/dependabot-auto-merge.yml`. It may merge only pull requests
+  authored by `dependabot[bot]`, targeting the default branch, after
+  `Repository checks` succeeds on the current head commit. Do not extend
+  auto-merge to other authors or workflows without approval.
+- The organization currently blocks GitHub Actions from creating or approving
+  pull requests. Do not add a personal access token, GitHub App credential, or
+  other secret to automate approvals without explicit approval.
 - Branch protection or GitHub rulesets are not enabled by default. Enabling them
   requires approval because it may conflict with the immediate-push workflow.
-- Dependabot pull requests are reviewed and merged by a maintainer. Automatic
-  merging must not be enabled without approval.
+- Human-authored pull requests are reviewed and merged manually.
 
 ## Prohibited operations
 

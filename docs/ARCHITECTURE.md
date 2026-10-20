@@ -22,7 +22,8 @@ extension is a direction, not a current feature.
   [Git guidelines](GIT_GUIDELINES.md).
 - Root `.editorconfig` and `.gitignore` files.
 - A `Repository checks` GitHub Actions workflow for repository foundations.
-- Weekly Dependabot updates for GitHub Actions.
+- Weekly Dependabot updates for GitHub Actions, auto-merged only after
+  repository checks pass.
 - Empty organizational directories kept in Git with `.gitkeep` files.
 
 There is no engine implementation. No C# project, solution, package reference,
@@ -148,9 +149,40 @@ maintainer approval. See [GIT_GUIDELINES.md](GIT_GUIDELINES.md).
 ### Dependabot
 
 `.github/dependabot.yml` checks the `github-actions` ecosystem at `/` weekly.
-Dependabot opens pull requests for available updates; it does **not**
-automatically merge, approve, or deploy them. A maintainer reviews and merges
-each pull request. Automatic merging is not enabled and requires approval.
+Dependabot opens pull requests for available updates. It does not deploy
+anything.
+
+`.github/workflows/dependabot-auto-merge.yml` squash-merges a Dependabot pull
+request only when all of the following are true:
+
+- The `Repository checks` workflow completed successfully for a `pull_request`
+  event.
+- The pull request author is `dependabot[bot]`.
+- The pull request is open, unmerged, and targets the repository's default
+  branch.
+- The pull request comes from this repository.
+- The current head commit still matches the commit that passed
+  `Repository checks`.
+
+The workflow uses the read/write `GITHUB_TOKEN` only for the merge and pins the
+merge to the verified head commit. It uses no repository secrets and does not
+deploy.
+Human-authored pull requests are not auto-merged.
+
+The organization currently prevents GitHub Actions from creating or approving
+pull requests. As a result, the workflow does not submit an approval review; it
+merges after the checks pass. Auto-approval would require an organization policy
+change or a separate credential, and must not be added without maintainer
+approval.
+
+Because the merge uses `GITHUB_TOKEN`, GitHub suppresses the resulting push-event
+workflows. The same content was already validated by the pull request's
+`Repository checks` run. Automatic merging trusts Dependabot's proposed action
+updates; the checks validate repository foundations, not action security.
+
+Branch protection or GitHub rulesets are not required for this auto-merge path
+and are still not enabled. Enabling them is a separate workflow-policy decision
+that requires maintainer approval. See [GIT_GUIDELINES.md](GIT_GUIDELINES.md).
 
 NuGet updates are intentionally not configured until a `.csproj`, `.slnx`, or
 NuGet dependency configuration exists.
