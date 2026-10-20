@@ -44,7 +44,7 @@ jobs:
             "docs/GIT_GUIDELINES.md"
             "docs/SMOKE_TEST.md"
             "src/platform/Nymeria.Platform/Nymeria.Platform.csproj"
-            "examples/HelloWindow/HelloWindow.csproj"
+            "examples/HelloTriangle/HelloTriangle.csproj"
             "tests/Nymeria.Platform.Tests/Nymeria.Platform.Tests.csproj"
             ".github/dependabot.yml"
             ".github/workflows/dependabot-auto-merge.yml"

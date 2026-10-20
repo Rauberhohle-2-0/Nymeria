@@ -11,12 +11,12 @@ From the repository root:
 ```bash
 dotnet restore Nymeria.slnx
 dotnet build Nymeria.slnx
-dotnet run --project examples/HelloWindow/HelloWindow.csproj
+dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
 ```
 
 The triangle shader is
-`src/graphics/Nymeria.Graphics/Shaders/Triangle.metal`. It is embedded in
-`Nymeria.Graphics` and compiled by SDL's Metal backend at startup, so there is no
+`examples/HelloTriangle/Shaders/Triangle.metal`. It is embedded in
+`HelloTriangle` and compiled by SDL's Metal backend at startup, so there is no
 shader compiler step and no external shader file to deploy.
 
 ## Checks

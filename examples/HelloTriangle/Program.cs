@@ -1,7 +1,6 @@
-using Nymeria.Graphics;
 using Nymeria.Platform;
 
-namespace HelloWindow;
+namespace HelloTriangle;
 
 internal static class Program
 {
@@ -28,7 +27,7 @@ internal static class Program
             Console.Error.WriteLine("Nymeria could not load the native SDL3 library.");
             Console.Error.WriteLine(
                 "Run `dotnet restore Nymeria.slnx`, then start the example with " +
-                "`dotnet run --project examples/HelloWindow/HelloWindow.csproj`.");
+                "`dotnet run --project examples/HelloTriangle/HelloTriangle.csproj`.");
             Console.Error.WriteLine($"Details: {exception.Message}");
             return 1;
         }

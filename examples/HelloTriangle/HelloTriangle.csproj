@@ -10,4 +10,9 @@
     <ProjectReference Include="../../src/platform/Nymeria.Platform/Nymeria.Platform.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Shaders/Triangle.metal"
+                      LogicalName="HelloTriangle.Shaders.Triangle.metal" />
+  </ItemGroup>
+
 </Project>

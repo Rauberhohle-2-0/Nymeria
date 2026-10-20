@@ -11,9 +11,4 @@
     <PackageReference Include="SDL3-CS" Version="3.4.18" />
   </ItemGroup>
 
-  <ItemGroup>
-    <EmbeddedResource Include="Shaders/Triangle.metal"
-                      LogicalName="Nymeria.Graphics.Shaders.Triangle.metal" />
-  </ItemGroup>
-
 </Project>

@@ -8,9 +8,10 @@ a native macOS window built on SDL3 that draws one GPU-rendered triangle.
 ## Current status
 
 - **Implemented now:** .NET 10 solution, the `Nymeria.Platform` window API,
-  `Nymeria.Graphics` with a Metal triangle renderer, `examples/HelloWindow`,
-  platform-independent unit tests, CI restore/build/test on macOS, Windows, and
-  Linux, repository checks, and Dependabot updates for GitHub Actions and NuGet.
+  `Nymeria.Graphics` with reusable Metal GPU device infrastructure,
+  `examples/HelloTriangle`, platform-independent unit tests, CI
+  restore/build/test on macOS, Windows, and Linux, repository checks, and
+  Dependabot updates for GitHub Actions and NuGet.
 - **Planned later:** `Nymeria.Core`, input, the engine loop, additional graphics
   backends, and Windows/Linux rendering. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the authoritative distinction.
@@ -40,7 +41,7 @@ From the repository root:
 ```bash
 dotnet restore Nymeria.slnx
 dotnet build Nymeria.slnx
-dotnet run --project examples/HelloWindow/HelloWindow.csproj
+dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
 ```
 
 A resizable native window titled `Nymeria` opens at 960 × 540 and draws one
@@ -56,9 +57,11 @@ or pipeline cannot be created.
 ### GPU triangle example
 
 The triangle is rendered with SDL3's GPU API on the Metal backend. There is no
-direct Metal interop and no software fallback. The shader lives at
-`src/graphics/Nymeria.Graphics/Shaders/Triangle.metal`, is embedded into
-`Nymeria.Graphics`, and is compiled from Metal Shading Language source by SDL at
+direct Metal interop and no software fallback. `Nymeria.Graphics` provides the
+reusable GPU device; the triangle geometry, renderer, and shader live in
+`examples/HelloTriangle`. The shader is
+`examples/HelloTriangle/Shaders/Triangle.metal`, embedded into
+`HelloTriangle`, and compiled from Metal Shading Language source by SDL at
 startup. No shader compiler or Xcode build step is required.
 
 The example draws a frame, then waits up to 100 ms for window events before
@@ -96,9 +99,9 @@ manually; it is not claimed as a headless CI result.
 .github/        Repository checks and Dependabot configuration
 docs/           Architecture, Git policy, and manual smoke test
 src/core/       Future Nymeria.Core (placeholder)
-src/graphics/   Nymeria.Graphics Metal triangle renderer
+src/graphics/   Nymeria.Graphics reusable Metal GPU infrastructure
 src/platform/   Nymeria.Platform native window project
-examples/       HelloWindow runnable example
+examples/       HelloTriangle runnable triangle example
 tests/          Nymeria.Platform.Tests unit tests
 ```
 

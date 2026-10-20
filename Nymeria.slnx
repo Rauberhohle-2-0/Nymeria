@@ -1,6 +1,6 @@
 <Solution>
   <Folder Name="/examples/">
-    <Project Path="examples/HelloWindow/HelloWindow.csproj" />
+    <Project Path="examples/HelloTriangle/HelloTriangle.csproj" />
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/graphics/">

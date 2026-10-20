@@ -24,10 +24,10 @@ extension is a direction, not a current feature.
 - .NET SDK 10.0.402 pinned in `global.json`, targeting `net10.0`.
 - `Nymeria.slnx`, containing the C# projects that exist today.
 - `Nymeria.Platform`, a class library exposing a minimal native window API.
-- `Nymeria.Graphics`, a class library that renders one triangle through SDL3's
-  GPU API on the Metal backend.
-- `examples/HelloWindow`, a console executable that opens the window and draws
-  the triangle.
+- `Nymeria.Graphics`, a class library that owns the SDL3 GPU device and window
+  presentation claim and provides reusable MSL shader and buffer creation.
+- `examples/HelloTriangle`, a console executable that opens the window and draws
+  the triangle with example-owned shaders and geometry.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - SDL3 windowing and GPU rendering through the pinned `SDL3-CS` and
   `SDL3-CS.MacOS` packages.
@@ -67,7 +67,7 @@ would require maintainer approval.
 | Path | Intended responsibility |
 | --- | --- |
 | `src/core/` | Platform-independent engine fundamentals, eventually `Nymeria.Core`. |
-| `src/graphics/` | `Nymeria.Graphics`: GPU rendering against a native window. |
+| `src/graphics/` | `Nymeria.Graphics`: reusable SDL3 GPU device and resource infrastructure. |
 | `src/platform/` | `Nymeria.Platform`: windowing, input, and operating-system integration. |
 | `examples/` | Small runnable programs that demonstrate engine usage. |
 | `tests/` | Automated unit and integration tests for the engine projects. |
@@ -75,7 +75,7 @@ would require maintainer approval.
 | `.github/` | Repository automation: checks and dependency updates. |
 
 `src/platform/` contains the `Nymeria.Platform` project, `src/graphics/`
-contains `Nymeria.Graphics`, `examples/` contains `HelloWindow`, and `tests/`
+contains `Nymeria.Graphics`, `examples/` contains `HelloTriangle`, and `tests/`
 contains `Nymeria.Platform.Tests`. `src/core/` still contains a `.gitkeep`
 placeholder because it has no source code yet. Git does not track empty
 directories, so the placeholder keeps the intended layout visible in a fresh
@@ -119,17 +119,19 @@ There are no worker threads. `Window.ProcessEvents` blocks in
 `SDL_WaitEventTimeout` instead of busy-spinning. One window per process is
 supported in this version.
 
-The window is not a renderer. `Nymeria.Graphics` owns the GPU device and draws
-into the window through its native handle; the two projects do not reference each
-other.
+The window is not a renderer. `Nymeria.Graphics` owns the GPU device and claims
+the window for presentation through its native handle; the two projects do not
+reference each other.
 
 ## GPU rendering
 
-`Nymeria.Graphics` owns the GPU objects for the triangle. It uses SDL3's GPU API
-through the same `SDL3-CS` binding; there is no direct Metal interop, native
-wrapper, second binding, or software fallback.
+`Nymeria.Graphics` contains reusable graphics infrastructure. `GpuDevice`
+creates and owns an SDL3 GPU device, claims a native window for presentation,
+reports the swapchain format, and creates MSL shaders and uploaded GPU buffers.
+It uses SDL3's GPU API through the same `SDL3-CS` binding; there is no direct
+Metal interop, native wrapper, second binding, or software fallback.
 
-`TriangleRenderer.Create(IntPtr window)`:
+`GpuDevice.Create(IntPtr window)`:
 
 - requires the main thread and a non-zero native `SDL_Window*` handle from
   `Window.Handle`;
@@ -137,13 +139,18 @@ wrapper, second binding, or software fallback.
 - creates an SDL GPU device with `SDL_CreateGPUDevice(MSL, debug: false, "metal")`;
 - claims the window for presentation and reads its swapchain format.
 
+The triangle demonstration lives in `examples/HelloTriangle`. Its
+`TriangleRenderer` owns the triangle vertex data, the triangle shader resource,
+the vertex buffer, the graphics pipeline, and the draw calls. It uses
+`GpuDevice` for the device, window claim, shader creation, and buffer upload.
+
 The only shader asset is
-`src/graphics/Nymeria.Graphics/Shaders/Triangle.metal`. It is embedded in the
-assembly under `Nymeria.Graphics.Shaders.Triangle.metal` and compiled from MSL
-source by SDL when the two shader objects are created. No shader compiler, Xcode
-build step, or generated shader artifact is required. The vertex shader uses
-`[[stage_in]]` with `[[attribute]]` inputs; the fragment shader interpolates
-per-vertex colors.
+`examples/HelloTriangle/Shaders/Triangle.metal`. It is embedded in the
+`HelloTriangle` assembly under `HelloTriangle.Shaders.Triangle.metal` and
+compiled from MSL source by SDL when the two shader objects are created. No
+shader compiler, Xcode build step, or generated shader artifact is required. The
+vertex shader uses `[[stage_in]]` with `[[attribute]]` inputs; the fragment
+shader interpolates per-vertex colors.
 
 Geometry is three interleaved position/color vertices in one vertex buffer. The
 buffer is uploaded once at startup through a transfer buffer and a copy pass.
@@ -158,18 +165,20 @@ centered square viewport and scissor sized from the swapchain texture's physical
 pixels, so resizing and high-DPI drawables do not stretch the triangle and no
 stale window dimensions are used.
 
-`examples/HelloWindow` draws one frame immediately and then calls
+`examples/HelloTriangle` draws one frame immediately and then calls
 `Window.ProcessEvents(100)` before each subsequent frame. This caps idle redraws
 at about ten per second, while resize and other events wake the loop immediately.
 The loop does not spin.
 
 Ownership and lifetime:
 
-- `TriangleRenderer` owns the GPU device, window claim, shaders, vertex buffer,
-  and pipeline. It must be created after the window and disposed before it.
-- `Dispose` waits for the GPU to become idle, releases the pipeline, buffer, and
-  shaders, releases the window claim, and destroys the device. Initialization
-  failures release whatever was created in reverse order and then rethrow.
+- `GpuDevice` owns the GPU device and window claim. `TriangleRenderer` owns the
+  triangle shaders, vertex buffer, and pipeline. It must be created after the
+  window and disposed before it.
+- `TriangleRenderer.Dispose` waits for the GPU to become idle, releases the
+  pipeline, buffer, and shaders, and then disposes the `GpuDevice`, which releases
+  the window claim and destroys the device. Initialization failures release
+  whatever was created in reverse order and then rethrow.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
 - The renderer creates no per-frame GPU resources. Command buffers and swapchain
@@ -177,7 +186,7 @@ Ownership and lifetime:
 
 Limitations in this version:
 
-- The renderer is macOS-only. It requires SDL's Metal driver and MSL shader
+- GPU rendering is macOS-only. It requires SDL's Metal driver and MSL shader
   source; Windows and Linux will need their own shader formats and native
   packages, which are not implemented.
 - Apple Silicon and Intel Macs both use Metal. The macOS native package contains
@@ -210,9 +219,10 @@ Nymeria.Graphics     Nymeria.Platform
 
 `Nymeria.Graphics` and `Nymeria.Platform` have no `Nymeria.Core` reference
 because `Nymeria.Core` does not exist and neither project has a demonstrated need
-for it. They do not reference each other: `HelloWindow` passes
-`Window.Handle` to `TriangleRenderer.Create`, which keeps the dependency in the
-example. `HelloWindow` references both engine projects, and
+for it. They do not reference each other: `HelloTriangle` creates the window and
+passes `Window.Handle` to `TriangleRenderer.Create`, which creates a `GpuDevice`
+in `Nymeria.Graphics`; the dependency remains in the example. No engine project
+references `HelloTriangle`. `HelloTriangle` references both engine projects, and
 `Nymeria.Platform.Tests` references the project under test. No interfaces or
 abstractions are created to enforce the future direction yet. Adding them
 speculatively would violate YAGNI.
@@ -227,8 +237,9 @@ The following choices are implemented:
 - **Windowing:** SDL3 3.4.18 through `SDL3-CS` 3.4.18 and the macOS native
   package `SDL3-CS.MacOS` 3.4.18.
 - **GPU rendering:** SDL3's GPU API with the Metal backend and MSL shader source,
-  reached through `SDL3-CS`. `Nymeria.Graphics` embeds one `.metal` file and SDL
-  compiles it at runtime; no direct Metal interop or shader compiler is used.
+  reached through `SDL3-CS`. `Nymeria.Graphics` provides the reusable
+  `GpuDevice`; `HelloTriangle` embeds its own `.metal` file and SDL compiles it
+  at runtime. No direct Metal interop or shader compiler is used.
 - **External packages:** the SDL3 binding and macOS native runtime, plus the
   xUnit test packages `xunit` 2.9.3, `xunit.runner.visualstudio` 4.0.1, and
   `Microsoft.NET.Test.Sdk` 18.11.0. The tests cover only platform-independent
