@@ -55,3 +55,10 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vs/
+.idea/
+.vscode/
