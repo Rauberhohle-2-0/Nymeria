@@ -27,17 +27,18 @@ extension is a direction, not a current feature.
 - `examples/HelloWindow`, a console executable that opens and runs the window.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - SDL3 windowing through the pinned `SDL3-CS` and `SDL3-CS.MacOS` packages.
-- A `Repository checks` GitHub Actions workflow for repository foundations.
-- Weekly Dependabot updates for GitHub Actions, auto-merged only after
+- A `Repository checks` GitHub Actions workflow that validates repository
+  foundations and restores, builds, and tests the solution on macOS, Windows, and
+  Linux.
+- Weekly Dependabot updates for GitHub Actions and NuGet, auto-merged only after
   repository checks pass.
-- Organizational directories kept in Git with `.gitkeep` files where empty.
+- Organizational directories kept in Git with `.gitkeep` files while empty.
 
 ### Planned later
 
 The following are future work and are **not** implemented or approved in detail:
 
 - `Nymeria.Core` and `Nymeria.Graphics`.
-- Build and test steps in CI.
 - Input handling and an engine loop.
 - A rendering abstraction and at least one graphics backend.
 
@@ -101,9 +102,10 @@ Windowing uses SDL3 through two pinned NuGet packages:
 `Nymeria.Platform.csproj` owns both package references, so examples receive the
 binding and native runtime transitively. NuGet restores the dylibs from
 nuget.org; no Homebrew installation, manual download, or custom Cocoa interop is
-involved. Task 02 validates only the macOS native runtime. The binding compiles
-on other operating systems, but Windows and Linux native packages are added only
-when those platforms are supported.
+involved. Task 02 validates only the macOS native runtime. CI compiles and runs
+the headless tests on Windows and Linux as well, but does not launch a GUI there.
+Windows and Linux native packages are added only when those platforms are
+supported.
 
 SDL initialization, window creation, event processing, and disposal must all run
 on the process main thread, as macOS requires for its native windowing APIs.
@@ -182,11 +184,21 @@ Nymeria follows KISS (Keep It Simple) and YAGNI (You Aren't Gonna Need It):
 
 ### Repository checks
 
-`.github/workflows/repository-checks.yml` runs the `Repository checks` job on
-pushes and pull requests to `main`. It verifies required files and directories,
-resolves relative Markdown links, and performs basic Dependabot configuration
-integrity checks. It uses read-only repository permissions. C# restore, build,
-and test steps are added once the example and test projects exist.
+`.github/workflows/repository-checks.yml` runs on pushes and pull requests to
+`main` with two jobs:
+
+- **Repository checks** on `ubuntu-latest` verifies required files and
+  directories, ensures no `bin/` or `obj/` output is tracked, resolves relative
+  Markdown links, and checks that Dependabot covers the tracked GitHub Actions
+  and NuGet ecosystems.
+- **.NET** runs a `macos-latest`, `windows-latest`, and `ubuntu-latest` matrix.
+  Each runner restores `Nymeria.slnx`, builds it in Release configuration, and
+  runs the headless unit tests. No GUI is launched in CI.
+
+Both jobs use read-only repository permissions. The workflow is named
+`Repository checks`, so Dependabot auto-merge waits for every matrix leg and the
+foundation job. The macOS window behavior is covered by
+[SMOKE_TEST.md](SMOKE_TEST.md) instead of a CI claim.
 
 Results appear on commits and pull requests, and in the repository's **Actions**
 tab. The workflow can also be inspected with `gh run list` and
@@ -198,9 +210,9 @@ maintainer approval. See [GIT_GUIDELINES.md](GIT_GUIDELINES.md).
 
 ### Dependabot
 
-`.github/dependabot.yml` checks the `github-actions` ecosystem at `/` weekly.
-Dependabot opens pull requests for available updates. It does not deploy
-anything.
+`.github/dependabot.yml` checks the `github-actions` and `nuget` ecosystems at
+`/` weekly. Dependabot opens pull requests for available updates. It does not
+deploy anything.
 
 `.github/workflows/dependabot-auto-merge.yml` squash-merges a Dependabot pull
 request only when all of the following are true:
@@ -227,15 +239,16 @@ approval.
 
 Because the merge uses `GITHUB_TOKEN`, GitHub suppresses the resulting push-event
 workflows. The same content was already validated by the pull request's
-`Repository checks` run. Automatic merging trusts Dependabot's proposed action
-updates; the checks validate repository foundations, not action security.
+`Repository checks` run. Automatic merging trusts Dependabot's proposed dependency
+updates. For NuGet updates, the checks include the Release build and unit tests;
+they do not prove that a native window still behaves correctly.
 
 Branch protection or GitHub rulesets are not required for this auto-merge path
 and are still not enabled. Enabling them is a separate workflow-policy decision
 that requires maintainer approval. See [GIT_GUIDELINES.md](GIT_GUIDELINES.md).
 
-NuGet updates are not configured yet. They are added once the .NET project set
-is in place.
+The maintainer chose to let the existing auto-merge workflow apply to both
+Dependabot ecosystems. No additional auto-merge rule or credential exists.
 
 ## Governance
 

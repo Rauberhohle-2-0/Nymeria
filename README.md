@@ -8,11 +8,12 @@ a native macOS window built on SDL3. Rendering is deliberately not implemented.
 ## Current status
 
 - **Implemented now:** .NET 10 solution, the `Nymeria.Platform` window API,
-  `examples/HelloWindow`, platform-independent unit tests, repository checks, and
-  Dependabot updates for GitHub Actions.
-- **Planned later:** .NET build/test steps in CI, `Nymeria.Core`,
-  `Nymeria.Graphics`, input, the engine loop, and rendering. See
-  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the authoritative distinction.
+  `examples/HelloWindow`, platform-independent unit tests, CI restore/build/test
+  on macOS, Windows, and Linux, repository checks, and Dependabot updates for
+  GitHub Actions and NuGet.
+- **Planned later:** `Nymeria.Core`, `Nymeria.Graphics`, input, the engine loop,
+  and rendering. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the
+  authoritative distinction.
 
 ## Prerequisites (macOS)
 
@@ -90,16 +91,17 @@ tests/          Nymeria.Platform.Tests unit tests
 ## Repository automation
 
 The `Repository checks` GitHub Actions workflow runs on pushes and pull requests
-to `main` and validates the repository foundation. Build and test steps for the
-.NET solution are added once the test project exists.
+to `main`. One job validates the repository foundation, including Markdown links,
+tracked build output, and Dependabot configuration. A second job restores, builds,
+and runs the headless unit tests on macOS, Windows, and Linux. The GUI is not
+launched in CI; window behavior is covered by the manual smoke test.
 
-Dependabot checks GitHub Actions weekly and opens update pull requests. The
-`Dependabot auto-merge` workflow squash-merges a Dependabot pull request only
-after `Repository checks` succeeds on that pull request's current head commit. It
-does not deploy. The organization currently prevents GitHub Actions from
-approving pull requests, so a Dependabot merge is recorded without an automated
-approval review. Human pull requests remain manual. NuGet updates are added once
-the .NET project set is complete.
+Dependabot checks GitHub Actions and NuGet weekly and opens update pull requests.
+The existing `Dependabot auto-merge` workflow squash-merges a Dependabot pull
+request only after `Repository checks` succeeds on that pull request's current
+head commit. It does not deploy. The organization currently prevents GitHub
+Actions from approving pull requests, so a Dependabot merge is recorded without
+an automated approval review. Human pull requests remain manual.
 
 ## License
 

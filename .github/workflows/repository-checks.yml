@@ -37,8 +37,15 @@ jobs:
             "AGENTS.md"
             "README.md"
             "LICENSE"
+            "Directory.Build.props"
+            "global.json"
+            "Nymeria.slnx"
             "docs/ARCHITECTURE.md"
             "docs/GIT_GUIDELINES.md"
+            "docs/SMOKE_TEST.md"
+            "src/platform/Nymeria.Platform/Nymeria.Platform.csproj"
+            "examples/HelloWindow/HelloWindow.csproj"
+            "tests/Nymeria.Platform.Tests/Nymeria.Platform.Tests.csproj"
             ".github/dependabot.yml"
             ".github/workflows/dependabot-auto-merge.yml"
             ".github/workflows/repository-checks.yml"
@@ -100,15 +107,55 @@ jobs:
 
           echo "Relative Markdown links resolve."
 
-          grep -q '^version: 2$' .github/dependabot.yml
-          grep -q 'package-ecosystem: "github-actions"' .github/dependabot.yml
-          grep -q 'directory: "/"' .github/dependabot.yml
-          grep -q 'interval: "weekly"' .github/dependabot.yml
-
-          if grep -qi 'package-ecosystem:.*nuget' .github/dependabot.yml; then
-            echo "::error file=.github/dependabot.yml::NuGet updates must stay disabled until a .NET project exists."
+          if git ls-files | grep -Eq '(^|/)(bin|obj)/'; then
+            echo "::error::Build output is tracked. Remove bin/ and obj/ from Git."
             exit 1
           fi
 
-          echo "Dependabot configuration matches the current repository state."
+          echo "No build output is tracked."
+
+          grep -q '^version: 2$' .github/dependabot.yml
+          grep -q 'package-ecosystem: "github-actions"' .github/dependabot.yml
+          grep -q 'package-ecosystem: "nuget"' .github/dependabot.yml
+          grep -q 'directory: "/"' .github/dependabot.yml
+          grep -q 'interval: "weekly"' .github/dependabot.yml
+
+          if [[ -z "$(git ls-files '*.csproj')" ]]; then
+            echo "::error::No .NET project files are tracked."
+            exit 1
+          fi
+
+          echo "Dependabot configuration covers the tracked project ecosystems."
           echo "Repository checks passed."
+
+  dotnet:
+    name: .NET (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+          - ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Nymeria.slnx
+
+      - name: Build
+        run: dotnet build Nymeria.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Nymeria.slnx --configuration Release --no-build --no-restore
+

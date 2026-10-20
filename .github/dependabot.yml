@@ -1,7 +1,11 @@
-# NuGet updates are intentionally deferred until a .NET project exists.
+# Weekly update pull requests for repository automation and pinned NuGet packages.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "nuget"
     directory: "/"
     schedule:
       interval: "weekly"
