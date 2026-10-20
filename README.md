@@ -9,12 +9,13 @@ interactive, depth-tested cube scene.
 ## Current status
 
 - **Implemented now:** .NET 10 solution, the `Nymeria.Platform` window API,
-  `Nymeria.Graphics` with reusable Metal GPU device infrastructure and camera
-  math, `examples/HelloTriangle`, the interactive `examples/HelloCube`,
+  `Nymeria.Core` with validated format-independent model data and a parser
+  contract, `Nymeria.Graphics` with reusable Metal GPU device infrastructure and
+  camera math, `examples/HelloTriangle`, the interactive `examples/HelloCube`,
   platform-independent unit tests, CI restore/build/test on macOS, Windows, and
   Linux, repository checks, and Dependabot updates for GitHub Actions and NuGet.
-- **Planned later:** `Nymeria.Core`, engine-level input, the engine loop,
-  additional graphics backends, and Windows/Linux rendering. See
+- **Planned later:** engine-level input, the engine loop, Wavefront OBJ and OMSI
+  O3D parsers, additional graphics backends, and Windows/Linux rendering. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the authoritative distinction.
 
 ## Prerequisites (macOS)
@@ -63,8 +64,9 @@ or pipeline cannot be created.
 
 Both examples use SDL3's GPU API on the Metal backend. There is no direct Metal
 interop and no software fallback. `Nymeria.Graphics` provides the reusable GPU
-device and the `Camera` math type; each example owns its geometry, renderer,
-shader, pipeline, input mapping, and, for the cube scene, its depth target.
+device and the `Camera` math type; `Nymeria.Core` provides the model data used by
+`HelloCube`; each example owns its renderer, shader, pipeline, input mapping, and,
+for the cube scene, its depth target.
 
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal` and
 `examples/HelloCube/Shaders/Cube.metal`. They are embedded into their examples
@@ -76,17 +78,20 @@ drawing again, so idle redraws stay near ten per second. It renders in a centere
 square viewport derived from the swapchain's physical pixels, so it keeps its
 proportions on resize and on high-DPI displays.
 
-`HelloCube` renders continuously, targeting about 16 ms per frame. Its reusable
-`Camera` in `Nymeria.Graphics` stores position, yaw, and pitch, clamps pitch, and
-builds a right-handed view matrix and a perspective projection from the actual
-drawable aspect ratio. The example moves the camera from measured elapsed time
-with a 0.1 s per-frame cap, normalizes diagonal movement, and maps SDL3 keyboard
-and mouse state to the camera. Holding the right mouse button enables relative
-mouse mode; releasing it, losing focus, minimizing, or exiting restores the
-cursor. Each cube gets its own model matrix, composed and uploaded with the same
-row-major convention as before. The central cube's rotation is also advanced by
-elapsed time with the same cap. The depth target and pipeline state live in the
-example, not in `Nymeria.Graphics`.
+`HelloCube` renders continuously, targeting about 16 ms per frame. Its cube is a
+format-independent `ModelData` with positions, normals, texture coordinates,
+triangle indices, and six face subsets. The example converts that model to the
+existing interleaved position/color layout; the shader, depth target, and visuals
+are unchanged. Its reusable `Camera` in `Nymeria.Graphics` stores position, yaw,
+and pitch, clamps pitch, and builds a right-handed view matrix and a perspective
+projection from the actual drawable aspect ratio. The example moves the camera
+from measured elapsed time with a 0.1 s per-frame cap, normalizes diagonal
+movement, and maps SDL3 keyboard and mouse state to the camera. Holding the right
+mouse button enables relative mouse mode; releasing it, losing focus, minimizing,
+or exiting restores the cursor. Each cube gets its own model matrix, composed and
+uploaded with the same row-major convention as before. The central cube's
+rotation is also advanced by elapsed time with the same cap. The depth target and
+pipeline state live in the example, not in `Nymeria.Graphics`.
 
 Both examples skip rendering while minimized and recover when a drawable is
 available again. [examples/README.md](examples/README.md) records the matrix
@@ -105,9 +110,10 @@ Run the platform-independent unit tests:
 dotnet test Nymeria.slnx
 ```
 
-The tests cover `WindowOptions` defaults and validation. There are deliberately
-no fake GUI tests: native window behavior is covered by the manual smoke test
-below and is not claimed as a headless CI result.
+The tests cover `WindowOptions` defaults and validation, plus model-data
+validation and parser-contract error semantics in `Nymeria.Core.Tests`. There are
+deliberately no fake GUI tests: native window behavior is covered by the manual
+smoke test below and is not claimed as a headless CI result.
 
 ## Manual smoke test
 
@@ -119,16 +125,17 @@ manually; it is not claimed as a headless CI result.
 ```text
 .github/        Repository checks and Dependabot configuration
 docs/           Architecture, Git policy, and manual smoke test
-src/core/       Future Nymeria.Core (placeholder)
+src/core/       Nymeria.Core model data and parser contract
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
 examples/       HelloTriangle and HelloCube runnable examples
-tests/          Nymeria.Platform.Tests unit tests
+tests/          Nymeria.Core.Tests and Nymeria.Platform.Tests unit tests
 ```
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Model data and parser contract](docs/MODEL_DATA.md)
 - [Examples](examples/README.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)

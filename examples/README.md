@@ -2,9 +2,10 @@
 
 The examples are small, runnable programs that demonstrate the engine on macOS.
 They are intentionally separate from the reusable projects: each example owns its
-geometry, shaders, pipelines, input mapping, and frame loop. `Nymeria.Graphics`
-provides the GPU device, the window presentation claim, shader and buffer
-creation, the swapchain format, and the reusable camera math.
+shaders, pipelines, input mapping, and frame loop. `Nymeria.Graphics` provides the
+GPU device, the window presentation claim, shader and buffer creation, the
+swapchain format, and the reusable camera math. `Nymeria.Core` provides the
+format-independent model data used by `HelloCube`.
 
 Both examples use SDL3's GPU API with the Metal backend and Metal Shading
 Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
@@ -41,10 +42,14 @@ reusable free-fly camera, perspective projection, and a depth buffer. One centra
 cube continues to rotate around its Y axis. It draws into a 960 × 540 window,
 renders continuously, and targets about 16 ms per frame.
 
-- Geometry: 24 vertices (four per face) and 36 16-bit indices. Corners are
-  duplicated so each of the six faces has a solid color instead of colors
-  blending across shared vertices. Every cube reuses the same vertex and index
-  buffers and gets its own model matrix.
+- Geometry: `Nymeria.Core.Models.ModelData` with 24 positions (four per face),
+  face normals, texture coordinates, 36 zero-based triangle indices, and six face
+  subsets with material names. The example converts the model to 24 interleaved
+  position/color vertices and 36 16-bit indices. Corners are duplicated so each of
+  the six faces has a solid color instead of colors blending across shared
+  vertices. Every cube reuses the same vertex and index buffers and gets its own
+  model matrix. The model contract and conventions are in
+  [../docs/MODEL_DATA.md](../docs/MODEL_DATA.md).
 - Shader: `HelloCube/Shaders/Cube.metal`, embedded as
   `HelloCube.Shaders.Cube.metal`.
 - Animation: only the central cube rotates. Its angle is advanced by elapsed
@@ -140,5 +145,6 @@ drawable size is known to be non-zero.
 Both examples are macOS-only for now. They require SDL's Metal backend and MSL
 source; Windows and Linux need their own native SDL3 packages and shader
 formats. Neither example has textures, lighting, a scene graph, collisions, or a
-model loader. GPU output and input behavior are validated manually with
+file-format model parser; `HelloCube` constructs its model data in code. GPU
+output and input behavior are validated manually with
 [../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.

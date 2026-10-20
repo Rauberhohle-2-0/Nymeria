@@ -24,6 +24,8 @@ extension is a direction, not a current feature.
 - .NET SDK 10.0.402 pinned in `global.json`, targeting `net10.0`.
 - `Nymeria.slnx`, containing the C# projects that exist today.
 - `Nymeria.Platform`, a class library exposing a minimal native window API.
+- `Nymeria.Core`, a dependency-free class library containing validated,
+  format-independent model data and the `IModelParser` contract.
 - `Nymeria.Graphics`, a class library that owns the SDL3 GPU device and window
   presentation claim, provides reusable MSL shader and buffer creation, and
   contains a reusable, SDL-independent free-fly `Camera`.
@@ -31,8 +33,11 @@ extension is a direction, not a current feature.
   the triangle with example-owned shaders and geometry.
 - `examples/HelloCube`, an interactive console executable that draws multiple
   fixed-position cubes with a free-fly camera, perspective projection, depth
-  testing, example-owned shaders and geometry, and an example-owned depth target.
+  testing, example-owned shaders and geometry from a format-independent model,
+  and an example-owned depth target.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
+- `Nymeria.Core.Tests`, GPU-independent tests for model-data validation and
+  parser-contract error behavior.
 - SDL3 windowing and GPU rendering through the pinned `SDL3-CS` and
   `SDL3-CS.MacOS` packages.
 - A `Repository checks` GitHub Actions workflow that validates repository
@@ -40,14 +45,14 @@ extension is a direction, not a current feature.
   Linux.
 - Weekly Dependabot updates for GitHub Actions and NuGet, auto-merged only after
   repository checks pass.
-- Organizational directories kept in Git with `.gitkeep` files while empty.
 
 ### Planned later
 
 The following are future work and are **not** implemented or approved in detail:
 
-- `Nymeria.Core`.
 - Engine-level input handling and an engine loop.
+- Wavefront OBJ and OMSI O3D parsers that implement the existing
+  `Nymeria.Core.Models.IModelParser` contract.
 - Additional graphics backends and a rendering abstraction.
 
 Names and responsibilities in this section are planning boundaries, not
@@ -70,7 +75,7 @@ would require maintainer approval.
 
 | Path | Intended responsibility |
 | --- | --- |
-| `src/core/` | Platform-independent engine fundamentals, eventually `Nymeria.Core`. |
+| `src/core/` | Platform-independent engine fundamentals in `Nymeria.Core`. |
 | `src/graphics/` | `Nymeria.Graphics`: reusable SDL3 GPU device and resource infrastructure. |
 | `src/platform/` | `Nymeria.Platform`: windowing, input, and operating-system integration. |
 | `examples/` | Small runnable programs that demonstrate engine usage. |
@@ -79,14 +84,16 @@ would require maintainer approval.
 | `.github/` | Repository automation: checks and dependency updates. |
 
 `src/platform/` contains the `Nymeria.Platform` project, `src/graphics/`
-contains `Nymeria.Graphics`, `examples/` contains `HelloTriangle` and
-`HelloCube`, and `tests/` contains `Nymeria.Platform.Tests`. `src/core/` still
-contains a `.gitkeep` placeholder because it has no source code yet. The camera
-lives in `Nymeria.Graphics` rather than in a new project: it is reusable 3D
-rendering math with no SDL, window, or GPU dependency, and creating
-`Nymeria.Core` solely for it would add a project before a second concrete need.
-Git does not track empty directories, so the placeholder keeps the intended
-layout visible in a fresh clone without introducing speculative scaffolding.
+contains `Nymeria.Graphics`, `src/core/` contains `Nymeria.Core`, `examples/`
+contains `HelloTriangle` and `HelloCube`, and `tests/` contains
+`Nymeria.Core.Tests` and `Nymeria.Platform.Tests`.
+
+`Nymeria.Core` owns the format-independent model data and parser contract
+described in [MODEL_DATA.md](MODEL_DATA.md). It references `System.Numerics` and
+the base class library only. The camera lives in `Nymeria.Graphics` rather than
+in `Nymeria.Core`: it is reusable 3D rendering math with no SDL, window, or GPU
+dependency, and the model-loading foundation is the first demonstrated need for
+the core project.
 
 ## Windowing
 
@@ -129,6 +136,43 @@ supported in this version.
 The window is not a renderer. `Nymeria.Graphics` owns the GPU device and claims
 the window for presentation through its native handle; the two projects do not
 reference each other.
+
+## Model data and parsing
+
+`Nymeria.Core` contains `ModelData`, `MeshData`, `MeshSubset`,
+`ModelFormatException`, and `IModelParser` in the `Nymeria.Core.Models`
+namespace. The types hold positions, optional normals and texture coordinates,
+zero-based `uint` triangle indices, triangle-aligned subsets, and optional opaque
+material names. They contain no GPU resources, SDL3, window state, or
+format-specific logic.
+
+Construction is the validation boundary. Empty geometry, non-finite vertex
+values, mismatched attribute counts, out-of-range indices, malformed subsets, and
+index counts that do not describe whole triangles throw `ModelFormatException`.
+The type takes ownership of the geometry arrays without copying them.
+
+`IModelParser` is the small extension point for future parsers:
+
+```csharp
+public interface IModelParser
+{
+    ModelData Parse(Stream stream);
+}
+```
+
+The caller owns and disposes the stream; a parser reads from its current
+position and must not close it. A parser returns a fully validated model or
+throws `ModelFormatException` for malformed or unsupported input. There is no
+registry, discovery mechanism, or format detection.
+
+The conventions are right-handed with `+Y` up and `-Z` forward, triangle-list
+winding counter-clockwise when viewed from outside, zero-based indices, and
+texture coordinates with a top-left origin and `+V` down. Parsers convert source
+handedness, winding, index bases, and UV origin. [MODEL_DATA.md](MODEL_DATA.md)
+documents the complete contract, validation rules, and the extension point for
+the planned OBJ and O3D parsers. The cube example builds its geometry as model
+data and converts it to the existing shader layout; `Nymeria.Core` itself never
+creates GPU resources.
 
 ## GPU rendering
 
@@ -203,9 +247,12 @@ The loop does not spin.
 ### HelloCube
 
 `CubeRenderer` adds perspective projection, a uniform matrix, and a depth buffer.
-It owns 24 vertices (four per face, duplicated so every face has a solid color),
-36 16-bit indices, the cube shaders, both buffers, the pipeline, and the depth
-texture. The example places seven cubes at fixed positions and reuses that
+Its cube is a `Nymeria.Core.Models.ModelData` with 24 positions, face normals,
+texture coordinates, 36 zero-based `uint` triangle indices, and six face subsets
+with opaque material names. The example converts that model to the existing
+interleaved position/color vertex layout and 36 16-bit indices, so each face keeps
+a solid color. It owns the cube shaders, both buffers, the pipeline, and the
+depth texture. The example places seven cubes at fixed positions and reuses that
 geometry for each draw with its own model matrix. The central cube keeps the
 previous milestone's rotation; the other cubes stay fixed so camera movement and
 perspective are easy to judge.
@@ -281,13 +328,16 @@ Limitations in this version:
 - There is no scene graph, texture, lighting, material system, collision system,
   or engine-level input system. `Camera` is reusable math, but input mapping and
   timing stay in `HelloCube`; the triangle remains static clip-space geometry.
+- There is no file-format model parser yet. `Nymeria.Core` provides the validated
+  model data and parser contract, and `HelloCube` constructs its cube as model
+  data in code. Wavefront OBJ and OMSI O3D parsing are planned follow-up tasks.
 - GPU output and interactive input are not validated by CI.
   [SMOKE_TEST.md](SMOKE_TEST.md) covers them.
 
 ## Dependency direction
 
-The following principle guides project references. The graphics project, platform
-project, and examples exist today.
+The following principle guides project references. The core, graphics, and
+platform projects and the examples exist today.
 
 ```text
 examples  -----------------------> engine projects
@@ -306,16 +356,18 @@ Nymeria.Graphics     Nymeria.Platform
 - `examples/` may depend on all engine projects.
 - `tests/` may reference the project under test.
 
-`Nymeria.Graphics` and `Nymeria.Platform` have no `Nymeria.Core` reference
-because `Nymeria.Core` does not exist and neither project has a demonstrated need
-for it. They do not reference each other: each example creates the window and
-passes `Window.Handle` to its renderer, which creates a `GpuDevice` in
+`Nymeria.Core` has no project references; it uses `System.Numerics` and the base
+class library only. `Nymeria.Graphics` and `Nymeria.Platform` have no
+`Nymeria.Core` reference because neither has a demonstrated need for it yet.
+They do not reference each other: each example creates the window and passes
+`Window.Handle` to its renderer, which creates a `GpuDevice` in
 `Nymeria.Graphics`; the dependency remains in the example. `Camera` sits in
-`Nymeria.Graphics` and references only `System.Numerics`, so it adds no project
-reference or platform dependency. No engine project references an example. Both
-examples reference both engine projects, and `Nymeria.Platform.Tests` references
-the project under test. No interfaces or abstractions are created to enforce the
-future direction yet. Adding them speculatively would violate YAGNI.
+`Nymeria.Graphics` and references only `System.Numerics`. `HelloCube` references
+`Nymeria.Core` for its cube model data; `HelloTriangle` does not need it. No
+engine project references an example. `Nymeria.Core.Tests` and
+`Nymeria.Platform.Tests` reference their project under test. No interfaces or
+abstractions are created to enforce the future direction. Adding them
+speculatively would violate YAGNI.
 
 ## Technical choices
 
@@ -334,18 +386,22 @@ The following choices are implemented:
   `Camera` uses it for yaw/pitch view and projection math. `HelloCube` composes
   one model-view-projection matrix per cube, uploads row-major bytes, and lets
   MSL interpret them as column-major.
+- **Model data:** `Nymeria.Core` contains validated, format-independent
+  `ModelData`/`MeshData` types and the `IModelParser` stream contract. It uses
+  `System.Numerics` and no external package, SDL3, or GPU dependency.
 - **External packages:** the SDL3 binding and macOS native runtime, plus the
   xUnit test packages `xunit` 2.9.3, `xunit.runner.visualstudio` 4.0.1, and
-  `Microsoft.NET.Test.Sdk` 18.11.0. The tests cover only platform-independent
-  `WindowOptions` behavior; they do not launch a GUI or create a GPU device.
+  `Microsoft.NET.Test.Sdk` 18.11.0. The headless tests cover platform-independent
+  `WindowOptions` behavior plus model-data validation and parser error semantics;
+  they do not launch a GUI or create a GPU device.
 
 The following choices remain open:
 
 - **Additional platforms and backends:** Windows and Linux rendering, their
   native SDL3 packages, and the shader formats those backends require are not
   implemented.
-- **`Nymeria.Core`:** the project does not exist yet and is not justified by the
-  examples.
+- **Model parsers:** Wavefront OBJ and OMSI O3D parsing, their supported
+  subsets, and their format-specific project locations are not implemented.
 
 ## KISS and YAGNI
 

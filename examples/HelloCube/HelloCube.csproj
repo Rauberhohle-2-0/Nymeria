@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../src/core/Nymeria.Core/Nymeria.Core.csproj" />
     <ProjectReference Include="../../src/graphics/Nymeria.Graphics/Nymeria.Graphics.csproj" />
     <ProjectReference Include="../../src/platform/Nymeria.Platform/Nymeria.Platform.csproj" />
   </ItemGroup>

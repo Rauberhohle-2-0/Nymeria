@@ -21,9 +21,6 @@ public sealed class CubeRenderer : IDisposable
     private const string VertexEntryPoint = "vertex_main";
     private const string FragmentEntryPoint = "fragment_main";
     private const int VertexStride = 6 * sizeof(float);
-    private const uint IndexCount = 36;
-
-    private const float HalfExtent = 1.0f;
 
     // Fixed cube positions make camera movement and perspective easy to verify.
     // Only the central cube rotates, preserving the previous milestone without
@@ -39,61 +36,6 @@ public sealed class CubeRenderer : IDisposable
         new(new Vector3(4.5f, -1.0f, -7.0f), 0.9f, -0.3f, -0.1f),
     ];
 
-    // Twenty-four vertices: four per face. Corners are duplicated because each
-    // face has its own color. Sharing the eight logical corners would blend
-    // colors across faces instead of drawing solid faces.
-    private static readonly float[] s_vertices =
-    {
-        // Front (+Z), red
-        -HalfExtent, -HalfExtent,  HalfExtent,  0.90f, 0.15f, 0.15f,
-         HalfExtent, -HalfExtent,  HalfExtent,  0.90f, 0.15f, 0.15f,
-         HalfExtent,  HalfExtent,  HalfExtent,  0.90f, 0.15f, 0.15f,
-        -HalfExtent,  HalfExtent,  HalfExtent,  0.90f, 0.15f, 0.15f,
-
-        // Back (-Z), green
-         HalfExtent, -HalfExtent, -HalfExtent,  0.15f, 0.75f, 0.25f,
-        -HalfExtent, -HalfExtent, -HalfExtent,  0.15f, 0.75f, 0.25f,
-        -HalfExtent,  HalfExtent, -HalfExtent,  0.15f, 0.75f, 0.25f,
-         HalfExtent,  HalfExtent, -HalfExtent,  0.15f, 0.75f, 0.25f,
-
-        // Right (+X), blue
-         HalfExtent, -HalfExtent,  HalfExtent,  0.20f, 0.45f, 0.95f,
-         HalfExtent, -HalfExtent, -HalfExtent,  0.20f, 0.45f, 0.95f,
-         HalfExtent,  HalfExtent, -HalfExtent,  0.20f, 0.45f, 0.95f,
-         HalfExtent,  HalfExtent,  HalfExtent,  0.20f, 0.45f, 0.95f,
-
-        // Left (-X), yellow
-        -HalfExtent, -HalfExtent, -HalfExtent,  0.95f, 0.75f, 0.15f,
-        -HalfExtent, -HalfExtent,  HalfExtent,  0.95f, 0.75f, 0.15f,
-        -HalfExtent,  HalfExtent,  HalfExtent,  0.95f, 0.75f, 0.15f,
-        -HalfExtent,  HalfExtent, -HalfExtent,  0.95f, 0.75f, 0.15f,
-
-        // Top (+Y), magenta
-        -HalfExtent,  HalfExtent,  HalfExtent,  0.85f, 0.30f, 0.85f,
-         HalfExtent,  HalfExtent,  HalfExtent,  0.85f, 0.30f, 0.85f,
-         HalfExtent,  HalfExtent, -HalfExtent,  0.85f, 0.30f, 0.85f,
-        -HalfExtent,  HalfExtent, -HalfExtent,  0.85f, 0.30f, 0.85f,
-
-        // Bottom (-Y), cyan
-        -HalfExtent, -HalfExtent, -HalfExtent,  0.20f, 0.80f, 0.85f,
-         HalfExtent, -HalfExtent, -HalfExtent,  0.20f, 0.80f, 0.85f,
-         HalfExtent, -HalfExtent,  HalfExtent,  0.20f, 0.80f, 0.85f,
-        -HalfExtent, -HalfExtent,  HalfExtent,  0.20f, 0.80f, 0.85f,
-    };
-
-    // Two triangles per face, wound counter-clockwise when viewed from outside
-    // the cube. Culling is disabled, so winding does not affect visibility; the
-    // depth test resolves occlusion.
-    private static readonly ushort[] s_indices =
-    {
-         0,  1,  2,   0,  2,  3,
-         4,  5,  6,   4,  6,  7,
-         8,  9, 10,   8, 10, 11,
-        12, 13, 14,  12, 14, 15,
-        16, 17, 18,  16, 18, 19,
-        20, 21, 22,  20, 22, 23,
-    };
-
     private readonly IntPtr _window;
     private readonly GpuDevice _device;
     private readonly IntPtr _vertexShader;
@@ -101,6 +43,7 @@ public sealed class CubeRenderer : IDisposable
     private readonly IntPtr _vertexBuffer;
     private readonly IntPtr _indexBuffer;
     private readonly IntPtr _pipeline;
+    private readonly uint _indexCount;
     private readonly SDL.GPUTextureFormat _depthFormat;
     private IntPtr _depthTexture;
     private uint _depthWidth;
@@ -115,6 +58,7 @@ public sealed class CubeRenderer : IDisposable
         IntPtr vertexBuffer,
         IntPtr indexBuffer,
         IntPtr pipeline,
+        uint indexCount,
         SDL.GPUTextureFormat depthFormat)
     {
         _window = window;
@@ -124,6 +68,7 @@ public sealed class CubeRenderer : IDisposable
         _vertexBuffer = vertexBuffer;
         _indexBuffer = indexBuffer;
         _pipeline = pipeline;
+        _indexCount = indexCount;
         _depthFormat = depthFormat;
     }
 
@@ -144,6 +89,8 @@ public sealed class CubeRenderer : IDisposable
             throw new ArgumentException("A native window handle is required.", nameof(window));
         }
 
+        CubeModel.CubeGpuGeometry geometry =
+            CubeModel.CreateGpuGeometry(CubeModel.Create());
         GpuDevice device = GpuDevice.Create(window);
         IntPtr vertexShader = IntPtr.Zero;
         IntPtr fragmentShader = IntPtr.Zero;
@@ -164,10 +111,10 @@ public sealed class CubeRenderer : IDisposable
                 SDL.GPUShaderStage.Fragment,
                 FragmentEntryPoint);
             vertexBuffer = device.CreateBuffer(
-                MemoryMarshal.AsBytes(s_vertices.AsSpan()),
+                MemoryMarshal.AsBytes(geometry.Vertices.AsSpan()),
                 SDL.GPUBufferUsageFlags.Vertex);
             indexBuffer = device.CreateBuffer(
-                MemoryMarshal.AsBytes(s_indices.AsSpan()),
+                MemoryMarshal.AsBytes(geometry.Indices.AsSpan()),
                 SDL.GPUBufferUsageFlags.Index);
             SDL.GPUTextureFormat depthFormat = ChooseDepthFormat(device.Handle);
             pipeline = CreatePipeline(
@@ -185,6 +132,7 @@ public sealed class CubeRenderer : IDisposable
                 vertexBuffer,
                 indexBuffer,
                 pipeline,
+                (uint)geometry.Indices.Length,
                 depthFormat);
         }
         catch
@@ -358,7 +306,7 @@ public sealed class CubeRenderer : IDisposable
                 uniformBytes,
                 (uint)uniformBytes.Length);
 
-            SDL.DrawGPUIndexedPrimitives(renderPass, IndexCount, 1, 0, 0, 0);
+            SDL.DrawGPUIndexedPrimitives(renderPass, _indexCount, 1, 0, 0, 0);
         }
 
         SDL.EndGPURenderPass(renderPass);

@@ -4,6 +4,9 @@
     <Project Path="examples/HelloTriangle/HelloTriangle.csproj" />
   </Folder>
   <Folder Name="/src/" />
+  <Folder Name="/src/core/">
+    <Project Path="src/core/Nymeria.Core/Nymeria.Core.csproj" />
+  </Folder>
   <Folder Name="/src/graphics/">
     <Project Path="src/graphics/Nymeria.Graphics/Nymeria.Graphics.csproj" />
   </Folder>
@@ -11,6 +14,7 @@
     <Project Path="src/platform/Nymeria.Platform/Nymeria.Platform.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Nymeria.Core.Tests/Nymeria.Core.Tests.csproj" />
     <Project Path="tests/Nymeria.Platform.Tests/Nymeria.Platform.Tests.csproj" />
   </Folder>
 </Solution>
