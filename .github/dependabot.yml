@@ -1,0 +1,7 @@
+# NuGet updates are intentionally deferred until a .NET project exists.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
