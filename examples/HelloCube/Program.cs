@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Numerics;
+using Nymeria.Graphics;
 using Nymeria.Platform;
 using SDL3;
 
@@ -16,6 +18,9 @@ internal static class Program
         {
             using Window window = Window.Create(new WindowOptions());
             using CubeRenderer renderer = CubeRenderer.Create(window.Handle);
+
+            var camera = new Camera(new Vector3(0.0f, 1.0f, 9.0f));
+            using var controls = new FlyCameraControls(window.Handle, camera);
 
             var clock = Stopwatch.StartNew();
             double previousSeconds = clock.Elapsed.TotalSeconds;
@@ -37,7 +42,10 @@ internal static class Program
                     break;
                 }
 
-                renderer.Render(rotationRadians);
+                // Read input after SDL has pumped events so the cached keyboard
+                // and mouse state is current for this frame.
+                controls.Update((float)deltaSeconds);
+                renderer.Render(camera, rotationRadians);
 
                 long elapsedMilliseconds =
                     (Stopwatch.GetTimestamp() - frameStart) * 1000 / Stopwatch.Frequency;

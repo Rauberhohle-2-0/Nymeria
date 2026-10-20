@@ -6,8 +6,8 @@ using SDL3;
 namespace HelloCube;
 
 /// <summary>
-/// Draws one rotating, depth-tested cube into a native window using SDL3's GPU
-/// API.
+/// Draws several depth-tested cubes into a native window using SDL3's GPU API.
+/// The camera controls which part of the scene is visible.
 /// </summary>
 /// <remarks>
 /// This example uses SDL's Metal backend and Metal Shading Language (MSL)
@@ -24,11 +24,20 @@ public sealed class CubeRenderer : IDisposable
     private const uint IndexCount = 36;
 
     private const float HalfExtent = 1.0f;
-    private const float CameraDistance = 5.0f;
-    private const float FieldOfViewRadians = MathF.PI / 4.0f;
-    private const float NearPlane = 0.1f;
-    private const float FarPlane = 100.0f;
-    private const float FixedTiltRadians = MathF.PI / 7.0f;
+
+    // Fixed cube positions make camera movement and perspective easy to verify.
+    // Only the central cube rotates, preserving the previous milestone without
+    // moving any cube from its position.
+    private static readonly CubePlacement[] s_cubes =
+    [
+        new(new Vector3(0.0f, 0.0f, 0.0f), 1.2f, 0.0f, 0.45f, Spins: true),
+        new(new Vector3(-3.5f, 0.0f, -1.0f), 0.7f, 0.6f, 0.1f),
+        new(new Vector3(3.5f, 0.0f, -1.0f), 0.7f, -0.6f, -0.1f),
+        new(new Vector3(-2.2f, 2.4f, -4.0f), 0.55f, 0.9f, 0.35f),
+        new(new Vector3(2.2f, -2.4f, -4.0f), 0.55f, -0.9f, -0.35f),
+        new(new Vector3(-4.5f, 1.0f, -7.0f), 0.9f, 0.3f, 0.1f),
+        new(new Vector3(4.5f, -1.0f, -7.0f), 0.9f, -0.3f, -0.1f),
+    ];
 
     // Twenty-four vertices: four per face. Corners are duplicated because each
     // face has its own color. Sharing the eight logical corners would blend
@@ -211,14 +220,15 @@ public sealed class CubeRenderer : IDisposable
     }
 
     /// <summary>
-    /// Acquires a swapchain texture and draws one depth-tested cube. Frames
-    /// without a drawable texture, such as while the window is minimized, are
-    /// skipped.
+    /// Acquires a swapchain texture and draws the scene. Frames without a
+    /// drawable texture, such as while the window is minimized, are skipped.
     /// </summary>
-    /// <param name="rotationRadians">Model rotation around the cube's Y axis.</param>
-    public void Render(double rotationRadians)
+    /// <param name="camera">The camera used to build the view and projection.</param>
+    /// <param name="rotationRadians">Rotation of the central cube around its Y axis.</param>
+    public void Render(Camera camera, double rotationRadians)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(camera);
 
         if ((SDL.GetWindowFlags(_window) & SDL.WindowFlags.Minimized) != 0)
         {
@@ -263,18 +273,11 @@ public sealed class CubeRenderer : IDisposable
 
         EnsureDepthTexture(width, height);
 
-        Matrix4x4 mvp = CreateModelViewProjection(
-            rotationRadians,
-            (float)width / height);
+        float aspectRatio = (float)width / height;
+        Matrix4x4 view = camera.ViewMatrix;
+        Matrix4x4 projection = camera.CreateProjectionMatrix(aspectRatio);
 
         Span<Matrix4x4> matrixData = stackalloc Matrix4x4[1];
-        matrixData[0] = mvp;
-        ReadOnlySpan<byte> uniformBytes = MemoryMarshal.AsBytes(matrixData);
-        SDL.PushGPUVertexUniformData(
-            commandBuffer,
-            0,
-            uniformBytes,
-            (uint)uniformBytes.Length);
 
         var colorTarget = new SDL.GPUColorTargetInfo
         {
@@ -344,7 +347,20 @@ public sealed class CubeRenderer : IDisposable
 
         SDL.SetGPUViewport(renderPass, in viewport);
         SDL.SetGPUScissor(renderPass, in scissor);
-        SDL.DrawGPUIndexedPrimitives(renderPass, IndexCount, 1, 0, 0, 0);
+
+        foreach (CubePlacement cube in s_cubes)
+        {
+            matrixData[0] = CreateModelMatrix(cube, rotationRadians) * view * projection;
+            ReadOnlySpan<byte> uniformBytes = MemoryMarshal.AsBytes(matrixData);
+            SDL.PushGPUVertexUniformData(
+                commandBuffer,
+                0,
+                uniformBytes,
+                (uint)uniformBytes.Length);
+
+            SDL.DrawGPUIndexedPrimitives(renderPass, IndexCount, 1, 0, 0, 0);
+        }
+
         SDL.EndGPURenderPass(renderPass);
 
         if (!SDL.SubmitGPUCommandBuffer(commandBuffer))
@@ -477,34 +493,32 @@ public sealed class CubeRenderer : IDisposable
         return texture;
     }
 
-    private static Matrix4x4 CreateModelViewProjection(
-        double rotationRadians,
-        float aspectRatio)
+    private static Matrix4x4 CreateModelMatrix(
+        in CubePlacement cube,
+        double rotationRadians)
     {
-        // Nymeria's example world and eye spaces are right-handed with +Y up
-        // and the camera looking down -Z. System.Numerics' CreateLookAt and
-        // CreatePerspectiveFieldOfView use the same handedness, and the
-        // perspective matrix already maps depth to [0, 1], which is what SDL3's
-        // GPU NDC (and Metal) expects. No y-flip or depth remap is applied.
-        //
-        // System.Numerics uses row vectors, so composition is model * view *
-        // projection. The shader multiplies this uploaded row-major matrix as
-        // a column-major MSL matrix; see Shaders/Cube.metal.
-        Matrix4x4 model =
-            Matrix4x4.CreateRotationY((float)rotationRadians) *
-            Matrix4x4.CreateRotationX(FixedTiltRadians);
-        Matrix4x4 view = Matrix4x4.CreateLookAt(
-            new Vector3(0.0f, 0.0f, CameraDistance),
-            Vector3.Zero,
-            Vector3.UnitY);
-        Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(
-            FieldOfViewRadians,
-            aspectRatio,
-            NearPlane,
-            FarPlane);
+        // System.Numerics uses row vectors, so the model matrix composes as
+        // scale * rotation * translation. The example's world and eye spaces
+        // are right-handed with +Y up. The view and projection come from the
+        // camera, which uses System.Numerics' CreateLookAt and
+        // CreatePerspectiveFieldOfView; the perspective matrix maps depth to
+        // [0, 1], matching SDL3 GPU and Metal. No y-flip or depth remap is
+        // applied.
+        float yawRadians = cube.YawRadians +
+            (cube.Spins ? (float)rotationRadians : 0.0f);
 
-        return model * view * projection;
+        return Matrix4x4.CreateScale(cube.Scale) *
+            Matrix4x4.CreateRotationY(yawRadians) *
+            Matrix4x4.CreateRotationX(cube.TiltRadians) *
+            Matrix4x4.CreateTranslation(cube.Position);
     }
+
+    private readonly record struct CubePlacement(
+        Vector3 Position,
+        float Scale,
+        float YawRadians,
+        float TiltRadians,
+        bool Spins = false);
 
     private static IntPtr CreatePipeline(
         IntPtr device,

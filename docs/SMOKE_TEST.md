@@ -54,39 +54,72 @@ end apply to both.
 
 1. **Window appears.** A native window opens without a console error.
 2. **Title is correct.** The title bar reads `Nymeria`.
-3. **Cube renders.** A cube is visible in the center of a dark background. It
+3. **Cubes render.** Seven cubes are visible against the dark background. Each
    has six distinct solid face colors, clearly perspective-projected edges, and
-   no blank or black output. If the initial orientation hides some faces, wait
-   for it to rotate.
-4. **Depth occlusion is correct.** Near faces hide the faces behind them. No
-   back face draws over a front face, and the cube reads as a solid object rather
-   than a flat arrangement of triangles or a wireframe.
-5. **Rotation is smooth and continuous.** The cube turns steadily around its
-   vertical axis with a fixed tilt, completing a full turn in roughly seven
-   seconds. It does not stutter, jump, or stop. Motion uses elapsed time, so it
-   should look the same on a slower or busier machine.
-6. **Resize works.** Drag a corner or edge, including to a very wide and a very
-   tall window. The cube keeps its proportions instead of stretching, stays
-   centered, and is not clipped. The window stays responsive and does not crash,
-   hang, or show a stale aspect ratio.
-7. **High-DPI works.** On a Retina display, the cube edges are drawn at the
-   display's native pixel density rather than an upscaled low-resolution image.
-8. **Minimize and restore work.** Minimize the window for a few seconds, then
-   restore it. The cube reappears with correct depth and proportions, and the
-   process does not crash or freeze while minimized.
-9. **Close button exits.** Click the red close button. The process ends, the
-   terminal prompt returns, and `echo $?` reports `0`.
-10. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
+   no blank or black output. The central cube rotates; the other six stay at
+   fixed positions.
+4. **Depth occlusion is correct.** Near faces hide the faces behind them, and
+   nearer cubes hide farther cubes where they overlap. No back face draws over a
+   front face, and the scene reads as solid objects rather than flat triangles or
+   a wireframe.
+5. **Initial framing is stable.** Without input, the camera does not drift, and
+   the cubes keep their positions while only the central cube rotates.
+6. **Movement works.** Hold `W` and `S` to move toward and away from the scene
+   along the horizontal view direction. Hold `A` and `D` to strafe left and
+   right. Movement is smooth and follows the current horizontal facing.
+7. **Vertical movement works.** Hold `Space` to rise and `Left Control` to
+   descend. Moving up or down does not change the direction used by `W`/`S`.
+8. **Mouse look works only while held.** Hold the right mouse button and move the
+   mouse. The view turns left/right and up/down, the cursor is hidden, and motion
+   continues at the window edge. Release the button and move the mouse again: the
+   view must not rotate and the cursor must be visible.
+9. **Capture recovery works.** Hold the right mouse button, then focus another
+   application (for example with `Cmd+Tab`) while still holding it. The cursor
+   must be restored. Minimize and restore the window while looking. Shut down
+   normally. In every case the cursor is visible and no capture is left behind.
+10. **Sprint works.** Hold `Shift` with a movement key. Movement is visibly faster
+    than without `Shift`.
+11. **Diagonal movement is normalized.** Hold `W`+`D` and compare with `D` alone.
+    Diagonal speed must not exceed single-axis speed. Do the same with
+    `W`+`Space`.
+12. **Timing is stable.** Movement speed looks consistent at the normal frame
+    rate. Drag the window or switch focus to stall the process briefly, then
+    return: the camera must resume without a large jump.
+13. **Pitch is clamped.** Look straight up and straight down. The view stops short
+    of vertical and never flips, spins, or becomes degenerate.
+14. **Resize works.** Drag a corner or edge, including to a very wide and a very
+    tall window. Cube proportions stay correct, the scene is not stretched, and
+    the window stays responsive without a stale aspect ratio.
+15. **High-DPI works.** On a Retina display, cube edges are drawn at the display's
+    native pixel density rather than an upscaled low-resolution image.
+16. **Minimize and restore work.** Minimize the window for a few seconds, then
+    restore it. The scene reappears with correct depth and proportions, and the
+    process does not crash or freeze while minimized.
+17. **Close button exits.** Click the red close button. The process ends, the
+    terminal prompt returns, and `echo $?` reports `0`. The cursor is visible.
+18. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
     The process ends with status code `0`.
-11. **Repeated cycles work.** Repeat launch and close at least three times. Each
+19. **Repeated cycles work.** Repeat launch and close at least three times. Each
     launch opens one window; each close leaves no orphan process or depth
     resource warning.
-12. **No busy-spin.** The loop renders continuously at about 60 frames per
+20. **No busy-spin.** The loop renders continuously at about 60 frames per
     second, so CPU use is higher than the idle triangle, but it must stay well
     below one full core. Activity Monitor must not show a pegged core, and memory
     use must stay stable over several minutes.
-13. **No unhandled exceptions.** No exception text appears in the terminal during
-    normal launch, rotation, resize, minimize, restore, or shutdown.
+21. **No unhandled exceptions.** No exception text appears in the terminal during
+    normal launch, movement, mouse look, resize, minimize, restore, or shutdown.
+
+macOS notes:
+
+- The movement keys are read by physical scancode, so `W`/`A`/`S`/`D` occupy the
+  same positions on other keyboard layouts.
+- Use a two-finger or configured secondary click on a trackpad for mouse look.
+  If secondary click is mapped to Control-click, that click also presses the
+  key used to descend.
+- If the system or a remote desktop session refuses relative mouse mode, mouse
+  look still follows relative motion but the cursor may remain visible and
+  rotation stops at the screen edge. Record this as a limitation rather than a
+  rendering failure.
 
 Check the exit code after a normal close:
 

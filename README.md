@@ -3,18 +3,18 @@
 Nymeria is a small, understandable, cross-platform 3D engine written in C#. It is
 intended to remain approachable and may later be extended for retro-game
 compatibility. The repository currently contains its first runnable applications:
-native macOS windows built on SDL3 that draw a GPU-rendered triangle and a
-rotating, depth-tested cube.
+native macOS windows built on SDL3 that draw a GPU-rendered triangle and an
+interactive, depth-tested cube scene.
 
 ## Current status
 
 - **Implemented now:** .NET 10 solution, the `Nymeria.Platform` window API,
-  `Nymeria.Graphics` with reusable Metal GPU device infrastructure,
-  `examples/HelloTriangle`, `examples/HelloCube`, platform-independent unit
-  tests, CI restore/build/test on macOS, Windows, and Linux, repository checks,
-  and Dependabot updates for GitHub Actions and NuGet.
-- **Planned later:** `Nymeria.Core`, input, the engine loop, additional graphics
-  backends, and Windows/Linux rendering. See
+  `Nymeria.Graphics` with reusable Metal GPU device infrastructure and camera
+  math, `examples/HelloTriangle`, the interactive `examples/HelloCube`,
+  platform-independent unit tests, CI restore/build/test on macOS, Windows, and
+  Linux, repository checks, and Dependabot updates for GitHub Actions and NuGet.
+- **Planned later:** `Nymeria.Core`, engine-level input, the engine loop,
+  additional graphics backends, and Windows/Linux rendering. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the authoritative distinction.
 
 ## Prerequisites (macOS)
@@ -47,10 +47,12 @@ dotnet run --project examples/HelloCube/HelloCube.csproj
 ```
 
 A resizable native window titled `Nymeria` opens at 960 × 540. `HelloTriangle`
-draws one red/green/blue triangle. `HelloCube` draws a rotating cube with six
-solid-colored faces, perspective projection, and depth testing. Close either
-window with the red close button or the standard macOS quit shortcut (`Cmd+Q`).
-The command exits with status code `0` on a normal shutdown.
+draws one red/green/blue triangle. `HelloCube` draws seven cubes at fixed
+positions with perspective projection and depth testing, plus a free-fly camera.
+Move with `W`/`A`/`S`/`D`, `Space`, and `Left Control`; hold `Shift` to go
+faster; hold the right mouse button and move the mouse to look around. Close
+either window with the red close button or the standard macOS quit shortcut
+(`Cmd+Q`). The command exits with status code `0` on a normal shutdown.
 
 The startup path prints an actionable error and exits with status code `1` if the
 native SDL3 library is missing or mismatched, SDL initialization fails, the Metal
@@ -61,8 +63,8 @@ or pipeline cannot be created.
 
 Both examples use SDL3's GPU API on the Metal backend. There is no direct Metal
 interop and no software fallback. `Nymeria.Graphics` provides the reusable GPU
-device; each example owns its geometry, renderer, shader, pipeline, and, for the
-cube, its depth target.
+device and the `Camera` math type; each example owns its geometry, renderer,
+shader, pipeline, input mapping, and, for the cube scene, its depth target.
 
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal` and
 `examples/HelloCube/Shaders/Cube.metal`. They are embedded into their examples
@@ -74,11 +76,16 @@ drawing again, so idle redraws stay near ten per second. It renders in a centere
 square viewport derived from the swapchain's physical pixels, so it keeps its
 proportions on resize and on high-DPI displays.
 
-`HelloCube` renders continuously, targeting about 16 ms per frame, and advances
-its rotation from elapsed time with a 0.1 s per-frame cap. It uses
-`System.Numerics` for a right-handed view and perspective projection, uploads one
-model-view-projection matrix per frame, and clears and tests a depth buffer so
-near faces occlude far ones. Its depth target and pipeline state live in the
+`HelloCube` renders continuously, targeting about 16 ms per frame. Its reusable
+`Camera` in `Nymeria.Graphics` stores position, yaw, and pitch, clamps pitch, and
+builds a right-handed view matrix and a perspective projection from the actual
+drawable aspect ratio. The example moves the camera from measured elapsed time
+with a 0.1 s per-frame cap, normalizes diagonal movement, and maps SDL3 keyboard
+and mouse state to the camera. Holding the right mouse button enables relative
+mouse mode; releasing it, losing focus, minimizing, or exiting restores the
+cursor. Each cube gets its own model matrix, composed and uploaded with the same
+row-major convention as before. The central cube's rotation is also advanced by
+elapsed time with the same cap. The depth target and pipeline state live in the
 example, not in `Nymeria.Graphics`.
 
 Both examples skip rendering while minimized and recover when a drawable is
@@ -113,7 +120,7 @@ manually; it is not claimed as a headless CI result.
 .github/        Repository checks and Dependabot configuration
 docs/           Architecture, Git policy, and manual smoke test
 src/core/       Future Nymeria.Core (placeholder)
-src/graphics/   Nymeria.Graphics reusable Metal GPU infrastructure
+src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
 examples/       HelloTriangle and HelloCube runnable examples
 tests/          Nymeria.Platform.Tests unit tests

@@ -25,12 +25,13 @@ extension is a direction, not a current feature.
 - `Nymeria.slnx`, containing the C# projects that exist today.
 - `Nymeria.Platform`, a class library exposing a minimal native window API.
 - `Nymeria.Graphics`, a class library that owns the SDL3 GPU device and window
-  presentation claim and provides reusable MSL shader and buffer creation.
+  presentation claim, provides reusable MSL shader and buffer creation, and
+  contains a reusable, SDL-independent free-fly `Camera`.
 - `examples/HelloTriangle`, a console executable that opens the window and draws
   the triangle with example-owned shaders and geometry.
-- `examples/HelloCube`, a console executable that draws a rotating, perspective-
-  projected, depth-tested cube with example-owned shaders, geometry, matrices,
-  and depth target.
+- `examples/HelloCube`, an interactive console executable that draws multiple
+  fixed-position cubes with a free-fly camera, perspective projection, depth
+  testing, example-owned shaders and geometry, and an example-owned depth target.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - SDL3 windowing and GPU rendering through the pinned `SDL3-CS` and
   `SDL3-CS.MacOS` packages.
@@ -46,7 +47,7 @@ extension is a direction, not a current feature.
 The following are future work and are **not** implemented or approved in detail:
 
 - `Nymeria.Core`.
-- Input handling and an engine loop.
+- Engine-level input handling and an engine loop.
 - Additional graphics backends and a rendering abstraction.
 
 Names and responsibilities in this section are planning boundaries, not
@@ -80,9 +81,12 @@ would require maintainer approval.
 `src/platform/` contains the `Nymeria.Platform` project, `src/graphics/`
 contains `Nymeria.Graphics`, `examples/` contains `HelloTriangle` and
 `HelloCube`, and `tests/` contains `Nymeria.Platform.Tests`. `src/core/` still
-contains a `.gitkeep` placeholder because it has no source code yet. Git does not
-track empty directories, so the placeholder keeps the intended layout visible in
-a fresh clone without introducing speculative scaffolding.
+contains a `.gitkeep` placeholder because it has no source code yet. The camera
+lives in `Nymeria.Graphics` rather than in a new project: it is reusable 3D
+rendering math with no SDL, window, or GPU dependency, and creating
+`Nymeria.Core` solely for it would add a project before a second concrete need.
+Git does not track empty directories, so the placeholder keeps the intended
+layout visible in a fresh clone without introducing speculative scaffolding.
 
 ## Windowing
 
@@ -152,6 +156,19 @@ documents their run commands and rendering conventions.
 count to bind data pushed with `SDL_PushGPUVertexUniformData`; shaders that
 declare no uniform buffer leave it at the default of zero.
 
+### Camera
+
+`Nymeria.Graphics` contains `Camera`, a small first-person camera built on
+`System.Numerics`. It owns position, yaw, pitch, movement speed, mouse
+sensitivity, field of view, and clip planes. It exposes a right-handed view
+matrix and a perspective projection factory that takes the drawable aspect
+ratio. Pitch is clamped below a right angle, yaw is wrapped, non-finite rotation
+deltas are ignored, and diagonal movement is normalized.
+
+The type has no SDL3, window, GPU-device, or example dependency. It is not a
+scene graph, controller, input system, or game-loop component. Input mapping,
+timing, and demo geometry remain in the example that uses it.
+
 ### HelloTriangle
 
 `TriangleRenderer` owns the triangle vertex data, the triangle shader resource,
@@ -188,23 +205,34 @@ The loop does not spin.
 `CubeRenderer` adds perspective projection, a uniform matrix, and a depth buffer.
 It owns 24 vertices (four per face, duplicated so every face has a solid color),
 36 16-bit indices, the cube shaders, both buffers, the pipeline, and the depth
-texture.
+texture. The example places seven cubes at fixed positions and reuses that
+geometry for each draw with its own model matrix. The central cube keeps the
+previous milestone's rotation; the other cubes stay fixed so camera movement and
+perspective are easy to judge.
 
 The cube shader asset is `examples/HelloCube/Shaders/Cube.metal`, embedded under
 `HelloCube.Shaders.Cube.metal`. The vertex shader declares one uniform buffer at
 slot 0; the example passes `uniformBufferCount: 1` to `CreateShader` and pushes
-one 64-byte model-view-projection matrix per frame. The fragment shader passes
-the interpolated face color through.
+one 64-byte model-view-projection matrix before each cube's draw call. The
+fragment shader passes the interpolated face color through.
 
-World and eye space are right-handed with +Y up and the camera looking down -Z.
-The example uses `System.Numerics` instead of a custom math library:
-`CreateLookAt` and `CreatePerspectiveFieldOfView` compose with the model matrix
-as `model * view * projection`. The matrix is uploaded unchanged. Because
-`System.Numerics` is row-major with row vectors and MSL is column-major with
-column vectors, MSL reads those bytes as the transpose, making `mvp * position`
-equivalent to `position * mvp` in C#. The projection already maps depth to
-`[0, 1]`, which matches SDL3 GPU and Metal clip space, so there is no y-flip or
-depth remap. `examples/README.md` records the full conventions.
+The camera comes from `Nymeria.Graphics.Camera`. Its position, yaw, and pitch
+define a right-handed view with +Y up and -Z forward at zero rotation.
+`CreateLookAt` and `CreatePerspectiveFieldOfView` use the same convention, and
+the projection maps depth to `[0, 1]`, which matches SDL3 GPU and Metal clip
+space. The example composes `model * view * projection` with `System.Numerics`
+row vectors and uploads the matrix unchanged. MSL is column-major with column
+vectors, so it reads those bytes as the transpose, making `mvp * position`
+equivalent to `position * mvp` in C#. There is no y-flip or depth remap.
+`examples/README.md` records the full conventions.
+
+Input mapping lives in `examples/HelloCube/FlyCameraControls.cs`, not in an
+engine project. It reads SDL's cached keyboard and mouse state after
+`Window.ProcessEvents` pumps the queue. Holding the right mouse button enables
+window-relative mouse mode; releasing it, losing input focus, minimizing, or
+disposing disables relative mode and restores the cursor. The example ignores
+input while the window lacks input focus. Close handling and the single event
+loop remain in `Nymeria.Platform`.
 
 The example picks the first supported depth format among `D32Float`,
 `D24Unorm`, and `D16Unorm`, and uses it for both the depth texture and the
@@ -212,26 +240,34 @@ pipeline's depth-stencil state. Depth testing and depth writes are enabled with
 the `Less` comparison; culling is disabled, so the depth test resolves occlusion.
 The depth target is cleared to `1.0` each frame and not stored. When the
 swapchain's physical size changes, the depth texture is recreated and the GPU is
-idle before the old texture is released.
+idle before the old texture is released. Projection uses that physical drawable
+size, so resizing and high-DPI displays keep the correct aspect ratio.
 
-`HelloCube` renders continuously: it processes events without blocking, renders,
-then delays the rest of a 16 ms frame budget. Rotation is advanced by elapsed
-time with a 0.1 s per-frame cap, so a stalled or throttled frame cannot make the
-cube jump. A minimized window skips rendering. If a zero-sized drawable is
-acquired, the command buffer is submitted empty instead of cancelled, because
-SDL only permits cancellation before swapchain acquisition.
+`HelloCube` renders continuously: it processes events without blocking, updates
+the camera, renders, then delays the rest of a 16 ms frame budget. Movement and
+the central cube's rotation are advanced by measured elapsed time with a 0.1 s
+per-frame cap, so a stalled or throttled frame cannot make either jump. Diagonal
+movement is normalized by the camera, and holding Shift applies a speed
+multiplier. A minimized window skips rendering and input changes. If a
+zero-sized drawable is acquired, the command buffer is submitted empty instead
+of cancelled, because SDL only permits cancellation before swapchain
+acquisition; the projection is never built from a zero height.
 
 ### Ownership and lifetime
 
 - `GpuDevice` owns the GPU device and window claim. Each renderer owns its
-  shaders, geometry buffers, pipeline, and, for the cube, the depth texture. A
-  renderer must be created after the window and disposed before it.
+  shaders, geometry buffers, pipeline, and, for the cube scene, the depth
+  texture. A renderer must be created after the window and disposed before it.
 - Each `Dispose` waits for the GPU to become idle, releases its resources, and
   then disposes the `GpuDevice`, which releases the window claim and destroys the
   device. Initialization failures release whatever was created in reverse order
   and then rethrow.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
+- `HelloCube` owns its `Camera` instance and its example input mapping. The
+  camera has no unmanaged resources. The input mapping disables relative mouse
+  mode and discards pending mouse motion during disposal, before the window is
+  destroyed.
 - Neither renderer creates per-frame GPU resources. Command buffers and swapchain
   textures are owned and recycled by SDL.
 
@@ -242,10 +278,11 @@ Limitations in this version:
   packages, which are not implemented.
 - Apple Silicon and Intel Macs both use Metal. The macOS native package contains
   both architectures.
-- There is no reusable camera, scene graph, texture, lighting, or material
-  system. `HelloCube` computes one hard-coded model-view-projection matrix; the
-  triangle remains static clip-space geometry.
-- GPU output is not validated by CI. [SMOKE_TEST.md](SMOKE_TEST.md) covers it.
+- There is no scene graph, texture, lighting, material system, collision system,
+  or engine-level input system. `Camera` is reusable math, but input mapping and
+  timing stay in `HelloCube`; the triangle remains static clip-space geometry.
+- GPU output and interactive input are not validated by CI.
+  [SMOKE_TEST.md](SMOKE_TEST.md) covers them.
 
 ## Dependency direction
 
@@ -273,11 +310,12 @@ Nymeria.Graphics     Nymeria.Platform
 because `Nymeria.Core` does not exist and neither project has a demonstrated need
 for it. They do not reference each other: each example creates the window and
 passes `Window.Handle` to its renderer, which creates a `GpuDevice` in
-`Nymeria.Graphics`; the dependency remains in the example. No engine project
-references an example. Both examples reference both engine projects, and
-`Nymeria.Platform.Tests` references the project under test. No interfaces or
-abstractions are created to enforce the future direction yet. Adding them
-speculatively would violate YAGNI.
+`Nymeria.Graphics`; the dependency remains in the example. `Camera` sits in
+`Nymeria.Graphics` and references only `System.Numerics`, so it adds no project
+reference or platform dependency. No engine project references an example. Both
+examples reference both engine projects, and `Nymeria.Platform.Tests` references
+the project under test. No interfaces or abstractions are created to enforce the
+future direction yet. Adding them speculatively would violate YAGNI.
 
 ## Technical choices
 
@@ -293,8 +331,9 @@ The following choices are implemented:
   `GpuDevice`; the examples embed their own `.metal` files and SDL compiles them
   at runtime. No direct Metal interop or shader compiler is used.
 - **Math:** `System.Numerics` vectors and matrices, with no custom math library.
-  `HelloCube` uploads one row-major model-view-projection matrix and lets MSL
-  interpret it as column-major.
+  `Camera` uses it for yaw/pitch view and projection math. `HelloCube` composes
+  one model-view-projection matrix per cube, uploads row-major bytes, and lets
+  MSL interpret them as column-major.
 - **External packages:** the SDL3 binding and macOS native runtime, plus the
   xUnit test packages `xunit` 2.9.3, `xunit.runner.visualstudio` 4.0.1, and
   `Microsoft.NET.Test.Sdk` 18.11.0. The tests cover only platform-independent
