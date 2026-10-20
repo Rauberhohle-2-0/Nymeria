@@ -1,0 +1,113 @@
+name: Repository checks
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository-checks:
+    name: Repository checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Validate repository foundation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            ".editorconfig"
+            ".gitignore"
+            "AGENTS.md"
+            "README.md"
+            "LICENSE"
+            "docs/ARCHITECTURE.md"
+            "docs/GIT_GUIDELINES.md"
+            ".github/dependabot.yml"
+            ".github/workflows/repository-checks.yml"
+          )
+          required_dirs=(
+            "src/core"
+            "src/graphics"
+            "src/platform"
+            "examples"
+            "tests"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -s "$file" ]]; then
+              echo "::error file=$file::Required file is missing or empty."
+              exit 1
+            fi
+          done
+
+          for dir in "${required_dirs[@]}"; do
+            if [[ ! -d "$dir" ]]; then
+              echo "::error::Required directory '$dir' is missing."
+              exit 1
+            fi
+          done
+
+          echo "Required files and directories are present."
+
+          if [[ -z "$(git ls-files '*.md')" ]]; then
+            echo "::error::No Markdown files are tracked."
+            exit 1
+          fi
+
+          failed=0
+          while IFS= read -r doc; do
+            while IFS= read -r link; do
+              target=${link#](}
+              target=${target%)}
+              case "$target" in
+                ""|\#*|http://*|https://*|mailto:*)
+                  continue
+                  ;;
+              esac
+              target=${target%%#*}
+              target=${target%% *}
+              if [[ -z "$target" ]]; then
+                continue
+              fi
+              if [[ ! -e "$(dirname "$doc")/$target" ]]; then
+                echo "::error file=$doc::Broken relative link: $target"
+                failed=1
+              fi
+            done < <(grep -oE '\]\([^)]+\)' "$doc" || true)
+          done < <(git ls-files '*.md')
+
+          if [[ $failed -ne 0 ]]; then
+            exit 1
+          fi
+
+          echo "Relative Markdown links resolve."
+
+          grep -q '^version: 2$' .github/dependabot.yml
+          grep -q 'package-ecosystem: "github-actions"' .github/dependabot.yml
+          grep -q 'directory: "/"' .github/dependabot.yml
+          grep -q 'interval: "weekly"' .github/dependabot.yml
+
+          if grep -qi 'package-ecosystem:.*nuget' .github/dependabot.yml; then
+            echo "::error file=.github/dependabot.yml::NuGet updates must stay disabled until a .NET project exists."
+            exit 1
+          fi
+
+          echo "Dependabot configuration matches the current repository state."
+          echo "Repository checks passed."
