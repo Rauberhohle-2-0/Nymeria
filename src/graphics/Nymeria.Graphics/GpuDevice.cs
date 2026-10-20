@@ -110,6 +110,10 @@ public sealed class GpuDevice : IDisposable
     /// <param name="shaderCode">The MSL source bytes.</param>
     /// <param name="stage">The shader stage to create.</param>
     /// <param name="entryPoint">The MSL function name to use.</param>
+    /// <param name="uniformBufferCount">
+    /// The number of uniform buffers declared by the shader. SDL uses this
+    /// count to bind data pushed with <c>SDL_PushGPU*UniformData</c>.
+    /// </param>
     /// <returns>The native <c>SDL_GPUShader*</c> handle.</returns>
     /// <exception cref="InvalidOperationException">Shader creation fails.</exception>
     /// <remarks>
@@ -119,7 +123,8 @@ public sealed class GpuDevice : IDisposable
     public IntPtr CreateShader(
         byte[] shaderCode,
         SDL.GPUShaderStage stage,
-        string entryPoint)
+        string entryPoint,
+        uint uniformBufferCount = 0)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(shaderCode);
@@ -131,6 +136,7 @@ public sealed class GpuDevice : IDisposable
             {
                 Format = SDL.GPUShaderFormat.MSL,
                 Stage = stage,
+                NumUniformBuffers = uniformBufferCount,
             },
             shaderCode,
             entryPoint);
