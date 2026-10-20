@@ -1,17 +1,24 @@
+using Nymeria.Graphics;
 using Nymeria.Platform;
 
 namespace HelloWindow;
 
 internal static class Program
 {
+    private const int EventWaitMilliseconds = 100;
+
     private static int Main()
     {
         try
         {
             using Window window = Window.Create(new WindowOptions());
+            using TriangleRenderer renderer = TriangleRenderer.Create(window.Handle);
 
-            while (window.ProcessEvents())
+            renderer.Render();
+
+            while (window.ProcessEvents(EventWaitMilliseconds))
             {
+                renderer.Render();
             }
 
             return 0;
@@ -34,7 +41,7 @@ internal static class Program
         }
         catch (InvalidOperationException exception)
         {
-            Console.Error.WriteLine($"Nymeria window startup failed: {exception.Message}");
+            Console.Error.WriteLine($"Nymeria startup failed: {exception.Message}");
             return 1;
         }
         catch (Exception exception)

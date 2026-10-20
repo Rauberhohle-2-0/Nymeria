@@ -27,6 +27,15 @@ public sealed class Window : IDisposable
     }
 
     /// <summary>
+    /// Gets the native <c>SDL_Window*</c> handle used for GPU presentation.
+    /// </summary>
+    /// <remarks>
+    /// The handle remains owned by this window. Do not destroy it or use it after
+    /// the window has been disposed.
+    /// </remarks>
+    public IntPtr Handle => _handle;
+
+    /// <summary>
     /// Initializes SDL video and creates a visible, resizable window.
     /// </summary>
     /// <exception cref="InvalidOperationException">
@@ -66,7 +75,7 @@ public sealed class Window : IDisposable
                 options.Title,
                 options.Width,
                 options.Height,
-                SDL.WindowFlags.Resizable);
+                SDL.WindowFlags.Resizable | SDL.WindowFlags.HighPixelDensity);
 
             if (handle == IntPtr.Zero)
             {

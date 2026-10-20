@@ -3,6 +3,9 @@
     <Project Path="examples/HelloWindow/HelloWindow.csproj" />
   </Folder>
   <Folder Name="/src/" />
+  <Folder Name="/src/graphics/">
+    <Project Path="src/graphics/Nymeria.Graphics/Nymeria.Graphics.csproj" />
+  </Folder>
   <Folder Name="/src/platform/">
     <Project Path="src/platform/Nymeria.Platform/Nymeria.Platform.csproj" />
   </Folder>
