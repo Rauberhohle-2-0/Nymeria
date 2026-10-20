@@ -6,4 +6,7 @@
   <Folder Name="/src/platform/">
     <Project Path="src/platform/Nymeria.Platform/Nymeria.Platform.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Nymeria.Platform.Tests/Nymeria.Platform.Tests.csproj" />
+  </Folder>
 </Solution>

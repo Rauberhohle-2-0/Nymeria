@@ -8,10 +8,10 @@ a native macOS window built on SDL3. Rendering is deliberately not implemented.
 ## Current status
 
 - **Implemented now:** .NET 10 solution, the `Nymeria.Platform` window API,
-  `examples/HelloWindow`, repository checks, and Dependabot updates for GitHub
-  Actions.
-- **Planned later:** automated tests, .NET build/test steps in CI,
-  `Nymeria.Core`, `Nymeria.Graphics`, input, the engine loop, and rendering. See
+  `examples/HelloWindow`, platform-independent unit tests, repository checks, and
+  Dependabot updates for GitHub Actions.
+- **Planned later:** .NET build/test steps in CI, `Nymeria.Core`,
+  `Nymeria.Graphics`, input, the engine loop, and rendering. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the authoritative distinction.
 
 ## Prerequisites (macOS)
@@ -53,8 +53,15 @@ window cannot be created.
 
 ## Tests
 
-There is no test project yet. It is added with the platform-independent window
-option tests.
+Run the platform-independent unit tests:
+
+```bash
+dotnet test Nymeria.slnx
+```
+
+The tests cover `WindowOptions` defaults and validation. There are deliberately
+no fake GUI tests: native window behavior is covered by the manual smoke test
+below and is not claimed as a headless CI result.
 
 ## Manual smoke test
 
@@ -70,7 +77,7 @@ src/core/       Future Nymeria.Core (placeholder)
 src/graphics/   Future Nymeria.Graphics (placeholder)
 src/platform/   Nymeria.Platform native window project
 examples/       HelloWindow runnable example
-tests/          Future automated tests (placeholder)
+tests/          Nymeria.Platform.Tests unit tests
 ```
 
 ## Documentation
