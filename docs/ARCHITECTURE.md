@@ -20,26 +20,25 @@ extension is a direction, not a current feature.
 - A single Git monorepo with the documented directory layout.
 - [Architecture documentation](ARCHITECTURE.md) and
   [Git guidelines](GIT_GUIDELINES.md).
-- Root `.editorconfig` and `.gitignore` files.
+- Root `.editorconfig`, `.gitignore`, and `Directory.Build.props` files.
+- .NET SDK 10.0.402 pinned in `global.json`, targeting `net10.0`.
+- `Nymeria.slnx`, containing the C# projects that exist today.
+- `Nymeria.Platform`, a class library exposing a minimal native window API.
+- SDL3 windowing through the pinned `SDL3-CS` and `SDL3-CS.MacOS` packages.
 - A `Repository checks` GitHub Actions workflow for repository foundations.
 - Weekly Dependabot updates for GitHub Actions, auto-merged only after
   repository checks pass.
-- Empty organizational directories kept in Git with `.gitkeep` files.
-
-There is no engine implementation. No C# project, solution, package reference,
-windowing layer, renderer, or runtime dependency has been added.
+- Organizational directories kept in Git with `.gitkeep` files where empty.
 
 ### Planned later
 
 The following are future work and are **not** implemented or approved in detail:
 
-- C# projects using the root namespace `Nymeria`: `Nymeria.Core`,
-  `Nymeria.Graphics`, and `Nymeria.Platform`.
-- The `Nymeria.slnx` solution file.
-- A window, input handling, and an engine loop.
+- `Nymeria.Core` and `Nymeria.Graphics`.
+- A runnable `HelloWindow` example and automated tests.
+- Build and test steps in CI once the example and tests exist.
+- Input handling and an engine loop.
 - A rendering abstraction and at least one graphics backend.
-- Runnable examples and automated tests.
-- Build and test steps in CI once projects exist.
 
 Names and responsibilities in this section are planning boundaries, not
 interfaces or commitments to a specific design.
@@ -63,20 +62,62 @@ would require maintainer approval.
 | --- | --- |
 | `src/core/` | Platform-independent engine fundamentals, eventually `Nymeria.Core`. |
 | `src/graphics/` | Rendering abstractions and graphics backends, eventually `Nymeria.Graphics`. |
-| `src/platform/` | Windowing, input, and operating-system integration, eventually `Nymeria.Platform`. |
+| `src/platform/` | `Nymeria.Platform`: windowing, input, and operating-system integration. |
 | `examples/` | Small runnable programs that demonstrate engine usage. |
 | `tests/` | Automated unit and integration tests for the engine projects. |
 | `docs/` | Authoritative project and architecture decisions. |
 | `.github/` | Repository automation: checks and dependency updates. |
 
-The source directories currently contain only `.gitkeep` files. Git does not
-track empty directories, so these placeholders keep the intended layout visible
-in a fresh clone without introducing source code or project files.
+`src/platform/` contains the `Nymeria.Platform` project. `src/core/`,
+`src/graphics/`, `examples/`, and `tests/` still contain `.gitkeep`
+placeholders because they have no source code yet. Git does not track empty
+directories, so these placeholders keep the intended layout visible in a fresh
+clone without introducing speculative scaffolding.
+
+## Windowing
+
+`Nymeria.Platform` owns native window creation. Its public surface is deliberately
+small:
+
+- `WindowOptions` validates and carries the title and initial client size. The
+  defaults are the title `Nymeria` and 960 × 540.
+- `Window.Create` initializes SDL video and creates a visible, resizable native
+  window.
+- `Window.ProcessEvents` waits for at least one event, drains the queue, and
+  reports whether the window should stay open. The close button and SDL quit
+  events, including the macOS standard quit action, end the loop.
+- `Window.Dispose` destroys the window and shuts SDL down deterministically,
+  including when creation fails after SDL initialization.
+
+Windowing uses SDL3 through two pinned NuGet packages:
+
+| Package | Version | Purpose | License |
+| --- | --- | --- | --- |
+| `SDL3-CS` | 3.4.18 | Managed SDL3 binding | zlib |
+| `SDL3-CS.MacOS` | 3.4.18 | Native `libSDL3.dylib` for `osx-arm64` and `osx-x64` | zlib |
+
+`Nymeria.Platform.csproj` owns both package references, so examples receive the
+binding and native runtime transitively. NuGet restores the dylibs from
+nuget.org; no Homebrew installation, manual download, or custom Cocoa interop is
+involved. Task 02 validates only the macOS native runtime. The binding compiles
+on other operating systems, but Windows and Linux native packages are added only
+when those platforms are supported.
+
+SDL initialization, window creation, event processing, and disposal must all run
+on the process main thread, as macOS requires for its native windowing APIs.
+There are no worker threads. `Window.ProcessEvents` blocks in
+`SDL_WaitEventTimeout` instead of busy-spinning. One window per process is
+supported in this version.
+
+The window is not a renderer. Task 02 creates no SDL renderer, GPU device,
+swapchain, or render loop, and the client area remains blank. A future
+`Nymeria.Graphics` will own rendering against the window; neither project depends
+on the other yet.
 
 ## Dependency direction
 
-The following is a future design principle, not implemented code. It guides
-project references when the C# projects are created.
+The following principle guides project references. Only the platform project
+exists today.
 
 ```text
 examples  -----------------------> engine projects
@@ -95,25 +136,29 @@ Nymeria.Graphics     Nymeria.Platform
 - `examples/` may depend on all engine projects.
 - `tests/` may reference the project under test.
 
-No interfaces, abstractions, or projects are created to enforce this yet.
-Adding them speculatively would violate YAGNI.
+`Nymeria.Platform` has no `Nymeria.Core` reference because `Nymeria.Core` does
+not exist and the platform code has no demonstrated need for it. No interfaces or
+abstractions are created to enforce the future direction yet. Adding them
+speculatively would violate YAGNI.
 
-## Undecided technical choices
+## Technical choices
 
-The following choices are deliberately open. Listing them here does not select
-them.
+The following choices are implemented:
 
-- **.NET SDK and target framework:** no SDK version or target framework has been
-  chosen.
-- **Windowing:** no library or native API has been selected. Any candidate would
-  require an architecture and dependency decision first.
+- **.NET SDK and target framework:** .NET 10, targeting `net10.0`. `global.json`
+  pins SDK 10.0.402 with `latestPatch` roll-forward and no prerelease SDKs.
+- **Solution format:** `Nymeria.slnx`, built with the `dotnet` CLI.
+- **Windowing:** SDL3 3.4.18 through `SDL3-CS` 3.4.18 and the macOS native
+  package `SDL3-CS.MacOS` 3.4.18.
+- **External packages:** only the SDL3 binding and its macOS native runtime are
+  approved. Automated test packages are added when the test project exists.
+
+The following choices remain open:
+
 - **Graphics API:** no API or backend has been selected. Vulkan, Metal, Direct3D,
   and OpenGL are possible directions only, not decisions.
-- **External packages:** none are approved. Dependencies need a documented
-  reason and maintainer approval.
-- **Solution format:** `Nymeria.slnx` is the intended filename, but the file does
-  not exist yet.
-- **Build and test tooling:** deferred until actual projects exist.
+- **`Nymeria.Core` and `Nymeria.Graphics`:** neither project exists yet, and
+  neither is justified by Task 02.
 
 ## KISS and YAGNI
 
@@ -135,8 +180,8 @@ Nymeria follows KISS (Keep It Simple) and YAGNI (You Aren't Gonna Need It):
 `.github/workflows/repository-checks.yml` runs the `Repository checks` job on
 pushes and pull requests to `main`. It verifies required files and directories,
 resolves relative Markdown links, and performs basic Dependabot configuration
-integrity checks. It uses read-only repository permissions and does not build or
-test C# code because no projects exist.
+integrity checks. It uses read-only repository permissions. C# restore, build,
+and test steps are added once the example and test projects exist.
 
 Results appear on commits and pull requests, and in the repository's **Actions**
 tab. The workflow can also be inspected with `gh run list` and
@@ -184,8 +229,8 @@ Branch protection or GitHub rulesets are not required for this auto-merge path
 and are still not enabled. Enabling them is a separate workflow-policy decision
 that requires maintainer approval. See [GIT_GUIDELINES.md](GIT_GUIDELINES.md).
 
-NuGet updates are intentionally not configured until a `.csproj`, `.slnx`, or
-NuGet dependency configuration exists.
+NuGet updates are not configured yet. They are added once the .NET project set
+is in place.
 
 ## Governance
 
