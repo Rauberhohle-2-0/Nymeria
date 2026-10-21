@@ -1,4 +1,5 @@
 using System.Numerics;
+using Nymeria.Core.Materials;
 using Nymeria.Core.Models;
 using Nymeria.Core.Scenes;
 
@@ -210,5 +211,40 @@ public sealed class SceneTests
         Assert.Equal(Vector3.Zero, sceneObject.Transform.Position);
         Assert.Equal(Quaternion.Identity, sceneObject.Transform.Rotation);
         Assert.Equal(Vector3.One, sceneObject.Transform.Scale);
+    }
+
+    [Fact]
+    public void SceneObject_UsesDefaultMaterialWhenNoneIsSupplied()
+    {
+        var sceneObject = new SceneObject(CreateTriangleMesh());
+
+        Assert.Same(Material.Default, sceneObject.Material);
+    }
+
+    [Fact]
+    public void SceneObject_ReferencesSharedMaterialWithoutCopying()
+    {
+        var texture = new TextureData(1, 1, new byte[] { 1, 2, 3, 255 });
+        var material = new Material(new Vector3(0.2f, 0.4f, 0.6f), texture, "shared");
+        MeshData mesh = CreateTriangleMesh();
+        var first = new SceneObject(mesh, material: material);
+        var second = new SceneObject(mesh, material: material);
+
+        Assert.Same(material, first.Material);
+        Assert.Same(material, second.Material);
+        Assert.Same(texture, first.Material.BaseColorTexture);
+    }
+
+    [Fact]
+    public void SceneObject_CanReplaceMaterialAndRejectsNull()
+    {
+        var sceneObject = new SceneObject(CreateTriangleMesh());
+        var material = new Material(new Vector3(0.1f, 0.2f, 0.3f));
+
+        sceneObject.Material = material;
+
+        Assert.Same(material, sceneObject.Material);
+        Assert.Throws<ArgumentNullException>(() => sceneObject.Material = null!);
+        Assert.Same(material, sceneObject.Material);
     }
 }
