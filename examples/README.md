@@ -13,7 +13,10 @@ geometry builder, shader, model-viewer loop, and input mapping in
 shared geometry builder, the shared model shader, and the shared camera controls.
 `HelloMaterials` uses the material and texture data in `Nymeria.Core`, the
 PNG/JPEG/TGA/DDS loader in `Nymeria.Formats.Textures`, and the shared camera
-controls.
+controls. `HelloMaterials` and `HelloLighting` share the material renderer and
+shader in `examples/Shared`; `HelloLighting` adds the lighting data in
+`Nymeria.Core`, the OBJ parser in `Nymeria.Formats.Obj`, and the same texture
+loader.
 
 All examples use SDL3's GPU API with the Metal backend and Metal Shading
 Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
@@ -30,6 +33,7 @@ dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
 dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
+dotnet run --project examples/HelloLighting/HelloLighting.csproj
 ```
 
 ## HelloTriangle
@@ -76,9 +80,9 @@ renders continuously, and targets about 16 ms per frame.
 
 ### Controls
 
-`HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloScene`, and `HelloMaterials` share
-`examples/Shared/FlyCameraControls.cs`, so these controls apply to all five
-examples.
+`HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloScene`, `HelloMaterials`, and
+`HelloLighting` share `examples/Shared/FlyCameraControls.cs`, so these controls
+apply to all six examples.
 
 | Input | Action |
 | --- | --- |
@@ -91,6 +95,11 @@ examples.
 `HelloScene` adds scene-editing keys: `E` adds an instance of the shared mesh,
 `Q` removes the last object, and `R` restores the initial objects. The scene keys
 are edge-triggered, so holding a key adds or removes only one object per press.
+
+`HelloLighting` adds light keys: `L` toggles ambient-only mode, the arrow keys
+move the directional light, `[` and `]` lower and raise its intensity, and `R`
+resets the light. These are edge-triggered except for the arrow keys, which
+rotate continuously.
 
 Mouse look rotates only while the right button is held. Releasing the button,
 losing input focus, minimizing the window, or exiting disables relative mouse
@@ -300,10 +309,12 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/H
   the vertex layout passes `(0, 1)` at the bottom-left and `(0, 0)` at the
   top-left of each face as seen from outside. The four quadrants make a flipped
   axis visible.
-- Shader: `HelloMaterials/Shaders/Material.metal`, embedded as
-  `HelloMaterials.Shaders.Material.metal`, with one vertex and one fragment
+- Shader: `Shared/Shaders/Material.metal`, embedded as
+  `Nymeria.Examples.Shaders.Material.metal`, with one vertex and one fragment
   uniform buffer plus one texture/sampler pair. It uses the same row-major matrix
-  upload convention as the other examples.
+  upload convention as the other examples. The shader supports lighting, but the
+  scene sets no `Scene.Lighting`, so this example stays unlit: the renderer
+  substitutes a white ambient term and no directional term.
 - Formats: a supplied path is decoded by `Nymeria.Formats.Textures`. PNG, JPEG,
   and DDS are identified by signature; TGA uses a `.tga`/`.targa` name plus
   header validation. The checked-in `Assets` fixtures are original project
@@ -324,13 +335,59 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/H
 - Errors: a missing, unreadable, malformed, oversized, or unsupported file prints
   a diagnostic and falls back; the window still opens. Limits are 32 MiB of
   encoded input, 4096 × 4096 pixels, and 64 MiB of payload.
-- Scope: no MTL or OMSI material parsing, lighting, PBR, transparency sorting,
-  texture streaming, mipmap generation, CPU block decompression, hot reload, or
-  material graphs.
+- Scope: no MTL or OMSI material parsing, PBR, transparency sorting, texture
+  streaming, mipmap generation, CPU block decompression, hot reload, or material
+  graphs. Lighting is demonstrated by `HelloLighting` instead.
+
+## HelloLighting
+
+`HelloLighting` demonstrates the minimal lighting model on the existing material
+path. It imports its cube from `HelloOBJ/Assets/cube.obj`, loads
+`HelloMaterials/Assets/checker.png`, and reuses the shared material renderer,
+shader, and camera controls. Both assets are existing original project content,
+so the example bundles nothing new.
+
+```bash
+dotnet run --project examples/HelloLighting/HelloLighting.csproj
+dotnet run --project examples/HelloLighting/HelloLighting.csproj -- path/to/model.obj
+```
+
+- Lighting data: `SceneLighting` holds one `AmbientLight` and at most one
+  `DirectionalLight`. `Scene.Lighting` is `null` by default, which means unlit;
+  `HelloLighting` assigns a new immutable `SceneLighting` only when a light key
+  changes the values. See [../docs/LIGHTING.md](../docs/LIGHTING.md).
+- Ambient: a dim blue-white ambient term (color `(0.55, 0.65, 0.90)`, intensity
+  `0.18`) lifts surfaces that face away from the directional light. Ambient
+  depends on neither object position nor camera orientation.
+- Directional: one white light with an initial intensity of `1.1`. The light's
+  stored direction is the direction it travels; the shader uses the negated
+  direction toward the light. The constructor rejects zero-length and non-finite
+  directions and normalizes valid ones.
+- Objects: three instances of the imported mesh. Two share one checkerboard
+  material and one uses a solid orange material. The middle object uses a
+  strongly non-uniform scale and a roll, so a wrong normal transform is visible.
+- Shading: world-space Lambert diffuse,
+  `max(0, dot(normalize(N), normalize(directionToLight)))`, added to the ambient
+  term and multiplied by `texture.rgb * tint`. Alpha behavior is unchanged: the
+  fragment is opaque.
+- Normals: the vertex shader transforms normals with the inverse transpose of the
+  model matrix and normalizes them after interpolation. `LightingMath` computes
+  the CPU-side matrix and refuses a singular or non-finite transform instead of
+  uploading it; the renderer reports that as a startup-time error.
+- Control: `L` toggles ambient-only mode (which removes the directional light),
+  the arrow keys move the light's yaw and elevation, `[` and `]` change its
+  intensity, and `R` resets it. The intensity is clamped to `0..4` for the
+  example, within the model's own limit.
+- Errors: a missing, unreadable, or malformed OBJ or texture prints a diagnostic
+  and exits with status code `1` before a window is created. An OBJ without `vn`
+  normals is rejected with a message that asks for normals rather than inventing
+  them.
+- Scope: no shadows, point or spot lights, specular highlights, PBR, deferred
+  rendering, global illumination, gamma-management redesign, or shader graphs.
 
 ## Platform limits
 
-All six examples are macOS-only for now. They require SDL's Metal backend and
+All seven examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
 formats. `HelloOBJ` and `HelloO3D` use focused format subsets, not general
 material or scene importers. `HelloO3D` accepts only unscrambled static meshes
@@ -338,7 +395,9 @@ and rejects bones and animation. `HelloCube` still constructs its model data in
 code. `HelloScene` adds flat, transformed instances but no hierarchy.
 `HelloMaterials` adds a tint and an optional base-color texture from PNG, JPEG,
 TGA, or a documented DDS subset, not a material pipeline. DDS support is not
-universal, and compressed formats depend on backend capability. No example has
-lighting, an object hierarchy, or collisions. GPU output, texture sampling,
-compressed-format capability, and input behavior are validated manually with
+universal, and compressed formats depend on backend capability. `HelloLighting`
+adds one ambient term and one directional Lambert term, not a general light
+system. No example has shadows, specular or PBR shading, an object hierarchy, or
+collisions. GPU output, texture sampling, compressed-format capability, lighting,
+and input behavior are validated manually with
 [../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.

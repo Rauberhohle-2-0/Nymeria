@@ -15,10 +15,12 @@ pipelines stay in `Nymeria.Graphics` and the examples; the format projects decod
 bytes and never touch SDL3 or the GPU.
 
 This milestone deliberately excludes OBJ `MTL` parsing, OMSI material
-configuration, physically based rendering, lighting, shadows, transparency
-sorting, texture streaming, and mipmap generation. Alpha is decoded and preserved
-but the example shader always writes an opaque fragment. No decoder decompresses
-block-compressed data.
+configuration, physically based rendering, shadows, transparency sorting,
+texture streaming, and mipmap generation. Ambient and Lambert diffuse lighting is
+described in [LIGHTING.md](LIGHTING.md); it reuses this material data but is an
+optional scene-level feature, not a property of `Material`. Alpha is decoded and
+preserved but the example shader always writes an opaque fragment. No decoder
+decompresses block-compressed data.
 
 ## `Material`
 
@@ -308,11 +310,14 @@ The example creates a sampler with `MaxLod = 0` for single-level textures and a
 second sampler with linear mip filtering for uploaded chains, so a texture never
 requests a level the GPU does not hold.
 
-`HelloMaterials` caches one GPU texture per distinct `Texture` reference and
-binds a generated 1 × 1 white texture for materials without a texture or meshes
-without UVs. The fragment shader multiplies sampled RGB by the material tint:
-`texture.rgb * material.BaseColor`. Output alpha is `1.0`; alpha is decoded but
-not blended.
+The shared material renderer in `examples/Shared` caches one GPU texture per
+distinct `Texture` reference and binds a generated 1 × 1 white texture for
+materials without a texture or meshes without UVs. The fragment shader multiplies
+sampled RGB by the material tint: `texture.rgb * material.BaseColor`. When the
+scene has lighting, the result is then multiplied by the ambient plus Lambert
+diffuse term; an unlit scene uses a white ambient term so the output is
+unchanged. See [LIGHTING.md](LIGHTING.md). Output alpha is `1.0`; alpha is decoded
+but not blended.
 
 ## Color space
 
@@ -410,9 +415,10 @@ are validated manually with [SMOKE_TEST.md](SMOKE_TEST.md), not by headless CI.
 
 ## Intentionally unsupported
 
-OBJ MTL parsing, OMSI material mapping, PBR, lighting, shadows, transparency
-sorting, texture streaming, mipmap generation, hot reload, animation, an editor,
-and a general asset pipeline are out of scope. Alpha is decoded but not blended.
+OBJ MTL parsing, OMSI material mapping, PBR, shadows, transparency sorting,
+texture streaming, mipmap generation, hot reload, animation, an editor, and a
+general asset pipeline are out of scope. Lighting is limited to the single
+ambient plus directional Lambert model in [LIGHTING.md](LIGHTING.md). Alpha is decoded but not blended.
 BC decompression on the CPU, BC6H, ASTC, ETC, cubemaps, texture arrays, 3D
 textures, and volume textures are not supported. The supported DDS subset is not
 a claim of universal DDS compatibility.

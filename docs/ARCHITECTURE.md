@@ -26,8 +26,9 @@ extension is a direction, not a current feature.
 - `Nymeria.Platform`, a class library exposing a minimal native window API.
 - `Nymeria.Core`, a dependency-free class library containing validated,
   format-independent model data, the `IModelParser` contract, minimal scene data
-  (`Scene`, `SceneObject`, and `Transform`), and format-independent material and
-  texture data with RGBA and block-compressed mip chains.
+  (`Scene`, `SceneObject`, and `Transform`), optional ambient and directional
+  lighting data, and format-independent material and texture data with RGBA and
+  block-compressed mip chains.
 - `Nymeria.Formats.Obj`, a dependency-free Wavefront OBJ parser implementing
   `IModelParser` for a documented polygonal subset.
 - `Nymeria.Formats.O3d`, a dependency-free OMSI O3D parser implementing
@@ -61,11 +62,14 @@ extension is a direction, not a current feature.
   instances of one shared mesh through the scene layer, with runtime add/remove.
 - `examples/HelloMaterials`, an interactive example that draws shared, tinted,
   and untextured materials with a generated checkerboard or a user-supplied PNG,
-  JPEG, TGA, or DDS texture.
+  JPEG, TGA, or DDS texture. It remains unlit.
+- `examples/HelloLighting`, an interactive example that draws an imported OBJ
+  mesh with a textured and a solid material under configurable ambient and
+  directional Lambert lighting.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - `Nymeria.Core.Tests`, GPU-independent tests for model-data validation,
   parser-contract error behavior, transform composition, scene lifecycle,
-  materials, and texture-data validation.
+  lighting data and math, materials, and texture-data validation.
 - `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
   conversions, and diagnostics.
 - `Nymeria.Formats.O3d.Tests`, GPU-independent tests for the O3D header,
@@ -129,8 +133,8 @@ contains `Nymeria.Graphics`, `src/core/` contains `Nymeria.Core`, `src/formats/`
 contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`, `Nymeria.Formats.Png`,
 `Nymeria.Formats.Tga`, `Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`, and
 `Nymeria.Formats.Textures`, `examples/` contains `HelloTriangle`, `HelloCube`,
-`HelloOBJ`, `HelloO3D`, `HelloScene`, and `HelloMaterials`, and `tests/` contains
-`Nymeria.Core.Tests`, `Nymeria.Formats.Obj.Tests`,
+`HelloOBJ`, `HelloO3D`, `HelloScene`, `HelloMaterials`, and `HelloLighting`, and
+`tests/` contains `Nymeria.Core.Tests`, `Nymeria.Formats.Obj.Tests`,
 `Nymeria.Formats.O3d.Tests`, `Nymeria.Formats.Png.Tests`,
 `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
 `Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Textures.Tests`, and
@@ -150,7 +154,9 @@ in [OBJ.md](OBJ.md) and [O3D.md](O3D.md). `Nymeria.Formats.Png`,
 `Nymeria.Core` and the base class library. `Nymeria.Formats.Jpeg` references
 `Nymeria.Core` and the pure-managed `StbImageSharp` package.
 `Nymeria.Formats.Textures` references `Nymeria.Core` and the four image decoders.
-[MATERIALS.md](MATERIALS.md) documents every supported subset and limit.
+`Nymeria.Core.Lighting` references `System.Numerics` and the base class library
+only; [LIGHTING.md](LIGHTING.md) documents the equation, conventions, and limits.
+[MATERIALS.md](MATERIALS.md) documents every supported image subset and limit.
 
 ## Windowing
 
@@ -275,10 +281,10 @@ software fallback.
 - claims the window for presentation and reads its swapchain format.
 
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
-`examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloScene`, and
-`examples/HelloMaterials`. Each has its own vertex data and draw calls, and uses
-`GpuDevice` for the device, window claim, shader creation, buffer and texture
-upload, sampler creation, and swapchain format.
+`examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloScene`,
+`examples/HelloMaterials`, and `examples/HelloLighting`. Each has its own vertex
+data and draw calls, and uses `GpuDevice` for the device, window claim, shader
+creation, buffer and texture upload, sampler creation, and swapchain format.
 [examples/README.md](../examples/README.md) documents their run commands and
 rendering conventions. `HelloOBJ` and `HelloO3D` share the renderer, geometry
 builder, shader, model-viewer loop, and camera controls in `examples/Shared`; the
@@ -493,25 +499,61 @@ alpha channel. EXIF orientation is not applied.
 their signatures and TGA by a `.tga`/`.targa` source name plus header validation.
 It never opens a file, resolves a path, caches data, or makes a GPU call.
 
-`HelloMaterials` demonstrates the path without requiring an external asset. It
-builds a UV-mapped cube and a generated four-quadrant checkerboard in code, shares
-one checkerboard material and one mesh between two objects, adds a blue-tinted
-variant of the same texture, and adds an untextured solid material. Its renderer
-caches one GPU upload per distinct `MeshData` and one GPU texture per distinct
-`Texture`, both by reference, uploads mip chains once, selects a mipped sampler
-for chains, and binds a generated white texture for materials without a texture
-or meshes without UVs. The fragment shader multiplies sampled RGB by the material
-tint; alpha is not blended. A supplied PNG, JPEG, TGA, or DDS path is decoded
-through the loader; a missing, unreadable, malformed, oversized, or unsupported
-file prints a diagnostic and falls back to the generated checkerboard while the
-example keeps running. A compressed DDS format the GPU cannot sample is reported
-and also falls back, using `GpuDevice.SupportsTextureFormat` before a frame is
-recorded.
+`HelloMaterials` and `HelloLighting` share `examples/Shared/MaterialRenderer.cs`
+and `examples/Shared/Shaders/Material.metal`. The renderer caches one GPU upload
+per distinct `MeshData` and one GPU texture per distinct `Texture`, both by
+reference, uploads mip chains once, selects a mipped sampler for chains, and
+binds a generated white texture for materials without a texture or meshes without
+UVs. The shared vertex layout is position, normal, and UV; the fragment shader
+multiplies sampled RGB by the material tint and an optional lighting term; alpha
+is not blended.
 
-The example uses the existing position/UV layout, MSL shader embedding, depth
-target, resize, minimize, frame budget, and shutdown rules. It is not a material
-pipeline: it does not parse MTL, map O3D material names, stream or reload
-textures, generate mipmaps, decompress BC blocks, or sort transparent objects.
+`HelloMaterials` builds a UV-mapped cube and a generated four-quadrant
+checkerboard in code, shares one checkerboard material and one mesh between two
+objects, adds a blue-tinted variant of the same texture, and adds an untextured
+solid material. It leaves `Scene.Lighting` null, so the shared renderer uses a
+white ambient term and no directional term: the output is the same unlit base
+color as before lighting existed. A supplied PNG, JPEG, TGA, or DDS path is
+decoded through the loader; a missing, unreadable, malformed, oversized, or
+unsupported file prints a diagnostic and falls back to the generated checkerboard
+while the example keeps running. A compressed DDS format the GPU cannot sample is
+reported and also falls back, using `GpuDevice.SupportsTextureFormat` before a
+frame is recorded.
+
+The example uses the existing position/normal/UV layout, MSL shader embedding,
+depth target, resize, minimize, frame budget, and shutdown rules. It is not a
+material pipeline: it does not parse MTL, map O3D material names, stream or
+reload textures, generate mipmaps, decompress BC blocks, or sort transparent
+objects.
+
+### Lighting
+
+`Nymeria.Core.Lighting` adds immutable `AmbientLight`, `DirectionalLight`, and
+`SceneLighting` data plus `LightingMath`. A scene optionally references one
+`SceneLighting`; `null` means unlit. Light colors are finite values between 0
+and 1, intensity is finite from 0 through 100, and directional directions are
+rejected when zero or non-finite and normalized otherwise. [LIGHTING.md](LIGHTING.md)
+is the authoritative contract.
+
+The shared material shader evaluates ambient and Lambert diffuse terms in world
+space:
+
+```text
+lit = baseColor * (ambientColor + directionalColor * max(0, dot(N, L)))
+```
+
+`L` is `DirectionalLight.DirectionToLight`, and `N` is the interpolated normal
+transformed by the inverse transpose of the model matrix. The renderer computes
+that matrix on the CPU, rejects singular or non-finite transforms with an object
+diagnostic, and requires finite non-zero normals for every lit mesh. Normals are
+not invented when a mesh lacks them. `HelloLighting` loads the checked-in OBJ
+cube fixture, sets scene lighting, and allows the direction, intensity, and
+ambient-only state to change at runtime. `HelloMaterials` leaves lighting unset
+and remains unlit, demonstrating the compatibility path.
+
+There is no specular term, PBR, shadow, point or spot light, multiple-light
+collection, normal map, gamma-management change, deferred renderer, or shader
+graph. The scene still owns no GPU resources.
 
 ### Ownership and lifetime
 
@@ -520,11 +562,12 @@ textures, generate mipmaps, decompress BC blocks, or sort transparent objects.
   renderer must be created after the window and disposed before it.
 - `Scene` and `SceneObject` own no GPU resources. `SceneObject.Mesh` is a shared
   reference to managed `MeshData`, and `SceneObject.Material` is a shared
-  reference to managed `Material` and its `Texture`. The scene renderer owns one
-  upload per distinct mesh; `MaterialRenderer` owns one upload per distinct mesh
-  and texture. Each cached upload is released exactly once. Removing an object
-  never disposes a mesh, material, or texture that other objects may still
-  reference.
+  reference to managed `Material` and its `Texture`. `Scene.Lighting` is an
+  optional reference to immutable CPU lighting data. The scene renderer owns one
+  upload per distinct mesh; the shared material renderer owns one upload per
+  distinct mesh and texture. Each cached upload is released exactly once.
+  Removing an object never disposes a mesh, material, or texture that other
+  objects may still reference.
 - A texture reference is not ownership. The code that constructs `TextureData`
   or `CompressedTextureData` owns the memory and must not mutate it. The renderer
   that calls `GpuDevice.CreateTexture` owns the GPU texture and releases it after
@@ -536,11 +579,11 @@ textures, generate mipmaps, decompress BC blocks, or sort transparent objects.
   and then rethrow.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
-- `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloScene`, and `HelloMaterials` own
-  their `Camera` instances and share the `FlyCameraControls` implementation. The
-  camera has no unmanaged resources. The input mapping disables relative mouse
-  mode and discards pending mouse motion during disposal, before the window is
-  destroyed.
+- `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloScene`, `HelloMaterials`, and
+  `HelloLighting` own their `Camera` instances and share the
+  `FlyCameraControls` implementation. The camera has no unmanaged resources. The
+  input mapping disables relative mouse mode and discards pending mouse motion
+  during disposal, before the window is destroyed.
 - No renderer creates per-frame GPU resources. The scene and material renderers
   upload newly referenced meshes and textures once and reuse them; command buffers
   and swapchain textures are owned and recycled by SDL.
@@ -552,15 +595,20 @@ Limitations in this version:
   packages, which are not implemented.
 - Apple Silicon and Intel Macs both use Metal. The macOS native package contains
   both architectures.
-- There is no scene hierarchy, ECS, serialization, editor, lighting, shadow, or
-  collision system, and no engine-level input system. The scene layer holds flat
-  objects only. `Camera` is reusable math, but input mapping and timing stay in
-  the examples; the triangle remains static clip-space geometry.
+- There is no scene hierarchy, ECS, serialization, editor, shadow, or collision
+  system, and no engine-level input system. The scene layer holds flat objects
+  only. `Camera` is reusable math, but input mapping and timing stay in the
+  examples; the triangle remains static clip-space geometry.
+- Lighting is one ambient term plus at most one directional Lambert term. There
+  is no specular or PBR shading, multiple-light collection, point or spot light,
+  shadow, normal mapping, deferred rendering, global illumination, or shader
+  graph. Meshes without normals are rejected by the lit material renderer rather
+  than receiving invented normals.
 - Materials are a base-color tint plus an optional base-color texture. There is
-  no MTL or OMSI material parsing, PBR, lighting, transparency sorting, texture
-  streaming or reload, mipmap generation, CPU block decompression, or animation.
-  Alpha is decoded but not blended. `HelloMaterials` accepts one explicit texture
-  path and does not search for textures relative to a model.
+  no MTL or OMSI material parsing, transparency sorting, texture streaming or
+  reload, mipmap generation, CPU block decompression, or animation. Alpha is
+  decoded but not blended. `HelloMaterials` accepts one explicit texture path
+  and does not search for textures relative to a model.
 - Texture formats are PNG, JPEG, TGA, and a documented DDS subset. DDS support is
   not universal: BC6H, ASTC, ETC, cubemaps, volumes, texture arrays, 3D textures,
   padded row pitches, and uncompressed sRGB DDS layouts are rejected explicitly.
@@ -626,8 +674,11 @@ references `Nymeria.Core`, `Nymeria.Formats.O3d`, `Nymeria.Graphics`, and
 data, `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for
 the window; `HelloMaterials` references `Nymeria.Core` for materials and mesh
 data, `Nymeria.Formats.Textures` for texture decoding, `Nymeria.Graphics` for the
-device and camera, and `Nymeria.Platform` for the window; `HelloTriangle` does
-not need the core or formats projects.
+device and camera, and `Nymeria.Platform` for the window; `HelloLighting`
+references `Nymeria.Core` for scene, lighting, and material data,
+`Nymeria.Formats.Obj` for its mesh, `Nymeria.Formats.Textures` for its texture,
+`Nymeria.Graphics`, and `Nymeria.Platform`; `HelloTriangle` does not need the core
+or formats projects.
 No engine project references an example. `Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
 `Nymeria.Formats.Png.Tests`, `Nymeria.Formats.Tga.Tests`,
@@ -649,9 +700,10 @@ The following choices are implemented:
   reached through `SDL3-CS`. `Nymeria.Graphics` provides the reusable
   `GpuDevice`, including buffer, RGBA and block-compressed texture, sampler, and
   shader creation; the
-  examples embed their own `.metal` files, and `HelloOBJ` and `HelloO3D` share
-  `examples/Shared/Shaders/Model.metal`, compiled by SDL at runtime. No direct
-  Metal interop or shader compiler is used.
+  examples embed their own `.metal` files; `HelloOBJ` and `HelloO3D` share
+  `examples/Shared/Shaders/Model.metal`, and `HelloMaterials` and `HelloLighting`
+  share `examples/Shared/Shaders/Material.metal`, compiled by SDL at runtime. No
+  direct Metal interop or shader compiler is used.
 - **Math:** `System.Numerics` vectors, quaternions, and matrices, with no custom
   math library. `Camera` uses it for yaw/pitch view and projection math.
   `Transform` uses it for normalized quaternion rotation and row-vector
@@ -663,7 +715,13 @@ The following choices are implemented:
 - **Scene data:** `Nymeria.Core` contains `Scene`, `SceneObject`, and `Transform`
   in `Nymeria.Core.Scenes`. Objects reference shared `MeshData`; the scene owns
   no GPU resources. Finite transform validation, a 100,000-object default limit,
-  and deterministic ordering are documented in [SCENE.md](SCENE.md).
+  deterministic ordering, and optional scene lighting are documented in
+  [SCENE.md](SCENE.md).
+- **Lighting data:** `Nymeria.Core.Lighting` contains validated ambient and
+  directional light data plus CPU Lambert and normal-matrix reference math. A
+  scene references one optional `SceneLighting`; null means unlit. The lighting
+  types depend only on `System.Numerics` and contain no SDL3 or GPU state.
+  [LIGHTING.md](LIGHTING.md) is the authoritative contract.
 - **Model parsing:** `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d` are
   dependency-free parsers in isolated format projects. They use the base class
   library and `Nymeria.Core` only, implement `IModelParser`, and document their
@@ -681,14 +739,21 @@ The following choices are implemented:
   in [MATERIALS.md](MATERIALS.md).
 - **Texture upload:** `GpuDevice` supports RGBA8 and BC1–BC7 mip chains with a
   capability check, 512-byte level offsets, and one copy pass per texture. The
-  example owns two samplers so single-level textures never request absent levels.
+  shared material renderer owns two samplers so single-level textures never
+  request absent levels.
+- **Surface shading:** the shared material shader evaluates ambient and Lambert
+  diffuse light in world space. The CPU computes each object's inverse-transpose
+  normal matrix and rejects degenerate transforms; normals are required and
+  normalized before upload. `HelloMaterials` leaves lighting unset and remains
+  unlit; `HelloLighting` opts in. See [LIGHTING.md](LIGHTING.md).
 - **External packages:** the SDL3 binding and macOS native runtime, the
   pure-managed `StbImageSharp` 2.30.16 JPEG decoder (Unlicense OR MIT, no
   transitive packages), plus the xUnit test packages `xunit` 2.9.3,
   `xunit.runner.visualstudio` 4.0.1, and `Microsoft.NET.Test.Sdk` 18.11.0. The
   headless tests cover platform-independent `WindowOptions` behavior, model-data
   validation and parser error semantics, transform composition, scene lifecycle
-  and mesh sharing, material and texture data, the OBJ subset, the O3D subset,
+  and mesh sharing, lighting data and math, material and texture data, the OBJ
+  subset, the O3D subset,
   and the PNG, JPEG, TGA, DDS, and loader paths; they do not launch a GUI or
   create a GPU device.
 

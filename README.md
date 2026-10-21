@@ -17,11 +17,13 @@ interactive, depth-tested cube scene.
   bounded PNG decoder, `Nymeria.Formats.Tga`, `Nymeria.Formats.Jpeg`, and
   `Nymeria.Formats.Dds` with bounded texture decoders, and
   `Nymeria.Formats.Textures` with a signature-first texture loader,
+  ambient and single-directional lighting data with Lambert diffuse shading,
   `Nymeria.Graphics` with reusable
   Metal GPU device infrastructure and camera math, `examples/HelloTriangle`, the
   interactive `examples/HelloCube`, the OBJ-rendering `examples/HelloOBJ`, the
   O3D-rendering `examples/HelloO3D`, the scene-instancing `examples/HelloScene`,
-  the textured and solid-material `examples/HelloMaterials`,
+  the textured and solid-material `examples/HelloMaterials`, the lit
+  `examples/HelloLighting`,
   platform-independent unit tests, CI restore/build/test on macOS, Windows, and
   Linux, repository checks, an audited dependency restore, a documented security
   baseline, and Dependabot updates for GitHub Actions and NuGet.
@@ -62,6 +64,7 @@ dotnet run --project examples/HelloO3D/HelloO3D.csproj
 dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-bc1.dds
+dotnet run --project examples/HelloLighting/HelloLighting.csproj
 ```
 
 A resizable native window titled `Nymeria` opens at 960 × 540. `HelloTriangle`
@@ -74,7 +77,10 @@ path to another O3D file. `HelloScene` draws several transformed instances of on
 shared mesh; press `E` to add an instance, `Q` to remove the last object, and `R`
 to reset. `HelloMaterials` draws objects that share a checkerboard texture and a
 mesh, a blue-tinted variant of that texture, and a solid-color material; pass a
-PNG, JPEG, TGA, or DDS path after `--` to use a different base-color texture. Move with
+PNG, JPEG, TGA, or DDS path after `--` to use a different base-color texture.
+`HelloLighting` draws three instances of an imported OBJ cube under ambient and
+directional Lambert light; press `L` to toggle ambient-only mode, use the arrow
+keys to move the light, `[` and `]` to change its intensity, and `R` to reset it. Move with
 `W`/`A`/`S`/`D`, `Space`, and
 `Left Control`; hold `Shift` to go faster; hold the right mouse button and move
 the mouse to look around. Close any window with the red close button or the
@@ -95,17 +101,18 @@ used by `HelloCube` and the scene data used by `HelloScene`;
 `Nymeria.Formats.Obj` parses the file used by `HelloOBJ`, and
 `Nymeria.Formats.O3d` parses the file used by `HelloO3D`;
 `Nymeria.Formats.Textures` loads the PNG, JPEG, TGA, or DDS texture used by
-`HelloMaterials`. Each
+`HelloMaterials`, and `Nymeria.Formats.Obj` provides the cube used by
+`HelloLighting`. Each
 example owns its pipeline and depth target, while `HelloOBJ` and `HelloO3D` share
 the renderer, shader, model-viewer loop, and camera controls in `examples/Shared`.
 `HelloScene` uses the shared geometry builder, model shader, and camera controls
-with its own scene renderer. `HelloMaterials` uses its own material renderer with
-the shared camera controls.
+with its own scene renderer. `HelloMaterials` and `HelloLighting` share the
+material renderer and camera controls in `examples/Shared`.
 
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/HelloCube/Shaders/Cube.metal`, the shared
 `examples/Shared/Shaders/Model.metal`, and
-`examples/HelloMaterials/Shaders/Material.metal`. They are embedded into their
+`examples/Shared/Shaders/Material.metal`. They are embedded into their
 examples and compiled from Metal Shading Language source by SDL at startup. No
 shader compiler or Xcode build step is required.
 
@@ -170,7 +177,18 @@ backend supports the format; otherwise the example reports it and falls back. Se
 [docs/MATERIALS.md](docs/MATERIALS.md) for the data contract, supported DDS
 variants, decoder limits, and resource ownership.
 
-All six examples skip rendering while minimized and recover when a drawable is
+`HelloLighting` renders three instances of the `HelloOBJ` cube with the shared
+material renderer. A `SceneLighting` with one ambient light and one directional
+light is assigned to the scene each time the light changes, and the renderer
+adds Lambert diffuse shading on top of the material base color and sampled
+texture. Two objects use the shared checkerboard material and one uses a solid
+orange material, with rotations and non-uniform scales that expose incorrect
+normal transforms. `Scene.Lighting` is `null` by default, so `HelloMaterials`
+remains unlit. See [docs/LIGHTING.md](docs/LIGHTING.md) for the light data model,
+the equation, the coordinate-space and normal-matrix conventions, and the
+deferred features.
+
+All seven examples skip rendering while minimized and recover when a drawable is
 available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
@@ -189,7 +207,8 @@ dotnet test Nymeria.slnx
 
 The tests cover `WindowOptions` defaults and validation, model-data validation
 and parser-contract error semantics, transform composition, scene lifecycle and
-mesh sharing, material and texture-data validation in `Nymeria.Core.Tests`, the
+mesh sharing, material and texture-data validation, and the lighting data, Lambert
+term, and normal-matrix math in `Nymeria.Core.Tests`, the
 OBJ subset and diagnostics in `Nymeria.Formats.Obj.Tests`, the O3D header,
 supported versions and flags, conversions, limits, and failure behavior in
 `Nymeria.Formats.O3d.Tests`, and the PNG subset, malformed input, and decode
@@ -213,7 +232,8 @@ src/core/       Nymeria.Core model data, parser contract, scene, and material da
 src/formats/    Nymeria.Formats.Obj, O3d, Png, Tga, Jpeg, Dds, and Textures
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
-examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloScene, and HelloMaterials
+examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloScene,
+                HelloMaterials, and HelloLighting
 tests/          Headless unit tests for core, formats, and platform projects
 ```
 
@@ -223,6 +243,7 @@ tests/          Headless unit tests for core, formats, and platform projects
 - [Model data and parser contract](docs/MODEL_DATA.md)
 - [Scene data and instancing](docs/SCENE.md)
 - [Materials and base-color textures](docs/MATERIALS.md)
+- [Ambient and directional lighting](docs/LIGHTING.md)
 - [Wavefront OBJ import](docs/OBJ.md)
 - [OMSI O3D import](docs/O3D.md)
 - [Examples](examples/README.md)

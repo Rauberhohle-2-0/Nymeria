@@ -17,20 +17,22 @@ dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
 dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
+dotnet run --project examples/HelloLighting/HelloLighting.csproj
 ```
 
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/HelloCube/Shaders/Cube.metal`, the shared
-`examples/Shared/Shaders/Model.metal`, and
-`examples/HelloMaterials/Shaders/Material.metal`. The model shader is embedded in
+`examples/Shared/Shaders/Model.metal`, and the shared
+`examples/Shared/Shaders/Material.metal`. The model shader is embedded in
 `HelloOBJ`, `HelloO3D`, and `HelloScene` as
-`Nymeria.Examples.Shaders.Model.metal`; the material shader is embedded as
-`HelloMaterials.Shaders.Material.metal`. Shaders are embedded in their examples
+`Nymeria.Examples.Shaders.Model.metal`; the material shader is embedded in
+`HelloMaterials` and `HelloLighting` as
+`Nymeria.Examples.Shaders.Material.metal`. Shaders are embedded in their examples
 and compiled by SDL's Metal backend at startup, so there is no shader compiler
 step and no external shader file to deploy.
 
 Run each example checklist separately. The failure-path checks at the end apply
-to all six.
+to all seven.
 
 ## HelloTriangle checks
 
@@ -328,6 +330,68 @@ to all six.
     normal launch, movement, mouse look, resize, minimize, restore, any texture
     load, fallback, or shutdown.
 
+## HelloLighting checks
+
+1. **Window appears.** With no arguments, a native window opens without a console
+   error. The terminal prints the lighting control summary, and the example loads
+   the copied `Assets/cube.obj` and `Assets/checker.png` fixtures.
+2. **Title is correct.** The title bar reads `Nymeria`.
+3. **Lit objects render.** Three cubes are visible against the dark background.
+   Two show the checkerboard texture and one is solid orange. Each face has a
+   different brightness depending on its orientation, so the cubes read as lit
+   volumes rather than flat colors.
+4. **Ambient and diffuse are both visible.** Faces pointing toward the light are
+   clearly brighter than faces pointing away. No face is pure black, because the
+   ambient term lights the unlit sides.
+5. **Normal transform is correct under non-uniform scale.** The middle cube is
+   visibly squashed and rolled. Its face shading must match the faces of the
+   uniformly scaled cubes: no face may appear lit from the wrong side or
+   brighter than the light direction allows.
+6. **Toggling works.** Press `L`. The directional contribution disappears and the
+   scene becomes uniformly dim ambient-only; shading no longer varies with face
+   orientation. Press `L` again to restore directional lighting for the remaining
+   checks.
+7. **Light direction changes.** Hold the left and right arrow keys. Brightness
+   moves smoothly between faces of the cubes. Hold the up and down arrow keys to
+   move the light vertically; faces rotate out of and into the light without the
+   scene flashing or producing black or white artifacts.
+8. **Intensity changes are clamped.** Press `[` repeatedly until the cubes are
+   nearly unlit, then `]` repeatedly until they are bright. Values stop changing
+   at the documented limits, and no NaN-like flicker, black squares, or
+   over-bright clipping artifact appears.
+9. **Reset works.** Press `R`. The light direction, intensity, and directional
+   on/off state return to the startup values.
+10. **Textured and solid materials interact correctly.** The checkerboard pattern
+    and the blue-free orange tint stay visible under lighting; the texture is not
+    double-multiplied and the tint is not applied twice. Output remains opaque.
+11. **Movement and mouse look work.** The shared controls behave as in
+    `HelloCube`: `W`/`A`/`S`/`D`, `Space`, `Left Control`, `Shift`, and held right
+    mouse button for look. Releasing the button restores the cursor. Shading stays
+    attached to the surfaces while the camera moves, so it is not view-dependent.
+12. **Resize works.** Drag a corner or edge, including to a very wide and a very
+    tall window. Proportions stay correct, lighting stays consistent, and the
+    window remains responsive.
+13. **High-DPI works.** On a Retina display, cube and texture edges are drawn at
+    the display's native pixel density rather than an upscaled low-resolution
+    image.
+14. **Minimize and restore work.** Minimize the window for a few seconds, then
+    restore it. The lit scene reappears correctly and the process does not crash
+    or freeze while minimized.
+15. **Close button exits.** Click the red close button. The process ends, the
+    terminal prompt returns, and `echo $?` reports `0`. The cursor is visible.
+16. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
+    The process ends with status code `0`.
+17. **No busy-spin or per-frame uploads.** CPU use stays well below one full core
+    and memory use stays stable for several minutes and across repeated light
+    changes. Geometry and textures are uploaded once; only the small lighting and
+    transform uniforms change per frame.
+18. **No unhandled exceptions.** No exception text appears in the terminal during
+    normal launch, light changes, movement, mouse look, resize, minimize, restore,
+    or shutdown.
+19. **HelloMaterials stays unlit.** Run `HelloMaterials` again. It must look the
+    same as before this task, with no directional shading, because it sets no
+    `Scene.Lighting`.
+
 macOS notes:
 
 - The movement keys are read by physical scancode, so `W`/`A`/`S`/`D` occupy the
@@ -379,12 +443,20 @@ These checks are optional and must not modify tracked files.
   file, `HelloO3D` must reject it with a message that names the unsupported
   feature, then exit with status code `1`. Do not treat a guessed or partially
   drawn result as a pass.
+- **OBJ without normals:** create a temporary OBJ outside tracked paths with
+  positions and faces but no `vn` records. `HelloLighting` must print that normals
+  are required and exit with status code `1` before a window is created. It must
+  not invent normals.
+- **Missing HelloLighting texture:** temporarily move the copied
+  `Assets/checker.png` beside the built executable, or run from a build without
+  it. The example must print a clear diagnostic naming the asset and exit with
+  status code `1` before a window is created.
 
 ## Recording results
 
 Report the macOS version, architecture (`arm64` or `x86_64`), GPU model, date, and
 pass/fail for each check, separately for `HelloTriangle`, `HelloCube`,
-`HelloOBJ`, `HelloO3D`, and `HelloScene`. Do not describe this manual checklist
-as a CI result.
+`HelloOBJ`, `HelloO3D`, `HelloScene`, `HelloMaterials`, and `HelloLighting`. Do
+not describe this manual checklist as a CI result.
 State separately that the checked-in `HelloO3D` fixture is synthetic and that
 real OMSI content was not available for validation.

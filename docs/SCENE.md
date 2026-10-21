@@ -2,9 +2,10 @@
 
 This document is the authoritative description of Nymeria's minimal,
 format-independent scene layer. It covers transforms, scene objects, shared mesh
-and material references, resource ownership, and the `HelloScene` and
-`HelloMaterials` examples. Related contracts are [MODEL_DATA.md](MODEL_DATA.md),
-[MATERIALS.md](MATERIALS.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
+and material references, optional scene lighting, resource ownership, and the
+`HelloScene`, `HelloMaterials`, and `HelloLighting` examples. Related contracts
+are [MODEL_DATA.md](MODEL_DATA.md), [MATERIALS.md](MATERIALS.md),
+[LIGHTING.md](LIGHTING.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
 [MODEL_DATA.md's coordinate conventions](MODEL_DATA.md#coordinate-and-index-conventions).
 
 ## Purpose and non-goals
@@ -16,10 +17,12 @@ format-independent, and uses only `System.Numerics` and the base class library.
 There is no `Nymeria.Scene` project.
 
 The scene layer contains no ECS, parent-child hierarchy, physics, collision
-detection, animation, serialization, editor, culling, lighting, material parser,
-GPU handle, SDL3, Metal, window, or file-format logic. Materials are references to
-format-independent CPU data, not a rendering pipeline. Those features are outside
-this milestone.
+detection, animation, serialization, editor, culling, material parser, GPU
+handle, SDL3, Metal, window, or file-format logic. Materials and lighting are
+references to format-independent CPU data, not a rendering pipeline. The scene
+layer carries one optional ambient-plus-directional lighting configuration; it
+does not calculate shading. [LIGHTING.md](LIGHTING.md) is the authoritative
+lighting contract.
 
 ## Public types
 
@@ -85,7 +88,7 @@ var second = new SceneObject(mesh, transformB, material);
   It defaults to the shared `Material.Default`, an untextured white material, when
   none is supplied. Assigning `null` throws `ArgumentNullException`.
 - The object does not own or dispose its mesh or material. `MeshData`,
-  `Material`, and `TextureData` are managed data with no unmanaged resources.
+  `Material`, and `Texture` are managed data with no unmanaged resources.
 - The constructor copies the supplied transform values into a new `Transform`,
   so objects do not accidentally share mutable transform state.
 - Mutate `sceneObject.Transform` to change an instance, replace
@@ -116,22 +119,29 @@ bool removed = scene.Remove(first);
   throws `InvalidOperationException` before the list grows.
 - A scene is not thread-safe.
 
-The limit is a practical application safeguard, not a format or GPU contract. It
-prevents accidental unbounded draw loops and resource requests.
+`Scene.Lighting` is an optional `SceneLighting` reference. It defaults to
+`null`, which means unlit. Assigning a lighting object opts the scene into one
+ambient light and at most one directional light. The lighting object is immutable
+and contains no GPU resources; replace it to change a light at runtime. Renderers
+that do not support lighting ignore the property, so earlier examples keep their
+behavior.
+
+The object limit is a practical application safeguard, not a format or GPU
+contract. It prevents accidental unbounded draw loops and resource requests.
 
 ## Ownership and lifetime
 
-- `Scene` and `SceneObject` own no GPU resources, SDL3 objects, files, or
-  unmanaged memory.
+- `Scene`, `SceneObject`, and `SceneLighting` own no GPU resources, SDL3 objects,
+  files, or unmanaged memory.
 - `SceneObject.Mesh` references CPU `MeshData`. The caller that owns the CPU
   arrays remains responsible for not mutating them after `MeshData` construction,
   as described in [MODEL_DATA.md](MODEL_DATA.md#meshdata).
-- `SceneObject.Material` references CPU `Material` and optional `TextureData`
+- `SceneObject.Material` references CPU `Material` and its optional `Texture`
   owned by the caller. Sharing one material or texture across objects is intended
   and does not copy pixels. See [MATERIALS.md](MATERIALS.md).
 - A renderer owns its GPU device, shaders, pipeline, depth target, and one GPU
   upload per distinct `MeshData` it draws. A material-aware renderer also owns one
-  GPU texture per distinct `TextureData`. It releases them in reverse order when
+  GPU texture per distinct `Texture`. It releases them in reverse order when
   disposed, after waiting for the GPU to become idle.
 - Removing a scene object does not dispose a shared mesh, material, or texture or
   invalidate another object that references it.
@@ -140,10 +150,10 @@ prevents accidental unbounded draw loops and resource requests.
   resource releases it, and instances only hold references.
 
 The `HelloScene` renderer caches uploads by `MeshData` reference for its own
-lifetime. The `HelloMaterials` renderer also caches one GPU texture per
-`TextureData` reference. Removing objects therefore does not leak per-instance
-data; each cache holds at most one upload per distinct reference it has drawn and
-is cleared when the renderer is disposed.
+lifetime. The shared material renderer also caches one GPU texture per `Texture`
+reference. Removing objects therefore does not leak per-instance data; each cache
+holds at most one upload per distinct reference it has drawn and is cleared when
+the renderer is disposed.
 
 ## Rendering integration
 
@@ -159,13 +169,16 @@ The scene layer does not render. `HelloScene` owns a `SceneRenderer` that:
    binds the cached vertex/index buffers for `object.Mesh`, and draws its indices;
 5. ends and submits the command buffer.
 
-`HelloScene` draws one opaque color per vertex. `HelloMaterials` uses the same
-traversal shape with a material-aware renderer: it uploads one mesh per distinct
-`MeshData` and one texture per distinct `TextureData` before the frame command
-buffer is acquired, pushes the model matrix and the material tint to separate
-uniform slots, binds the material's texture or a white fallback, and draws the
-cached geometry. A material without a texture and a mesh without UVs both use the
-fallback, so the tint is always well-defined.
+`HelloScene` draws one opaque color per vertex. `HelloMaterials` and
+`HelloLighting` use the same traversal shape with a shared material-aware
+renderer: it uploads one mesh per distinct `MeshData` and one texture per
+distinct `Texture` before the frame command buffer is acquired, pushes the model
+matrix, normal matrix, material tint, and optional lighting uniforms, binds the
+material's texture or a white fallback, and draws the cached geometry. A material
+without a texture and a mesh without UVs both use the fallback, so the tint is
+always well-defined. `Scene.Lighting == null` makes the renderer unlit;
+`HelloLighting` supplies ambient and directional light, while `HelloMaterials`
+stays unlit.
 
 An empty scene still clears the color and depth targets. Removed objects are
 simply absent from the traversal. Minimized windows skip the frame, zero-sized
@@ -202,18 +215,39 @@ over the same scene layer. It needs no external asset by default.
 
 - Two objects reference one checkerboard `Material` and one procedural UV-cube
   `MeshData`. The renderer uploads both once.
-- A third object reuses the same `TextureData` through a blue-tinted material.
+- A third object reuses the same `Texture` through a blue-tinted material.
 - A fourth object uses an untextured solid-orange `Material` and the renderer's
   white fallback texture.
-- A PNG path on the command line is decoded with `Nymeria.Formats.Png`. A missing,
-  oversized, or malformed file prints a diagnostic and falls back to the generated
-  checkerboard.
+- A PNG, JPEG, TGA, or DDS path on the command line is decoded with
+  `Nymeria.Formats.Textures`. A missing, unsupported, oversized, or malformed file
+  prints a diagnostic and falls back to the generated checkerboard.
 - Camera controls are the shared `FlyCameraControls`. Depth, resize, minimize,
   frame-budget, and shutdown behavior follow `HelloScene`.
 
 The generated checkerboard uses four differently colored quadrants, so a flipped
 U or V axis is visible on a face. [MATERIALS.md](MATERIALS.md) documents the
 material and texture contract.
+
+## `HelloLighting`
+
+`examples/HelloLighting` demonstrates the optional lighting configuration with
+an imported OBJ mesh. It links the same shared material renderer and shader as
+`HelloMaterials`.
+
+- Three objects reference one imported OBJ cube mesh, so the renderer uploads the
+  geometry once. Two use a checkerboard texture and one uses a solid material.
+- One object has a strongly non-uniform scale to expose an incorrect normal
+  transform.
+- Ambient light is a dim blue-white term. One directional light defaults to a
+  bright front-right-above direction.
+- Arrow keys move the directional light, `L` toggles ambient-only mode, `[` and
+  `]` adjust directional intensity, and `R` resets the light. Camera controls are
+  the shared `FlyCameraControls`.
+- The example requires vertex normals. An OBJ without `vn` data is rejected with
+  a diagnostic and status code `1` before rendering.
+
+[LIGHTING.md](LIGHTING.md) documents the equation, coordinate space, normal
+matrix, defaults, and controls.
 
 ## Tests
 
@@ -226,7 +260,9 @@ material and texture contract.
 - empty scenes, insertion order, removal order, duplicate rejection, clearing,
   re-adding removed objects, and the object limit;
 - shared-mesh semantics, shared-material and default-material semantics, material
-  replacement and null rejection, and transform copying on object construction.
+  replacement and null rejection, and transform copying on object construction;
+- ambient and directional light validation, Lambert terms, normal matrices,
+  combined lighting, and `Scene.Lighting` default/replacement semantics.
 
 GPU rendering, window behavior, and input are validated manually with
 [SMOKE_TEST.md](SMOKE_TEST.md), not by headless CI.
@@ -235,7 +271,8 @@ GPU rendering, window behavior, and input are validated manually with
 
 The following are out of scope for this milestone: parent-child transforms,
 scene graphs, ECS, instanced draw APIs beyond per-object uniform uploads,
-serialization, editors, culling, physics, collision, animation, lighting,
-shadows, transparency sorting, texture streaming or hot reload, MTL or OMSI
-material parsing, and automatic unloading of a cached GPU mesh or texture when the
-last referencing object is removed.
+serialization, editors, culling, physics, collision, animation, multiple lights,
+point or spot lights, shadows, specular or PBR shading, transparency sorting,
+texture streaming or hot reload, MTL or OMSI material parsing, and automatic
+unloading of a cached GPU mesh or texture when the last referencing object is
+removed.
