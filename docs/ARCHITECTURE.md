@@ -91,11 +91,16 @@ extension is a direction, not a current feature.
 - `examples/HelloBenchmark`, an auto-exiting Release benchmark with a fixed
   camera, deterministic 512/2048/8192-instance scenes, culling, LOD, and pacing
   modes, bounded CPU phase timings, and allocation/GC counters.
+- `examples/HelloPicking`, an interactive streamed world with cursor and
+  center-of-screen picking, a material-based selection highlight, a non-pickable
+  ghost box toggle, and click-driven console and window-title diagnostics.
 - `MeshData.Bounds` plus `Nymeria.Core.Culling` bounds, frustum, and per-frame
   visibility helpers, `Nymeria.Core.Lod` explicit mesh variants, validated
   activation distances, conservative union bounds, and hysteresis-aware
-  selection, and `Nymeria.Core.Streaming` validated scene-chunk definitions,
-  bounded synchronous load/unload updates, failure retry, and diagnostics. They
+  selection, `Nymeria.Core.Streaming` validated scene-chunk definitions,
+  bounded synchronous load/unload updates, failure retry, and diagnostics, and
+  `Nymeria.Core.Raycasting` validated world-space rays, AABB intersection,
+  nearest-hit scene queries, viewport unprojection, and pick eligibility. They
   are headless, use `System.Numerics` only, and contain no SDL3, GPU, window, or
   format dependency.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
@@ -105,8 +110,10 @@ extension is a direction, not a current feature.
   frustum-plane intersection, visibility counters, LOD validation, distance and
   hysteresis selection, conservative LOD bounds, streaming selection and
   hysteresis, load budgets, teleports, failure retry, content rollback, shared
-  references, chunk identifiers, counters, and bounded frame-timing aggregation
-  with warm-up exclusion and invalid samples.
+  references, chunk identifiers, counters, ray and AABB boundary behavior,
+  scene nearest-hit selection and ties, transformed bounds, pick eligibility,
+  viewport camera rays, picking independence from frustum culling and LOD, and
+  bounded frame-timing aggregation with warm-up exclusion and invalid samples.
 - `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
   conversions, and diagnostics.
 - `Nymeria.Formats.O3d.Tests`, GPU-independent tests for the O3D header,
@@ -176,8 +183,8 @@ contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`,
 `Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`, `Nymeria.Formats.Bmp`, and
 `Nymeria.Formats.Textures`, `examples/` contains `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, and
-`HelloBenchmark`, and `tests/` contains `Nymeria.Core.Tests`,
+`HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, `HelloPicking`,
+and `HelloBenchmark`, and `tests/` contains `Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
 `Nymeria.Formats.DirectX.Tests`, `Nymeria.Formats.Png.Tests`,
 `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
@@ -188,8 +195,9 @@ contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`,
 described in [MODEL_DATA.md](MODEL_DATA.md), the minimal scene data described in
 [SCENE.md](SCENE.md), the explicit mesh level-of-detail data described in
 [LOD.md](LOD.md), the spatially bounded scene-chunk streaming layer described in
-[STREAMING.md](STREAMING.md), and the material and texture data described in
-[MATERIALS.md](MATERIALS.md). It references `System.Numerics` and the base class
+[STREAMING.md](STREAMING.md), the headless raycasting and object-picking layer
+described in [PICKING.md](PICKING.md), and the material and texture data
+described in [MATERIALS.md](MATERIALS.md). It references `System.Numerics` and the base class
 library only. The camera lives in `Nymeria.Graphics` rather than
 in `Nymeria.Core`: it is reusable 3D rendering math with no SDL, window, or GPU
 dependency, and the model-loading foundation is the first demonstrated need for
@@ -343,8 +351,8 @@ software fallback.
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
 `examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloX`,
 `examples/HelloScene`, `examples/HelloMaterials`, `examples/HelloLighting`,
-`examples/HelloCulling`, `examples/HelloLOD`, `examples/HelloStreaming`, and
-`examples/HelloBenchmark`.
+`examples/HelloCulling`, `examples/HelloLOD`, `examples/HelloStreaming`,
+`examples/HelloPicking`, and `examples/HelloBenchmark`.
 Each has its own vertex data and draw calls, and uses `GpuDevice` for the device, window claim, shader
 creation, buffer and texture upload, sampler creation, and swapchain format.
 [examples/README.md](../examples/README.md) documents their run commands and
@@ -568,8 +576,9 @@ alpha channel. EXIF orientation is not applied.
 their signatures and TGA by a `.tga`/`.targa` source name plus header validation.
 It never opens a file, resolves a path, caches data, or makes a GPU call.
 
-`HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloLOD`, and
-`HelloStreaming` share `examples/Shared/MaterialRenderer.cs` and
+`HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloLOD`,
+`HelloStreaming`, and `HelloPicking` share
+`examples/Shared/MaterialRenderer.cs` and
 `examples/Shared/Shaders/Material.metal`. The renderer caches one GPU upload per
 distinct `MeshData` and one GPU texture per distinct `Texture`, both by reference,
 uploads mip chains once, selects a mipped sampler for chains, and binds a
@@ -697,6 +706,36 @@ unreferenced uploads after waiting for the GPU to become idle. [STREAMING.md](ST
 is the authoritative contract, including the active-set versus reclaimed-memory
 distinction, retry policy, diagnostics, measurements, and limits.
 
+### Raycasting and picking
+
+`Nymeria.Core.Raycasting` is a small headless query layer. A `Ray` stores a
+finite world-space origin and a normalized direction, so its distance arguments
+are world units. `RayIntersections.TryIntersectBox` tests the existing
+`BoundingBox` with double-precision slab arithmetic; boundaries are inclusive,
+exactly parallel axes are handled without an epsilon, and an origin inside the
+box yields a zero-distance hit. `SceneRaycaster` scans the scene once and returns
+the nearest `RaycastHit`, which carries the object reference, world-space point,
+distance, and entry-face normal. Equal distances resolve to the earlier object in
+insertion order. There is no `RaycastAll`, BVH, octree, or generalized spatial
+query framework.
+
+Picking uses each object's current world transform and the union of its LOD
+variant bounds when a `MeshLod` is configured. It never uses local bounds alone,
+the selected LOD mesh, the frustum, or distance-culling state as a pickability
+proxy. `SceneObject.IsPickable` is a logical interaction flag that defaults to
+true and does not affect rendering. Unloaded streamed objects are absent from
+the scene, so they cannot produce hits; a stored `RaycastHit` reference must be
+validated with `Scene.Contains` before use.
+
+`ViewportRay.TryCreate` in the same namespace converts a viewport pixel to a
+world ray through an existing view and projection matrix. It consumes the
+project's actual `System.Numerics` row-vector, right-handed, `[0, 1]` depth
+conventions rather than an OpenGL unprojection formula, uses the top-left pixel
+space the examples read from SDL, and returns false for zero-sized viewports or
+non-invertible matrices. Input mapping and logical-to-drawable pixel scaling
+remain in the application. [PICKING.md](PICKING.md) is the authoritative
+contract.
+
 ### Ownership and lifetime
 
 - `GpuDevice` owns the GPU device and window claim. Each renderer owns its
@@ -723,8 +762,9 @@ distinction, retry policy, diagnostics, measurements, and limits.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
 - `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-  `HelloLighting`, `HelloCulling`, `HelloLOD`, and `HelloStreaming` own their
-  `Camera` instances and share the `FlyCameraControls` implementation.
+  `HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, and
+  `HelloPicking` own their `Camera` instances and share the
+  `FlyCameraControls` implementation.
   `HelloBenchmark` owns a fixed `Camera` and does not use input controls. The
   camera has no unmanaged resources. The input mapping disables relative mouse
   mode and discards pending mouse motion during disposal, before the window is
@@ -760,6 +800,12 @@ Limitations in this version:
   frame instead of risking a false cull. Nymeria does not generate, simplify, or
   cross-fade meshes; distance culling is optional and applies only to objects
   with a configured maximum.
+- Picking is a bounds-only, single linear scene scan. There is no triangle or
+  per-subset hit, sphere or capsule bound, spatial index, cached world bounds,
+  `RaycastAll`, interaction layer, or GPU color-ID picking. Rotated and
+  non-uniformly scaled objects use conservative world AABBs, so a hit point can
+  lie outside the mesh surface. Camera unprojection assumes a perspective
+  projection. A stored hit does not keep a streamed object resident.
 - Streaming is a synchronous, single-threaded chunk membership baseline. Chunk
   content callbacks run on the update thread, so a large or slow loader can stall
   that frame; `MaxLoadsPerUpdate` bounds the number of callbacks but not their
@@ -868,8 +914,10 @@ window; `HelloLOD` references `Nymeria.Core` for scene, LOD, mesh, and
 material data, `Nymeria.Graphics` for the device and camera, and
 `Nymeria.Platform` for the window; `HelloStreaming` references `Nymeria.Core`
 for scene, streaming, mesh, and material data, `Nymeria.Graphics` for the device
-and camera, and `Nymeria.Platform` for the window; `HelloBenchmark` references
-`Nymeria.Core` for scene, LOD, mesh, material, and timing data,
+and camera, and `Nymeria.Platform` for the window; `HelloPicking` references `Nymeria.Core`
+for scene, streaming, picking, mesh, and material data, `Nymeria.Graphics` for
+the device and camera, and `Nymeria.Platform` for the window; `HelloBenchmark`
+references `Nymeria.Core` for scene, LOD, mesh, material, and timing data,
 `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for the
 window; `HelloTriangle` does not need the core or formats projects.
 No engine project references an example. `Nymeria.Core.Tests`,
@@ -937,6 +985,13 @@ The following choices are implemented:
   synchronous and headless; scene mutation stays on the caller's thread. It
   owns scene membership only, not CPU assets or GPU resources.
   [STREAMING.md](STREAMING.md) is the authoritative contract.
+- **Picking:** `Nymeria.Core.Raycasting` contains a normalized world-space ray,
+  nearest-hit AABB intersection, a nearest-hit scene query, and a
+  matrix-based viewport unprojection helper. It is headless and uses
+  `System.Numerics` only. World bounds come from the existing model-space
+  `BoundingBox`, including LOD union bounds, and logical pickability is
+  independent of frustum culling and selected LOD state. [PICKING.md](PICKING.md)
+  is the authoritative contract.
 - **Performance diagnostics:** `Nymeria.Core.Diagnostics.FrameTimingWindow` is a
   bounded, warm-up-aware rolling window for CPU frame durations. It rejects
   invalid samples, reports average, nearest-rank p95, maximum, and FPS from the

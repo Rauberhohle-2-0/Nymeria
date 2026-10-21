@@ -8,6 +8,7 @@
     <Project Path="examples/HelloMaterials/HelloMaterials.csproj" />
     <Project Path="examples/HelloO3D/HelloO3D.csproj" />
     <Project Path="examples/HelloOBJ/HelloOBJ.csproj" />
+    <Project Path="examples/HelloPicking/HelloPicking.csproj" />
     <Project Path="examples/HelloScene/HelloScene.csproj" />
     <Project Path="examples/HelloStreaming/HelloStreaming.csproj" />
     <Project Path="examples/HelloTriangle/HelloTriangle.csproj" />

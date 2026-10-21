@@ -14,13 +14,16 @@ renderer, geometry builder, shader, model-viewer loop, and input mapping in
 shared geometry builder, the shared model shader, and the shared camera controls.
 `HelloMaterials` uses the material and texture data in `Nymeria.Core`, the
 PNG/JPEG/TGA/DDS/BMP loader in `Nymeria.Formats.Textures`, and the shared camera
-controls. `HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloLOD`, and
-`HelloStreaming` share the material renderer and shader in `examples/Shared`;
+controls. `HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloLOD`,
+`HelloStreaming`, and `HelloPicking` share the material renderer and shader in
+`examples/Shared`;
 `HelloLighting` adds the lighting data in `Nymeria.Core`, the OBJ parser in
 `Nymeria.Formats.Obj`, and the same texture loader, while `HelloCulling` adds the
 headless bounds and frustum helpers in `Nymeria.Core.Culling`, `HelloLOD` adds
-the explicit mesh-variant and distance-selection data in `Nymeria.Core.Lod`, and
-`HelloStreaming` adds the spatial chunk layer in `Nymeria.Core.Streaming`.
+the explicit mesh-variant and distance-selection data in `Nymeria.Core.Lod`,
+`HelloStreaming` adds the spatial chunk layer in `Nymeria.Core.Streaming`, and
+`HelloPicking` adds the raycasting and viewport-picking layer in
+`Nymeria.Core.Raycasting`.
 `HelloBenchmark` reuses the shared material renderer with a fixed camera and the
 bounded timing helpers in `Nymeria.Core.Diagnostics`.
 
@@ -45,6 +48,7 @@ dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj -- --no-streaming
+dotnet run --project examples/HelloPicking/HelloPicking.csproj
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj -- --instances 2048
 ```
 
@@ -93,9 +97,9 @@ renders continuously, and targets about 16 ms per frame.
 ### Controls
 
 `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, `HelloLOD`, and `HelloStreaming` share
-`examples/Shared/FlyCameraControls.cs`, so these controls apply to all ten
-interactive examples.
+`HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, and
+`HelloPicking` share `examples/Shared/FlyCameraControls.cs`, so these controls
+apply to all eleven interactive examples.
 
 | Input | Action |
 | --- | --- |
@@ -126,6 +130,10 @@ and `R` to reset them. It also accepts `--no-lod`, `--no-distance-culling`, and
 positions, `C` to toggle frustum culling, and `R` to reset the camera. It also
 accepts `--no-streaming`, `--no-culling`, `--load-distance`, and
 `--unload-distance` for baseline sessions.
+
+`HelloPicking` adds left-click picking with the cursor, `V` to switch between
+cursor and center-of-screen rays, `G` to toggle the ghost box's pickability, and
+`R` to reset the camera. It has no command-line options other than `--help`.
 
 Mouse look rotates only while the right button is held. Releasing the button,
 losing input focus, minimizing the window, or exiting disables relative mouse
@@ -554,6 +562,43 @@ dotnet run --project examples/HelloStreaming/HelloStreaming.csproj -- --no-strea
 See [../docs/STREAMING.md](../docs/STREAMING.md) for lifecycle, ownership,
 retry semantics, measured observations, and limits.
 
+## HelloPicking
+
+`HelloPicking` demonstrates CPU raycasting and whole-object picking through the
+existing scene, streaming, material renderer, camera, and input paths. It needs
+no asset file.
+
+```bash
+dotnet run --project examples/HelloPicking/HelloPicking.csproj
+```
+
+- World: nine deterministic 26-unit chunks stream around the camera. Each chunk
+  creates three boxes at different positions, depths, rotations, and non-uniform
+  scales, and every chunk shares one cube mesh and six materials.
+- Ray source: a left click builds a world ray through the mouse pixel with
+  `ViewportRay.TryCreate`; `V` switches to the center-of-screen overload. The
+  example scales logical SDL mouse coordinates to the drawable size before
+  unprojecting, and the renderer's existing perspective projection supplies the
+  matrices. No crosshair is drawn because the examples have no overlay path; the
+  window title shows the active mode.
+- Selection: `SceneRaycaster.TryRaycast` returns the nearest pickable object.
+  Each object is tested with its transformed world bounds, or the conservative
+  union of its LOD variants when configured. The selected object receives a
+  shared bright highlight material, which is the existing material path rather
+  than a new rendering feature.
+- Eligibility: the static gray ghost box starts with
+  `SceneObject.IsPickable = false`, so a center ray passes through it. `G`
+  toggles the flag and demonstrates the difference. Frustum and distance culling
+  never make an object unpickable.
+- Diagnostics: each click prints one console line, including misses, and the
+  window title shows the selected label and distance. There is no per-frame log.
+- Streaming: chunk updates run before picking. If the selected object's chunk is
+  unloaded, the example validates `Scene.Contains` on the next frame, clears the
+  selection, and does not retain a stale current selection.
+- Scope: bounds-only picking, no triangle-accurate hits, spatial index, physics,
+  collision response, interaction events, or GPU color-ID picking. See
+  [../docs/PICKING.md](../docs/PICKING.md).
+
 ## HelloBenchmark
 
 `HelloBenchmark` is a deterministic, auto-exiting CPU benchmark for the scene and
@@ -597,7 +642,7 @@ dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
 
 ## Platform limits
 
-All twelve examples are macOS-only for now. They require SDL's Metal backend and
+All thirteen examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
 formats. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
 general material or scene importers. `HelloO3D` accepts only unscrambled static meshes
@@ -612,7 +657,9 @@ system. `HelloCulling` adds a conservative whole-instance frustum test. `HelloLO
 explicit application-supplied mesh variants, distance culling, and hysteresis;
 it does not simplify or generate geometry. `HelloStreaming` adds synchronous
 chunk membership with bounded loads per update; it does not stream files in the
-background, reclaim CPU assets automatically, or generate terrain. No example has
+background, reclaim CPU assets automatically, or generate terrain. `HelloPicking`
+adds conservative bounds picking; it has no triangle-accurate hit, physics,
+collision response, interaction events, or spatial index. No example has
 shadows, specular or PBR shading, an object hierarchy, or collisions. GPU output, texture sampling,
 compressed-format capability, lighting, frustum culling, LOD selection, distance
 culling, and input behavior are validated manually with

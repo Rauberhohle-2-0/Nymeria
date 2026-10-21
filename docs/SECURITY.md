@@ -226,6 +226,32 @@ renderer-owned. `MaterialRenderer.PruneUnusedResources` waits for
 nothing when the wait fails. Unloading a chunk alone is not evidence that CPU or
 GPU memory was reclaimed.
 
+## Raycasting and picking
+
+`Nymeria.Core.Raycasting` is a CPU-only query layer. It performs no file or
+network access, allocation in response to a query, native interop, GPU call, or
+telemetry. `Ray` rejects non-finite origins and zero-length, non-finite, or
+non-normalizable directions. `RayIntersections` rejects invalid boxes and invalid
+maximum distances as a safe miss, uses double precision, and never returns a NaN
+hit point or distance. `RaycastHit` validates and normalizes its public
+constructor inputs. `ViewportRay` rejects zero or negative viewport dimensions,
+non-finite pixels or matrices, and non-invertible view or view-projection
+matrices instead of producing a NaN ray.
+
+`SceneRaycaster` scans the current scene in insertion order, so its work is
+bounded by `Scene.MaxObjectCount` (100,000). It reads bounds and transforms; it
+does not read mesh triangles, allocate a spatial index, or cache derived data.
+One click therefore cannot trigger unbounded mesh traversal. The query runs on
+the caller's thread and must not overlap scene mutation or a streaming update.
+
+Picking does not consult frustum or distance culling and does not modify
+visibility or GPU state. `SceneObject.IsPickable` excludes an object without
+changing rendering. Unloaded streamed objects are absent from the scene and
+cannot produce hits, but a previously returned hit holds an ordinary managed
+reference that can become stale as a selection. Applications must validate it
+with `Scene.Contains` and must not treat it as a native handle. See
+[PICKING.md](PICKING.md).
+
 ## Native and GPU ownership
 
 - Native handles are owned by the managed wrapper that created them. Do not

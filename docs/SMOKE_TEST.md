@@ -22,6 +22,7 @@ dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
+dotnet run --project examples/HelloPicking/HelloPicking.csproj
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
   -- --instances 128 --warmup 10 --frames 60
 ```
@@ -32,13 +33,14 @@ The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/Shared/Shaders/Material.metal`. The model shader is embedded in
 `HelloOBJ`, `HelloO3D`, and `HelloScene` as
 `Nymeria.Examples.Shaders.Model.metal`; the material shader is embedded in
-`HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloLOD`, and
-`HelloStreaming` as `Nymeria.Examples.Shaders.Material.metal`. Shaders are
+`HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloLOD`,
+`HelloStreaming`, and `HelloPicking` as
+`Nymeria.Examples.Shaders.Material.metal`. Shaders are
 embedded in their examples and compiled by SDL's Metal backend at startup, so
 there is no shader compiler step and no external shader file to deploy.
 
 Run each interactive example checklist separately. The failure-path checks at
-the end apply to all ten interactive examples; `HelloBenchmark` has its own
+the end apply to all eleven interactive examples; `HelloBenchmark` has its own
 automated checks below.
 
 ## HelloTriangle checks
@@ -642,6 +644,49 @@ Expected: `0`.
     unique markers from unloaded chunks. Close with the button and `Cmd+Q`; both
     exit with status `0` and restore the cursor.
 
+## HelloPicking checks
+
+1. **Window appears.** The window opens and the terminal prints the chunk,
+   control, and bounds-picking summary. The title shows `no selection`, `cursor`,
+   `ghost skipped`, and `0 picks`.
+2. **Cursor picking works.** Left-click a visible box. It immediately changes to
+   the bright highlight material, the terminal prints one `Pick N: ... at ...
+   units (cursor, bounds)` line, and the title shows the same label and distance.
+   Hovering elsewhere and clicking must not log every frame.
+3. **Nearest overlap works.** Click where two boxes overlap on screen. The
+   reported object must be the nearer one, and only it is highlighted. Changing
+   the camera angle and clicking the same pair again must still select the nearer
+   bounds.
+4. **Miss works.** Click empty background. The previous highlight must clear, the
+   title shows `no selection (miss)`, and exactly one miss line is printed.
+5. **Center picking works.** Press `V`; the title mode changes to `center`. Click
+   without moving the mouse and confirm the selected object is the one under the
+   viewport center. Press `V` again and confirm cursor mode returns.
+6. **Pick eligibility works.** With the ghost box between the camera and the
+   towers, use center picking. While the title says `ghost skipped`, the ray must
+   pass through it and select an object behind. Press `G`; the title says `ghost
+   pickable`, and a center click must now select the ghost and highlight it.
+   Toggle `G` again to confirm the pass-through returns.
+7. **Transformed bounds are used.** Move close to a rotated, non-uniformly scaled
+   slab and click near its visual corner and just outside it. The highlight and
+   reported point must follow the transformed world bounds, not the unrotated
+   local mesh bounds.
+8. **Streaming unload clears the selection.** Select an object, then fly or
+   strafe until its chunk is beyond the unload distance. The terminal must print
+   one `Selection cleared because its chunk was unloaded.` line, the title must
+   show `no selection (unloaded)`, and no highlight may remain on an object that
+   is no longer drawn.
+9. **Screen edges and occlusion do not confuse picking.** Click boxes that are
+   partially clipped by a viewport edge and boxes that are partly hidden behind
+   another object. Selection must follow the ray and the nearest transformed
+   bounds, not the drawn pixels. The example leaves frustum culling and LOD at
+   their defaults; picking never consults either system.
+10. **Resize, high-DPI, minimize, and restore work.** Resize through wide and
+    tall shapes, then click the same on-screen object at a new size. Retina output
+    stays sharp and the selection must still match the pointer. Minimize and
+    restore; rendering resumes, and picks still work. Close with the button and
+    `Cmd+Q`; both exit with status `0` and restore the cursor.
+
 ## HelloBenchmark checks
 
 `HelloBenchmark` is a CPU benchmark, not a visual or GPU-timing test. It opens a
@@ -755,8 +800,8 @@ These checks are optional and must not modify tracked files.
 Report the macOS version, architecture (`arm64` or `x86_64`), GPU model, date, and
 pass/fail for each check, separately for `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, `HelloLOD`, and `HelloStreaming`, plus the
-separate `HelloBenchmark` checks.
+`HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, and
+`HelloPicking`, plus the separate `HelloBenchmark` checks.
 Do not describe this manual checklist as a CI result.
 State separately that the checked-in `HelloO3D` fixture is synthetic, that the
 `HelloX` fixture is original project content rather than an exported game asset,

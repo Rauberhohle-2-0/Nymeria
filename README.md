@@ -29,8 +29,9 @@ interactive, depth-tested cube scene.
   `examples/HelloMaterials`, the lit `examples/HelloLighting`, the conservative
   frustum-culling `examples/HelloCulling`, the explicit-LOD and distance-culling
   `examples/HelloLOD`, the chunk-streaming `examples/HelloStreaming`, the
-  CPU-profiling `examples/HelloBenchmark`, bounded frame-timing diagnostics,
-  headless mesh-bounds, visibility, LOD, and streaming helpers,
+  raycasting and picking `examples/HelloPicking`, the CPU-profiling
+  `examples/HelloBenchmark`, bounded frame-timing diagnostics, headless
+  mesh-bounds, visibility, LOD, streaming, and raycasting helpers,
   platform-independent unit tests, CI
   restore/build/test on macOS, Windows, and
   Linux, repository checks, an audited dependency restore, a documented security
@@ -81,6 +82,7 @@ dotnet run --project examples/HelloCulling/HelloCulling.csproj -- --no-culling
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj -- --no-streaming
+dotnet run --project examples/HelloPicking/HelloPicking.csproj
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj --configuration Release -- --instances 2048
 ```
 
@@ -109,7 +111,11 @@ culling, `F` toggles frustum culling, `[`/`]` change the thresholds, and `R`
 resets them. `HelloStreaming` loads and unloads 25 deterministic chunks around a
 free camera, reuses one cube mesh and six materials across chunks, and releases
 chunk-exclusive GPU buffers after unload; `S` toggles streaming, `T` teleports,
-`C` toggles culling, and `R` resets the camera. `HelloBenchmark` is an
+`C` toggles culling, and `R` resets the camera. `HelloPicking` streams nine
+chunks, picks whole objects with cursor or center-of-screen rays, highlights the
+selection, and shows its label and distance in the window title; left-click
+picks, `V` switches modes, `G` toggles the ghost box's pickability, and `R`
+resets the camera. `HelloBenchmark` is an
 auto-exiting Release CPU benchmark with a
 fixed camera, deterministic 512/2048/8192-instance scenes, culling and LOD
 modes, and 16 ms pacing control; it prints bounded phase timings, instance,
@@ -145,8 +151,8 @@ example owns its pipeline and depth target, while `HelloOBJ`, `HelloO3D`, and
 `examples/Shared`.
 `HelloScene` uses the shared geometry builder, model shader, and camera controls
 with its own scene renderer. `HelloMaterials`, `HelloLighting`, `HelloCulling`,
-and `HelloLOD` share the material renderer and camera controls in
-`examples/Shared`. `HelloCulling` enables the renderer's optional conservative
+`HelloLOD`, `HelloStreaming`, and `HelloPicking` share the material renderer and
+camera controls in `examples/Shared`. `HelloCulling` enables the renderer's optional conservative
 frustum culling and prints per-frame instance and draw-call counts; bounds,
 planes, fallbacks, and limitations are documented in
 [docs/CULLING.md](docs/CULLING.md). `HelloLOD` enables the renderer's optional
@@ -258,6 +264,16 @@ instances tested, submitted, culled, and actual indexed draw calls. See
 [docs/CULLING.md](docs/CULLING.md) for bounds semantics, safe fallbacks,
 statistics, measurements, and limits.
 
+`HelloPicking` renders a streamed nine-chunk world through the shared material
+renderer and picks whole objects with `Nymeria.Core.Raycasting`. A ray is built
+from the mouse pixel or the viewport center using the camera's actual view and
+projection matrices; the nearest hit is chosen from each object's transformed
+world bounds, and `IsPickable` excludes the gray ghost box until `G` enables it.
+The selected object is highlighted by assigning a shared material, and the
+window title shows its label and distance. Picking deliberately ignores frustum
+culling, distance culling, and the selected LOD variant. See
+[docs/PICKING.md](docs/PICKING.md).
+
 `HelloLOD` supplies three explicit sphere meshes (576, 100, and 30 triangles) for
 each instance and selects one per frame from the camera distance to the
 conservative union of their world bounds. The configuration also has an optional
@@ -268,8 +284,8 @@ frustum-culled, distance-culled, drawn, draw-call, submitted-triangle, and
 per-level counts plus render-time average and p95; see
 [docs/LOD.md](docs/LOD.md) for the contract, benchmark method, and limits.
 
-All ten interactive examples skip rendering while minimized and recover when a
-drawable is available again. [examples/README.md](examples/README.md) records the matrix
+All eleven interactive examples skip rendering while minimized and recover when
+a drawable is available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
 This path is macOS-only for now. Windows and Linux need their own native SDL3
@@ -289,7 +305,9 @@ The tests cover `WindowOptions` defaults and validation, model-data validation
 and parser-contract error semantics, transform composition, scene lifecycle and
 mesh sharing, mesh bounds, frustum intersection, visibility counts, bounded
 frame-timing aggregation and warm-up exclusion, material and texture-data
-validation, and the lighting data, Lambert term, and normal-matrix math in
+validation, the lighting data, Lambert term, and normal-matrix math, and ray and
+AABB boundary behavior, nearest-hit selection, transformed bounds, viewport
+camera rays, pick eligibility, and picking independence from culling and LOD in
 `Nymeria.Core.Tests`, the
 OBJ subset and diagnostics in `Nymeria.Formats.Obj.Tests`, the O3D header,
 supported versions and flags, conversions, limits, and failure behavior in
@@ -320,7 +338,7 @@ src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
 examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloX, HelloScene,
                 HelloMaterials, HelloLighting, HelloCulling, HelloLOD,
-                HelloStreaming, and HelloBenchmark
+                HelloStreaming, HelloPicking, and HelloBenchmark
 tests/          Headless unit tests for core, formats, and platform projects
 ```
 
@@ -334,6 +352,7 @@ tests/          Headless unit tests for core, formats, and platform projects
 - [Mesh bounds and frustum culling](docs/CULLING.md)
 - [Explicit mesh LOD](docs/LOD.md)
 - [Scene chunk streaming](docs/STREAMING.md)
+- [Raycasting and object picking](docs/PICKING.md)
 - [Performance measurement](docs/PERFORMANCE.md)
 - [Performance baseline 01](docs/PERFORMANCE_BASELINE_01.md)
 - [Wavefront OBJ import](docs/OBJ.md)

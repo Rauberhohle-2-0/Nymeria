@@ -125,6 +125,25 @@ public sealed class SceneObject
     }
 
     /// <summary>
+    /// Gets or sets whether this object participates in scene raycast queries.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The default is <see langword="true"/>. Setting it to false makes the
+    /// object ineligible for picking while leaving rendering, frustum culling,
+    /// distance culling, and LOD selection unchanged. It is a logical
+    /// interaction flag, not a visibility flag: an unpickable object is still
+    /// drawn if it would otherwise be rendered.
+    /// </para>
+    /// <para>
+    /// Frustum and distance culling are deliberately not considered by picking,
+    /// so an object outside the current view can still be picked by a ray that
+    /// reaches it. See <c>docs/PICKING.md</c>.
+    /// </para>
+    /// </remarks>
+    public bool IsPickable { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the material assigned to this object.
     /// </summary>
     /// <remarks>

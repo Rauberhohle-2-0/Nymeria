@@ -163,6 +163,13 @@ variant, and every material base-color texture. Shared entries stay cached while
 any current object references them. A later object that references a released
 entry uploads it again. The renderer never disposes managed CPU data.
 
+Unloaded objects also disappear from scene raycast queries, because
+`SceneRaycaster` scans the current scene and never the streamer's retained
+metadata. A `RaycastHit` obtained before an unload still holds the managed
+`SceneObject` reference; it is safe to inspect but is no longer scene content.
+Validate a stored selection with `Scene.Contains` after streaming updates, as
+`HelloPicking` does. [PICKING.md](PICKING.md) documents the picking contract.
+
 Do not call pruning while another scene depends on the renderer's cache. Pruning
 is an occasional unload-path operation, not a per-frame operation.
 

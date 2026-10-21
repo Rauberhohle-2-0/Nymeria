@@ -29,7 +29,10 @@ contract. It also carries an optional explicit mesh level-of-detail reference;
 Visibility culling and LOD selection are not part of the scene layer: they are
 headless helpers in `Nymeria.Core.Culling` and `Nymeria.Core.Lod` that read scene
 data and keep their per-frame selection state on each object. [CULLING.md](CULLING.md)
-and [LOD.md](LOD.md) are the authoritative contracts. Chunk membership is also
+and [LOD.md](LOD.md) are the authoritative contracts. Raycast picking is also a
+separate headless helper, in `Nymeria.Core.Raycasting`; it reads scene data and
+an `IsPickable` flag without changing rendering or visibility state.
+[PICKING.md](PICKING.md) is its authoritative contract. Chunk membership is also
 separate: `Nymeria.Core.Streaming` adds and removes ordinary scene objects around
 a focus point and does not change the scene data model. [STREAMING.md](STREAMING.md)
 is its authoritative contract.
@@ -102,6 +105,10 @@ var second = new SceneObject(mesh, transformB, material, lod);
   to `null`. When set, its highest-detail mesh must be the same reference as
   `Mesh`; otherwise assignment throws `ArgumentException`. Assigning a
   configuration resets the object's current LOD level. See [LOD.md](LOD.md).
+- `IsPickable` defaults to `true` and controls whether `SceneRaycaster` may
+  return this object. Setting it to `false` does not hide, cull, distance-cull, or
+  change the LOD of the object; it is an interaction flag only. Frustum and
+  distance culling are not considered by picking. See [PICKING.md](PICKING.md).
 - The object does not own or dispose its mesh, material, or LOD configuration.
   `MeshData`, `Material`, `Texture`, and `MeshLod` are managed data with no
   unmanaged resources.
@@ -374,9 +381,10 @@ limits.
 - ambient and directional light validation, Lambert terms, normal matrices,
   combined lighting, and `Scene.Lighting` default/replacement semantics.
 
-Bounds, frustum intersection, visibility counters, LOD selection, and chunk
-streaming have headless tests in `tests/Nymeria.Core.Tests`; see
-[CULLING.md](CULLING.md), [LOD.md](LOD.md), and [STREAMING.md](STREAMING.md).
+Bounds, frustum intersection, visibility counters, LOD selection, chunk
+streaming, and scene picking have headless tests in `tests/Nymeria.Core.Tests`;
+see [CULLING.md](CULLING.md), [LOD.md](LOD.md), [STREAMING.md](STREAMING.md), and
+[PICKING.md](PICKING.md).
 GPU rendering, window behavior, and input are validated manually with
 [SMOKE_TEST.md](SMOKE_TEST.md), not by headless CI.
 
@@ -389,8 +397,8 @@ animation, multiple lights, point or spot lights, shadows, specular or PBR
 shading, transparency sorting, texture streaming or hot reload, MTL or OMSI
 material parsing, automatic mesh simplification or LOD generation, and automatic
 background unloading of CPU assets. Frustum culling, explicit LOD selection,
-optional distance culling, and synchronous chunk membership are supported
-separately and documented in [CULLING.md](CULLING.md), [LOD.md](LOD.md), and
-[STREAMING.md](STREAMING.md). GPU caches can be reclaimed explicitly with
+optional distance culling, synchronous chunk membership, and bounds-based raycast
+picking are supported separately and documented in [CULLING.md](CULLING.md),
+[LOD.md](LOD.md), [STREAMING.md](STREAMING.md), and [PICKING.md](PICKING.md). GPU caches can be reclaimed explicitly with
 `MaterialRenderer.PruneUnusedResources`; the scene layer itself never owns or
 disposes a GPU resource.

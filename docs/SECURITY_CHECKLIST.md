@@ -22,6 +22,10 @@ not a guarantee.
       identifiers, bounds, distances, focus, elapsed time, content counts, nulls,
       and duplicate scene objects are validated, and loader paths remain the
       application's responsibility.
+- [ ] Raycast queries validate rays, viewport dimensions, matrices, and maximum
+      distances; fail to a safe miss instead of NaN results; stay bounded by the
+      scene object limit; do not read unbounded mesh data; and validate any
+      stored hit against current scene membership after streaming unloads.
 
 ## Binary format parsing
 
