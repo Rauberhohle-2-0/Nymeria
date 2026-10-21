@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Nymeria.Core.Diagnostics;
+using Nymeria.Core.Lod;
 using Nymeria.Core.Scenes;
 using Nymeria.Examples;
 using Nymeria.Graphics;
@@ -74,7 +75,8 @@ internal static class Program
 
     private static int Run(BenchmarkOptions options)
     {
-        (Scene scene, int materialCount) = BenchmarkScene.Create(options.Instances);
+        (Scene scene, int materialCount, int highTriangles, int mediumTriangles, int lowTriangles) =
+            BenchmarkScene.Create(options.Instances);
         var camera = new Camera(new Vector3(0.0f, 10.0f, 26.0f))
         {
             PitchRadians = -0.18f,
@@ -98,6 +100,9 @@ internal static class Program
             options,
             scene,
             materialCount,
+            highTriangles,
+            mediumTriangles,
+            lowTriangles,
             logicalWidth,
             logicalHeight,
             drawableWidth,
@@ -109,18 +114,28 @@ internal static class Program
             CullingMode.On => [true],
             _ => [false, true],
         };
+        ReadOnlySpan<bool> lodModes = options.LodMode switch
+        {
+            LodMode.Off => [false],
+            LodMode.On => [true],
+            _ => [false, true],
+        };
 
         foreach (bool culling in cullingModes)
         {
-            if (!RunMode(
-                    window,
-                    renderer,
-                    scene,
-                    camera,
-                    options,
-                    culling))
+            foreach (bool lod in lodModes)
             {
-                return 2;
+                if (!RunMode(
+                        window,
+                        renderer,
+                        scene,
+                        camera,
+                        options,
+                        culling,
+                        lod))
+                {
+                    return 2;
+                }
             }
         }
 
@@ -133,9 +148,12 @@ internal static class Program
         Scene scene,
         Camera camera,
         BenchmarkOptions options,
-        bool cullingEnabled)
+        bool cullingEnabled,
+        bool lodEnabled)
     {
         renderer.FrustumCullingEnabled = cullingEnabled;
+        renderer.LodEnabled = lodEnabled;
+        renderer.DistanceCullingEnabled = options.DistanceCullingEnabled;
 
         for (int frame = 0; frame < options.WarmupFrames; frame++)
         {
@@ -157,6 +175,11 @@ internal static class Program
         int drawCallsMaximum = 0;
         long visibleInstancesTotal = 0;
         long culledInstancesTotal = 0;
+        long distanceCulledInstancesTotal = 0;
+        long lodDrawnInstancesTotal = 0;
+        long submittedTrianglesTotal = 0;
+        long submittedTrianglesMaximum = 0;
+        var lodLevelTotals = new long[MeshLod.MaxLevels];
         int testedInstances = 0;
         int skippedFrames = 0;
         int gc0Before = GC.CollectionCount(0);
@@ -193,6 +216,17 @@ internal static class Program
                 drawCallsMaximum = Math.Max(drawCallsMaximum, statistics.DrawCalls);
                 visibleInstancesTotal += statistics.VisibleInstances;
                 culledInstancesTotal += statistics.CulledInstances;
+                distanceCulledInstancesTotal += statistics.DistanceCulledInstances;
+                lodDrawnInstancesTotal += statistics.LodDrawnInstances;
+                submittedTrianglesTotal += statistics.SubmittedTriangles;
+                submittedTrianglesMaximum = Math.Max(
+                    submittedTrianglesMaximum,
+                    statistics.SubmittedTriangles);
+
+                for (int level = 0; level < MeshLod.MaxLevels; level++)
+                {
+                    lodLevelTotals[level] += statistics.LodUsage[level];
+                }
             }
 
             double busyMilliseconds = ElapsedMilliseconds(frameStart, renderEnd);
@@ -233,6 +267,8 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine(
             $"mode: culling {(cullingEnabled ? "on " : "off")} | " +
+            $"lod {(lodEnabled ? "on " : "off")} | " +
+            $"distance {(options.DistanceCullingEnabled ? "on " : "off")} | " +
             $"samples {frameSummary.SampleCount} | skipped {skippedFrames}");
 
         if (skippedFrames > 0)
@@ -262,10 +298,19 @@ internal static class Program
         Console.WriteLine(
             $"  instances:   tested {testedInstances} | " +
             $"visible avg {visibleInstancesTotal / sampleCount:F1} | " +
-            $"culled avg {culledInstancesTotal / sampleCount:F1}");
+            $"frustum culled avg {culledInstancesTotal / sampleCount:F1} | " +
+            $"distance culled avg {distanceCulledInstancesTotal / sampleCount:F1} | " +
+            $"lod drawn avg {lodDrawnInstancesTotal / sampleCount:F1}");
         Console.WriteLine(
             $"  draw calls:  avg {drawCallsTotal / sampleCount:F1} | " +
             $"max {drawCallsMaximum}");
+        Console.WriteLine(
+            $"  triangles:   avg {submittedTrianglesTotal / sampleCount:F1} | " +
+            $"max {submittedTrianglesMaximum}");
+        Console.WriteLine(
+            $"  lod usage:   level 0 avg {lodLevelTotals[0] / sampleCount:F1} | " +
+            $"level 1 avg {lodLevelTotals[1] / sampleCount:F1} | " +
+            $"level 2 avg {lodLevelTotals[2] / sampleCount:F1}");
         Console.WriteLine(
             $"  managed:     avg {allocatedBytes / sampleCount:F0} bytes/frame | " +
             $"GC +{GC.CollectionCount(0) - gc0Before}/" +
@@ -311,6 +356,9 @@ internal static class Program
         BenchmarkOptions options,
         Scene scene,
         int materialCount,
+        int highTriangles,
+        int mediumTriangles,
+        int lowTriangles,
         int logicalWidth,
         int logicalHeight,
         int drawableWidth,
@@ -327,7 +375,8 @@ internal static class Program
             $"drawable {drawableWidth}x{drawableHeight}");
         Console.WriteLine("backend: SDL3 GPU, Metal on macOS");
         Console.WriteLine(
-            $"scene: {scene.Count} instances | one shared mesh | " +
+            $"scene: {scene.Count} instances | three shared cube variants " +
+            $"({highTriangles}/{mediumTriangles}/{lowTriangles} triangles) | " +
             $"{materialCount} shared materials");
         Console.WriteLine(
             options.PacingEnabled
@@ -340,7 +389,12 @@ internal static class Program
             "timings are CPU wall-clock durations; render includes culling, " +
             "command recording, submission, and swapchain acquisition, not GPU execution");
         Console.WriteLine(
-            "culling comparison runs off before on; each mode has its own warm-up");
+            "culling comparison runs off before on, with LOD off before on for " +
+            "each culling mode; every mode has its own warm-up");
+        Console.WriteLine(
+            options.DistanceCullingEnabled
+                ? "distance culling: configured maximum enforced while LOD is on"
+                : "distance culling: disabled (configured maximum ignored)");
     }
 
     private static bool TryParseOptions(string[] args, out BenchmarkOptions options)
@@ -359,6 +413,21 @@ internal static class Program
                     return true;
                 case "--no-pacing":
                     options.PacingEnabled = false;
+                    break;
+                case "--no-distance-culling":
+                    options.DistanceCullingEnabled = false;
+                    break;
+                case "--lod":
+                    if (!TryReadValue(args, ref i, argument, out string lod) ||
+                        !Enum.TryParse(lod, ignoreCase: true, out LodMode lodMode) ||
+                        !Enum.IsDefined(lodMode))
+                    {
+                        Console.Error.WriteLine(
+                            "The --lod value must be on, off, or both.");
+                        return false;
+                    }
+
+                    options.LodMode = lodMode;
                     break;
                 case "--culling":
                     if (!TryReadValue(args, ref i, argument, out string culling))
@@ -468,6 +537,8 @@ internal static class Program
             "Usage: HelloBenchmark [options]\n" +
             "  --instances <count>   Scene instances (1..100000, default 2048).\n" +
             "  --culling <mode>      on, off, or both (default both).\n" +
+            "  --lod <mode>          on, off, or both (default off).\n" +
+            "  --no-distance-culling Disable the configured maximum render distance.\n" +
             "  --warmup <frames>     Frames excluded before measuring (default 120).\n" +
             "  --frames <count>      Measured frames per mode (default 600).\n" +
             "  --no-pacing           Disable the 16 ms frame-budget delay.\n" +
@@ -480,16 +551,27 @@ internal static class Program
 
         public CullingMode CullingMode { get; set; } = CullingMode.Both;
 
+        public LodMode LodMode { get; set; } = LodMode.Off;
+
         public int WarmupFrames { get; set; } = DefaultWarmupFrames;
 
         public int SampleFrames { get; set; } = DefaultSampleFrames;
 
         public bool PacingEnabled { get; set; } = true;
 
+        public bool DistanceCullingEnabled { get; set; } = true;
+
         public bool ShowHelp { get; set; }
     }
 
     private enum CullingMode
+    {
+        Off = 0,
+        On = 1,
+        Both = 2,
+    }
+
+    private enum LodMode
     {
         Off = 0,
         On = 1,

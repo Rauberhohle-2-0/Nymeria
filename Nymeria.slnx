@@ -3,6 +3,7 @@
     <Project Path="examples/HelloBenchmark/HelloBenchmark.csproj" />
     <Project Path="examples/HelloCube/HelloCube.csproj" />
     <Project Path="examples/HelloCulling/HelloCulling.csproj" />
+    <Project Path="examples/HelloLOD/HelloLOD.csproj" />
     <Project Path="examples/HelloLighting/HelloLighting.csproj" />
     <Project Path="examples/HelloMaterials/HelloMaterials.csproj" />
     <Project Path="examples/HelloO3D/HelloO3D.csproj" />

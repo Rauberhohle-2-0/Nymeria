@@ -1,4 +1,5 @@
 using System.Numerics;
+using Nymeria.Core.Lod;
 using Nymeria.Core.Materials;
 using Nymeria.Core.Models;
 using Nymeria.Core.Scenes;
@@ -6,71 +7,33 @@ using Nymeria.Core.Scenes;
 namespace HelloBenchmark;
 
 /// <summary>
-/// Builds the deterministic benchmark scene: one shared cube mesh, four shared
-/// untextured materials, and a reproducible instance count.
+/// Builds the deterministic benchmark scene: three shared detail variants of the
+/// same cube, four shared untextured materials, and a reproducible instance
+/// count. The renderer's LOD toggle decides whether the variants are used.
 /// </summary>
 internal static class BenchmarkScene
 {
     private const float HalfExtent = 1.0f;
+    private const float FirstLodThreshold = 18.0f;
+    private const float SecondLodThreshold = 45.0f;
+    private const float MaximumRenderDistance = 90.0f;
+    private const float LodHysteresis = 0.5f;
 
-    private static readonly Vector3[] s_positions =
-    {
-        new(-HalfExtent, -HalfExtent,  HalfExtent),
-        new( HalfExtent, -HalfExtent,  HalfExtent),
-        new( HalfExtent,  HalfExtent,  HalfExtent),
-        new(-HalfExtent,  HalfExtent,  HalfExtent),
-
-        new( HalfExtent, -HalfExtent, -HalfExtent),
-        new(-HalfExtent, -HalfExtent, -HalfExtent),
-        new(-HalfExtent,  HalfExtent, -HalfExtent),
-        new( HalfExtent,  HalfExtent, -HalfExtent),
-
-        new( HalfExtent, -HalfExtent,  HalfExtent),
-        new( HalfExtent, -HalfExtent, -HalfExtent),
-        new( HalfExtent,  HalfExtent, -HalfExtent),
-        new( HalfExtent,  HalfExtent,  HalfExtent),
-
-        new(-HalfExtent, -HalfExtent, -HalfExtent),
-        new(-HalfExtent, -HalfExtent,  HalfExtent),
-        new(-HalfExtent,  HalfExtent,  HalfExtent),
-        new(-HalfExtent,  HalfExtent, -HalfExtent),
-
-        new(-HalfExtent,  HalfExtent,  HalfExtent),
-        new( HalfExtent,  HalfExtent,  HalfExtent),
-        new( HalfExtent,  HalfExtent, -HalfExtent),
-        new(-HalfExtent,  HalfExtent, -HalfExtent),
-
-        new(-HalfExtent, -HalfExtent, -HalfExtent),
-        new( HalfExtent, -HalfExtent, -HalfExtent),
-        new( HalfExtent, -HalfExtent,  HalfExtent),
-        new(-HalfExtent, -HalfExtent,  HalfExtent),
-    };
-
-    private static readonly Vector3[] s_normals =
-    {
-        Vector3.UnitZ, Vector3.UnitZ, Vector3.UnitZ, Vector3.UnitZ,
-        -Vector3.UnitZ, -Vector3.UnitZ, -Vector3.UnitZ, -Vector3.UnitZ,
-        Vector3.UnitX, Vector3.UnitX, Vector3.UnitX, Vector3.UnitX,
-        -Vector3.UnitX, -Vector3.UnitX, -Vector3.UnitX, -Vector3.UnitX,
-        Vector3.UnitY, Vector3.UnitY, Vector3.UnitY, Vector3.UnitY,
-        -Vector3.UnitY, -Vector3.UnitY, -Vector3.UnitY, -Vector3.UnitY,
-    };
-
-    private static readonly uint[] s_indices =
-    {
-         0,  1,  2,   0,  2,  3,
-         4,  5,  6,   4,  6,  7,
-         8,  9, 10,   8, 10, 11,
-        12, 13, 14,  12, 14, 15,
-        16, 17, 18,  16, 18, 19,
-        20, 21, 22,  20, 22, 23,
-    };
-
-    public static (Scene Scene, int MaterialCount) Create(int instanceCount)
+    public static (Scene Scene, int MaterialCount, int HighTriangles, int MediumTriangles, int LowTriangles) Create(int instanceCount)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(instanceCount, 1);
 
-        MeshData mesh = CreateCubeMesh();
+        MeshData high = CreateCubeMesh(divisions: 8);
+        MeshData medium = CreateCubeMesh(divisions: 3);
+        MeshData low = CreateCubeMesh(divisions: 1);
+        var lod = new MeshLod(
+            [
+                new MeshLodLevel(high, 0.0f),
+                new MeshLodLevel(medium, FirstLodThreshold),
+                new MeshLodLevel(low, SecondLodThreshold),
+            ],
+            maximumRenderDistance: MaximumRenderDistance,
+            hysteresis: LodHysteresis);
         Material[] materials =
         [
             new Material(new Vector3(0.90f, 0.32f, 0.22f), null, "benchmark red"),
@@ -90,7 +53,8 @@ internal static class BenchmarkScene
         for (int i = 0; i < behindCount; i++)
         {
             scene.Add(CreateObject(
-                mesh,
+                high,
+                lod,
                 materials[i % materials.Length],
                 new Vector3(
                     ((i % 16) - 7.5f) * 4.0f,
@@ -116,7 +80,8 @@ internal static class BenchmarkScene
                 float scaleZ = 1.0f + ((i % 3) * 0.2f);
 
                 scene.Add(CreateObject(
-                    mesh,
+                    high,
+                    lod,
                     materials[i % materials.Length],
                     new Vector3(x, y, z),
                     yawRadians: (column * 0.37f) + (row * 0.19f),
@@ -124,11 +89,17 @@ internal static class BenchmarkScene
             }
         }
 
-        return (scene, materials.Length);
+        return (
+            scene,
+            materials.Length,
+            high.Indices.Length / 3,
+            medium.Indices.Length / 3,
+            low.Indices.Length / 3);
     }
 
     private static SceneObject CreateObject(
         MeshData mesh,
+        MeshLod lod,
         Material material,
         Vector3 position,
         float yawRadians,
@@ -140,15 +111,72 @@ internal static class BenchmarkScene
                 position,
                 Quaternion.CreateFromYawPitchRoll(yawRadians, 0.0f, 0.0f),
                 scale),
-            material);
+            material,
+            lod);
     }
 
-    private static MeshData CreateCubeMesh()
+    private static MeshData CreateCubeMesh(int divisions)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(divisions, 1);
+
+        (Vector3 Normal, Vector3 Right, Vector3 Up)[] faces =
+        [
+            (Vector3.UnitZ, Vector3.UnitX, Vector3.UnitY),
+            (-Vector3.UnitZ, -Vector3.UnitX, Vector3.UnitY),
+            (Vector3.UnitX, -Vector3.UnitZ, Vector3.UnitY),
+            (-Vector3.UnitX, Vector3.UnitZ, Vector3.UnitY),
+            (Vector3.UnitY, Vector3.UnitX, -Vector3.UnitZ),
+            (-Vector3.UnitY, Vector3.UnitX, Vector3.UnitZ),
+        ];
+
+        int quadsPerFace = divisions * divisions;
+        int verticesPerFace = quadsPerFace * 4;
+        var positions = new Vector3[faces.Length * verticesPerFace];
+        var normals = new Vector3[faces.Length * verticesPerFace];
+        var indices = new uint[faces.Length * quadsPerFace * 6];
+        int vertexWrite = 0;
+        int indexWrite = 0;
+
+        foreach ((Vector3 normal, Vector3 right, Vector3 up) in faces)
+        {
+            for (int row = 0; row < divisions; row++)
+            {
+                float v0 = ((row * 2.0f) / divisions) - 1.0f;
+                float v1 = (((row + 1) * 2.0f) / divisions) - 1.0f;
+
+                for (int column = 0; column < divisions; column++)
+                {
+                    float u0 = ((column * 2.0f) / divisions) - 1.0f;
+                    float u1 = (((column + 1) * 2.0f) / divisions) - 1.0f;
+                    uint baseIndex = (uint)vertexWrite;
+
+                    positions[vertexWrite] = normal + (right * u0) + (up * v0);
+                    normals[vertexWrite] = normal;
+                    vertexWrite++;
+                    positions[vertexWrite] = normal + (right * u1) + (up * v0);
+                    normals[vertexWrite] = normal;
+                    vertexWrite++;
+                    positions[vertexWrite] = normal + (right * u1) + (up * v1);
+                    normals[vertexWrite] = normal;
+                    vertexWrite++;
+                    positions[vertexWrite] = normal + (right * u0) + (up * v1);
+                    normals[vertexWrite] = normal;
+                    vertexWrite++;
+
+                    indices[indexWrite++] = baseIndex;
+                    indices[indexWrite++] = baseIndex + 1;
+                    indices[indexWrite++] = baseIndex + 2;
+                    indices[indexWrite++] = baseIndex;
+                    indices[indexWrite++] = baseIndex + 2;
+                    indices[indexWrite++] = baseIndex + 3;
+                }
+            }
+        }
+
         return new MeshData(
-            s_positions,
-            s_normals,
+            positions,
+            normals,
             ReadOnlyMemory<Vector2>.Empty,
-            s_indices);
+            indices);
     }
 }

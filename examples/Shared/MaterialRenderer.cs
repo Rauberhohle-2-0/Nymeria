@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Nymeria.Core.Culling;
 using Nymeria.Core.Lighting;
+using Nymeria.Core.Lod;
 using Nymeria.Core.Materials;
 using Nymeria.Core.Models;
 using Nymeria.Core.Scenes;
@@ -45,6 +46,14 @@ namespace Nymeria.Examples;
 /// sampled RGB with the material tint. A texture with uploaded mip levels uses
 /// the mipped sampler; a single-level texture uses the sampler with a maximum
 /// LOD of zero, so no absent level is ever requested.
+/// </para>
+/// <para>
+/// Optional per-object <see cref="MeshLod"/> configurations select one explicit
+/// mesh variant per object per frame. Every distinct variant is uploaded once
+/// and shared by reference, like any other mesh. Distance culling skips an
+/// instance only when it is strictly beyond its configured maximum distance.
+/// Objects without a configuration follow the original single-mesh path and are
+/// never distance-culled. See <c>docs/LOD.md</c>.
 /// </para>
 /// </remarks>
 public sealed class MaterialRenderer : IDisposable
@@ -217,16 +226,45 @@ public sealed class MaterialRenderer : IDisposable
     public bool FrustumCullingEnabled { get; set; }
 
     /// <summary>
-    /// Gets instance and draw-call counts for the most recent frame that reached
-    /// command submission.
+    /// Gets or sets whether configured per-object LOD and distance culling are
+    /// active.
+    /// </summary>
+    /// <remarks>
+    /// The default is <see langword="true"/>. It only affects objects with a
+    /// <see cref="SceneObject.Lod"/> configuration; objects without one render
+    /// exactly as before. When set to false, every object draws its primary
+    /// mesh, distance culling is bypassed, and each object's stored LOD level is
+    /// reset. Enabling it again therefore starts from a fresh selection.
+    /// </remarks>
+    public bool LodEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets whether an object's configured maximum render distance is
+    /// enforced while LOD is active.
+    /// </summary>
+    /// <remarks>
+    /// The default is <see langword="true"/>. Disabling it keeps LOD selection
+    /// but draws instances at any distance. Objects without a maximum render
+    /// distance are never affected.
+    /// </remarks>
+    public bool DistanceCullingEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Gets instance, draw-call, LOD, and submitted-triangle counts for the most
+    /// recent frame that reached command submission.
     /// </summary>
     /// <remarks>
     /// <see cref="VisibilityStatistics.TotalInstances"/>,
-    /// <see cref="VisibilityStatistics.VisibleInstances"/>, and
-    /// <see cref="VisibilityStatistics.CulledInstances"/> count scene instances,
-    /// not GPU work. <see cref="VisibilityStatistics.DrawCalls"/> counts the
-    /// indexed draw calls this renderer actually submitted. A frame skipped for a
-    /// minimized window or an unusable drawable leaves this value at zero.
+    /// <see cref="VisibilityStatistics.VisibleInstances"/>,
+    /// <see cref="VisibilityStatistics.CulledInstances"/>, and
+    /// <see cref="VisibilityStatistics.DistanceCulledInstances"/> count scene
+    /// instances, not GPU work. <see cref="VisibilityStatistics.DrawCalls"/> and
+    /// <see cref="VisibilityStatistics.SubmittedTriangles"/> describe the work
+    /// actually submitted. <see cref="VisibilityStatistics.LodDrawnInstances"/>,
+    /// <see cref="VisibilityStatistics.LodUsage"/>,
+    /// and <see cref="VisibilityStatistics.DrawCalls"/> are reset and recomputed
+    /// each frame. A frame skipped for a minimized window or an unusable drawable
+    /// leaves this value at zero.
     /// </remarks>
     public VisibilityStatistics LastFrameStatistics { get; private set; }
 
@@ -401,17 +439,28 @@ public sealed class MaterialRenderer : IDisposable
             stackalloc SDL.GPUTextureSamplerBinding[1];
 
         int drawCalls = 0;
+        long submittedTriangles = 0;
+        bool lodEnabled = LodEnabled;
+        bool distanceCullingEnabled = DistanceCullingEnabled;
+        Vector3 cameraPosition = camera.Position;
 
         for (int objectIndex = 0; objectIndex < scene.Objects.Count; objectIndex++)
         {
             SceneObject sceneObject = scene.Objects[objectIndex];
 
-            if (!_visibility.Test(sceneObject, frustum, out Matrix4x4 model))
+            if (!_visibility.Test(
+                    sceneObject,
+                    frustum,
+                    cameraPosition,
+                    lodEnabled,
+                    distanceCullingEnabled,
+                    out Matrix4x4 model,
+                    out MeshData selectedMesh))
             {
                 continue;
             }
 
-            GpuMesh mesh = _meshes[sceneObject.Mesh];
+            GpuMesh mesh = _meshes[selectedMesh];
             Material material = sceneObject.Material;
 
             if (!LightingMath.TryCreateNormalMatrix(model, out Matrix4x4 normalMatrix))
@@ -496,6 +545,7 @@ public sealed class MaterialRenderer : IDisposable
                 0,
                 0);
             drawCalls++;
+            submittedTriangles += mesh.IndexCount / 3;
         }
 
         SDL.EndGPURenderPass(renderPass);
@@ -510,7 +560,11 @@ public sealed class MaterialRenderer : IDisposable
             _visibility.TotalInstances,
             _visibility.VisibleInstances,
             _visibility.CulledInstances,
-            drawCalls);
+            drawCalls,
+            _visibility.DistanceCulledInstances,
+            _visibility.LodDrawnInstances,
+            submittedTriangles,
+            _visibility.LodLevelUsage);
     }
 
     public void Dispose()
@@ -555,14 +609,31 @@ public sealed class MaterialRenderer : IDisposable
 
     private void EnsureResourcesUploaded(Scene scene)
     {
+        bool lodEnabled = LodEnabled;
+
         foreach (SceneObject sceneObject in scene.Objects)
         {
             GpuMesh mesh = GetOrCreateGpuMesh(sceneObject.Mesh);
+            bool hasTextureCoordinates = mesh.HasTextureCoordinates;
+
+            // Every explicit variant gets its own one-time upload. The cache is
+            // keyed by MeshData reference, so sharing a variant between objects
+            // or configurations never duplicates a buffer.
+            if (lodEnabled && sceneObject.Lod is { } lod)
+            {
+                for (int level = 0; level < lod.Levels.Count; level++)
+                {
+                    GpuMesh variant = GetOrCreateGpuMesh(lod.Levels[level].Mesh);
+                    hasTextureCoordinates |= variant.HasTextureCoordinates;
+                }
+            }
+
             Texture? texture = sceneObject.Material.BaseColorTexture;
 
             // A mesh without UVs binds the fallback texture, so uploading its
-            // material's texture would only waste memory.
-            if (texture is not null && mesh.HasTextureCoordinates)
+            // material's texture would only waste memory. Any selectable variant
+            // with UVs may need the texture, so check all of them.
+            if (texture is not null && hasTextureCoordinates)
             {
                 GetOrCreateGpuTexture(texture);
             }
@@ -1064,7 +1135,11 @@ public sealed class MaterialRenderer : IDisposable
         int TotalInstances,
         int VisibleInstances,
         int CulledInstances,
-        int DrawCalls);
+        int DrawCalls,
+        int DistanceCulledInstances = 0,
+        int LodDrawnInstances = 0,
+        long SubmittedTriangles = 0,
+        LodLevelUsage LodUsage = default);
 
     private readonly record struct GpuMesh(
         IntPtr VertexBuffer,
