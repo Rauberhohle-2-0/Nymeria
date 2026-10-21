@@ -473,6 +473,7 @@ Environment: macOS `osx-arm64`, .NET SDK `10.0.402` from `global.json`.
 | TGA fixture | Headless `TgaImageDecoder` check | 128 x 128, 65,536 bytes, fully opaque |
 | Material example | `HelloMaterials checker-rle.tga`, 6 s | Started, loaded fixture, no error output |
 | Examples | HelloTriangle, HelloCube, HelloScene, HelloOBJ, HelloO3D, HelloX, HelloLighting, 4 s each | All remained running; no startup error output |
+| GitHub Actions | [Repository checks run 39602099986](https://github.com/Rauberhohle-2-0/Nymeria/actions/runs/39602099986) on `0ace857` | Success: foundation, macOS, Ubuntu, and Windows jobs |
 
 Test distribution after the change:
 
