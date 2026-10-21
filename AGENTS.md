@@ -18,3 +18,12 @@ They are the authoritative project instructions.
   [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md) for changes that touch
   untrusted input, native or GPU resources, dependencies, or automation.
 - Never force-push or rewrite published history without explicit approval.
+
+## Git Commit Attribution
+
+- Do not add AI agents as commit authors or committers.
+- Do not add YOURSELF as commit authors or committers.
+- Do not add `Co-authored-by` trailers identifying AI tools.
+- Preserve the repository's configured Git author identity.
+- Never modify Git author or committer configuration.
+- Never rewrite Git history without explicit approval.

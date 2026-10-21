@@ -196,3 +196,12 @@ When reporting work, state facts that were actually verified:
 - Blockers or decisions that need maintainer approval.
 
 Never claim a push or a check succeeded without confirming its actual result.
+
+## Git Commit Attribution
+
+- Do not add AI agents as commit authors or committers.
+- Do not add YOURSELF as commit authors or committers.
+- Do not add `Co-authored-by` trailers identifying AI tools.
+- Preserve the repository's configured Git author identity.
+- Never modify Git author or committer configuration.
+- Never rewrite Git history without explicit approval.
