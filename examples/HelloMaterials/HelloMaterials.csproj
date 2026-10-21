@@ -14,11 +14,13 @@
 
   <ItemGroup>
     <Compile Include="../Shared/FlyCameraControls.cs" Link="FlyCameraControls.cs" />
+    <Compile Include="../Shared/MaterialGpuGeometry.cs" Link="MaterialGpuGeometry.cs" />
+    <Compile Include="../Shared/MaterialRenderer.cs" Link="MaterialRenderer.cs" />
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Shaders/Material.metal"
-                      LogicalName="HelloMaterials.Shaders.Material.metal" />
+    <EmbeddedResource Include="../Shared/Shaders/Material.metal"
+                      LogicalName="Nymeria.Examples.Shaders.Material.metal" />
   </ItemGroup>
 
   <ItemGroup>

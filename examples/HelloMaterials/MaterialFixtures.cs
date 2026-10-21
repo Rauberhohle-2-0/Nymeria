@@ -56,6 +56,24 @@ internal static class MaterialFixtures
         new(-HalfExtent, -HalfExtent,  HalfExtent),
     };
 
+    // One outward normal per face, repeated for the face's four vertices. The
+    // shared material renderer requires normals even when the scene is unlit.
+    private static readonly Vector3[] s_normals =
+    {
+        new(0.0f, 0.0f, 1.0f), new(0.0f, 0.0f, 1.0f),
+        new(0.0f, 0.0f, 1.0f), new(0.0f, 0.0f, 1.0f),
+        new(0.0f, 0.0f, -1.0f), new(0.0f, 0.0f, -1.0f),
+        new(0.0f, 0.0f, -1.0f), new(0.0f, 0.0f, -1.0f),
+        new(1.0f, 0.0f, 0.0f), new(1.0f, 0.0f, 0.0f),
+        new(1.0f, 0.0f, 0.0f), new(1.0f, 0.0f, 0.0f),
+        new(-1.0f, 0.0f, 0.0f), new(-1.0f, 0.0f, 0.0f),
+        new(-1.0f, 0.0f, 0.0f), new(-1.0f, 0.0f, 0.0f),
+        new(0.0f, 1.0f, 0.0f), new(0.0f, 1.0f, 0.0f),
+        new(0.0f, 1.0f, 0.0f), new(0.0f, 1.0f, 0.0f),
+        new(0.0f, -1.0f, 0.0f), new(0.0f, -1.0f, 0.0f),
+        new(0.0f, -1.0f, 0.0f), new(0.0f, -1.0f, 0.0f),
+    };
+
     // Each face repeats the same UV layout: the first vertex is the bottom-left
     // corner as viewed from outside the cube, with (0, 1) at the bottom-left,
     // (1, 1) at the bottom-right, (1, 0) at the top-right, and (0, 0) at the
@@ -84,7 +102,7 @@ internal static class MaterialFixtures
     {
         return new MeshData(
             s_positions,
-            ReadOnlyMemory<Vector3>.Empty,
+            s_normals,
             s_textureCoordinates,
             s_indices);
     }

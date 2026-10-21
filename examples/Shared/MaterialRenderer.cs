@@ -1,16 +1,17 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Nymeria.Core.Lighting;
 using Nymeria.Core.Materials;
 using Nymeria.Core.Models;
 using Nymeria.Core.Scenes;
 using Nymeria.Graphics;
 using SDL3;
 
-namespace HelloMaterials;
+namespace Nymeria.Examples;
 
 /// <summary>
-/// Draws scene objects with their assigned <see cref="Material"/>, using one
-/// textured and tinted pipeline and a depth buffer.
+/// Draws scene objects with their assigned <see cref="Material"/>, optional
+/// scene lighting, one textured and tinted pipeline, and a depth buffer.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,6 +19,15 @@ namespace HelloMaterials;
 /// source, which SDL compiles when the shaders are created. It must be created,
 /// used, and disposed on the process main thread. The window must outlive the
 /// renderer.
+/// </para>
+/// <para>
+/// <see cref="Scene.Lighting"/> is optional. When it is null the renderer is
+/// unlit: it adds a white ambient term and no directional term, so the material
+/// base color is shown exactly as in the earlier material milestone. When it is
+/// set, ambient and directional Lambert terms are evaluated in world space. The
+/// renderer requires per-vertex normals and builds each object's inverse-transpose
+/// normal matrix on the CPU; a singular or non-finite transform is reported
+/// instead of uploading invalid data.
 /// </para>
 /// <para>
 /// The renderer owns one GPU upload per distinct <see cref="MeshData"/> and one
@@ -38,10 +48,10 @@ namespace HelloMaterials;
 /// </remarks>
 public sealed class MaterialRenderer : IDisposable
 {
-    private const string ShaderResourceName = "HelloMaterials.Shaders.Material.metal";
+    private const string ShaderResourceName = "Nymeria.Examples.Shaders.Material.metal";
     private const string VertexEntryPoint = "vertex_main";
     private const string FragmentEntryPoint = "fragment_main";
-    private const int VertexStride = 5 * sizeof(float);
+    private const int VertexStride = 8 * sizeof(float);
 
     private readonly IntPtr _window;
     private readonly GpuDevice _device;
@@ -327,34 +337,65 @@ public sealed class MaterialRenderer : IDisposable
         SDL.SetGPUViewport(renderPass, in viewport);
         SDL.SetGPUScissor(renderPass, in scissor);
 
-        Span<Matrix4x4> matrixData = stackalloc Matrix4x4[1];
-        Span<Vector4> tintData = stackalloc Vector4[1];
+        SceneLighting? lighting = scene.Lighting;
+        DirectionalLight? directional = lighting?.Directional;
+        Vector4 ambientColor = lighting is null
+            ? Vector4.One
+            : new Vector4(lighting.Ambient.EffectiveColor, 1.0f);
+        Vector4 lightDirectionToLight = directional is null
+            ? Vector4.Zero
+            : new Vector4(directional.DirectionToLight, 0.0f);
+        Vector4 lightColor = directional is null
+            ? Vector4.Zero
+            : new Vector4(directional.EffectiveColor, 0.0f);
+
+        Span<VertexUniforms> vertexUniforms = stackalloc VertexUniforms[1];
+        Span<FragmentUniforms> fragmentUniforms = stackalloc FragmentUniforms[1];
         Span<SDL.GPUBufferBinding> vertexBindings = stackalloc SDL.GPUBufferBinding[1];
         Span<SDL.GPUTextureSamplerBinding> samplerBindings =
             stackalloc SDL.GPUTextureSamplerBinding[1];
 
-        foreach (SceneObject sceneObject in scene.Objects)
+        for (int objectIndex = 0; objectIndex < scene.Objects.Count; objectIndex++)
         {
+            SceneObject sceneObject = scene.Objects[objectIndex];
             GpuMesh mesh = _meshes[sceneObject.Mesh];
             Material material = sceneObject.Material;
+            Matrix4x4 model = sceneObject.Transform.CreateModelMatrix();
 
-            matrixData[0] =
-                sceneObject.Transform.CreateModelMatrix() * view * projection;
+            if (!LightingMath.TryCreateNormalMatrix(model, out Matrix4x4 normalMatrix))
+            {
+                throw new InvalidOperationException(
+                    $"The model transform for scene object {objectIndex} is singular " +
+                    "or non-finite, so a normal matrix cannot be computed for lighting.");
+            }
 
-            ReadOnlySpan<byte> uniformBytes = MemoryMarshal.AsBytes(matrixData);
+            vertexUniforms[0] = new VertexUniforms
+            {
+                Mvp = model * view * projection,
+                NormalMatrix = normalMatrix,
+            };
+
+            ReadOnlySpan<byte> vertexBytes = MemoryMarshal.AsBytes(vertexUniforms);
             SDL.PushGPUVertexUniformData(
                 commandBuffer,
                 0,
-                uniformBytes,
-                (uint)uniformBytes.Length);
+                vertexBytes,
+                (uint)vertexBytes.Length);
 
-            tintData[0] = new Vector4(material.BaseColor, 1.0f);
-            ReadOnlySpan<byte> tintBytes = MemoryMarshal.AsBytes(tintData);
+            fragmentUniforms[0] = new FragmentUniforms
+            {
+                AmbientColor = ambientColor,
+                LightDirectionToLight = lightDirectionToLight,
+                LightColor = lightColor,
+                Tint = new Vector4(material.BaseColor, 1.0f),
+            };
+
+            ReadOnlySpan<byte> fragmentBytes = MemoryMarshal.AsBytes(fragmentUniforms);
             SDL.PushGPUFragmentUniformData(
                 commandBuffer,
                 0,
-                tintBytes,
-                (uint)tintBytes.Length);
+                fragmentBytes,
+                (uint)fragmentBytes.Length);
 
             vertexBindings[0] = new SDL.GPUBufferBinding
             {
@@ -869,8 +910,15 @@ public sealed class MaterialRenderer : IDisposable
             {
                 Location = 1,
                 BufferSlot = 0,
-                Format = SDL.GPUVertexElementFormat.Float2,
+                Format = SDL.GPUVertexElementFormat.Float3,
                 Offset = 3 * sizeof(float),
+            },
+            new()
+            {
+                Location = 2,
+                BufferSlot = 0,
+                Format = SDL.GPUVertexElementFormat.Float2,
+                Offset = 6 * sizeof(float),
             },
         };
 
@@ -889,7 +937,7 @@ public sealed class MaterialRenderer : IDisposable
                 VertexInputState = new SDL.GPUVertexInputState
                 {
                     NumVertexBuffers = 1,
-                    NumVertexAttributes = 2,
+                    NumVertexAttributes = 3,
                 },
                 RasterizerState = new SDL.GPURasterizerState
                 {
@@ -935,6 +983,22 @@ public sealed class MaterialRenderer : IDisposable
         IntPtr IndexBuffer,
         uint IndexCount,
         bool HasTextureCoordinates);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct VertexUniforms
+    {
+        public Matrix4x4 Mvp;
+        public Matrix4x4 NormalMatrix;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FragmentUniforms
+    {
+        public Vector4 AmbientColor;
+        public Vector4 LightDirectionToLight;
+        public Vector4 LightColor;
+        public Vector4 Tint;
+    }
 
     private readonly record struct GpuTexture(IntPtr Handle, int UploadedMipLevels);
 }
