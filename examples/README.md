@@ -14,16 +14,17 @@ renderer, geometry builder, shader, model-viewer loop, and input mapping in
 shared geometry builder, the shared model shader, and the shared camera controls.
 `HelloMaterials` uses the material and texture data in `Nymeria.Core`, the
 PNG/JPEG/TGA/DDS/BMP loader in `Nymeria.Formats.Textures`, and the shared camera
-controls. `HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloLOD`,
-`HelloStreaming`, and `HelloPicking` share the material renderer and shader in
-`examples/Shared`;
+controls. `HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloCollision`,
+`HelloLOD`, `HelloStreaming`, and `HelloPicking` share the material renderer and
+shader in `examples/Shared`;
 `HelloLighting` adds the lighting data in `Nymeria.Core`, the OBJ parser in
 `Nymeria.Formats.Obj`, and the same texture loader, while `HelloCulling` adds the
-headless bounds and frustum helpers in `Nymeria.Core.Culling`, `HelloLOD` adds
-the explicit mesh-variant and distance-selection data in `Nymeria.Core.Lod`,
-`HelloStreaming` adds the spatial chunk layer in `Nymeria.Core.Streaming`, and
-`HelloPicking` adds the raycasting and viewport-picking layer in
-`Nymeria.Core.Raycasting`.
+headless bounds and frustum helpers in `Nymeria.Core.Culling`, `HelloCollision`
+adds the box, sphere, and scene collision queries in `Nymeria.Core.Collision`,
+`HelloLOD` adds the explicit mesh-variant and distance-selection data in
+`Nymeria.Core.Lod`, `HelloStreaming` adds the spatial chunk layer in
+`Nymeria.Core.Streaming`, and `HelloPicking` adds the raycasting and
+viewport-picking layer in `Nymeria.Core.Raycasting`.
 `HelloBenchmark` reuses the shared material renderer with a fixed camera and the
 bounded timing helpers in `Nymeria.Core.Diagnostics`.
 
@@ -45,6 +46,7 @@ dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
+dotnet run --project examples/HelloCollision/HelloCollision.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj -- --no-streaming
@@ -97,9 +99,9 @@ renders continuously, and targets about 16 ms per frame.
 ### Controls
 
 `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, and
-`HelloPicking` share `examples/Shared/FlyCameraControls.cs`, so these controls
-apply to all eleven interactive examples.
+`HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloLOD`, `HelloStreaming`,
+and `HelloPicking` share `examples/Shared/FlyCameraControls.cs`, so these
+controls apply to all twelve interactive examples.
 
 | Input | Action |
 | --- | --- |
@@ -599,6 +601,46 @@ dotnet run --project examples/HelloPicking/HelloPicking.csproj
   collision response, interaction events, or GPU color-ID picking. See
   [../docs/PICKING.md](../docs/PICKING.md).
 
+## HelloCollision
+
+`HelloCollision` demonstrates basic CPU collision detection through the existing
+scene, material renderer, camera, and input paths. It needs no asset file. It is
+not a physics demo: overlap is detected and highlighted, but nothing is pushed,
+stopped, or resolved.
+
+```bash
+dotnet run --project examples/HelloCollision/HelloCollision.csproj
+```
+
+- Scene: six bodies share a procedural cube or sphere mesh and six base
+  materials. The cyan player box, a large center box, a static sphere, an
+  orbiting box, an orbiting sphere, and a bobbing box all have explicit local
+  colliders. The orbit and bob paths cross the static obstacles without input.
+- Shapes: boxes use a local `BoundingBox` matching the cube mesh. Spheres use a
+  local `BoundingSphere` of radius one. The collider is separate from the render
+  mesh and LOD data; no triangles are tested.
+- World space: `SceneCollision` applies each object's current
+  `Transform.CreateModelMatrix()`. Boxes use the conservative transformed
+  eight-corner AABB. Spheres use the largest absolute axis scale as a conservative
+  radius, so rotation changes only the center and non-uniform scale does not
+  under-report the extent.
+- Feedback: before each frame's query, every base material is restored. Every
+  object in a reported overlapping pair receives the shared bright-yellow
+  material. This is presentation only; it does not change the transform or
+  movement path.
+- Controls: arrow keys move the player box in the XZ plane, `P` pauses or resumes
+  animation, and `R` resets the player and animation. Shared camera controls are
+  `W`/`A`/`S`/`D`, `Space`/`Left Control`, `Shift`, and held right mouse button.
+- Diagnostics: once per second the console prints active colliders, tested
+  unordered pairs, overlapping pairs, player contact, animation state, measured
+  collision-query time, FPS, and drawn instances. The window title shows the pair
+  count, player contact, and animation state.
+- Scope: box and sphere overlap queries against current scene membership. There
+  is no triangle-mesh collision, capsule, compound shape, contact point,
+  penetration depth, response, rigid body, gravity, trigger, spatial index, or
+  continuous collision detection. The scene pair query is O(n²). See
+  [../docs/COLLISION.md](../docs/COLLISION.md).
+
 ## HelloBenchmark
 
 `HelloBenchmark` is a deterministic, auto-exiting CPU benchmark for the scene and
@@ -642,7 +684,7 @@ dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
 
 ## Platform limits
 
-All thirteen examples are macOS-only for now. They require SDL's Metal backend and
+All fourteen examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
 formats. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
 general material or scene importers. `HelloO3D` accepts only unscrambled static meshes
@@ -658,9 +700,11 @@ explicit application-supplied mesh variants, distance culling, and hysteresis;
 it does not simplify or generate geometry. `HelloStreaming` adds synchronous
 chunk membership with bounded loads per update; it does not stream files in the
 background, reclaim CPU assets automatically, or generate terrain. `HelloPicking`
-adds conservative bounds picking; it has no triangle-accurate hit, physics,
-collision response, interaction events, or spatial index. No example has
-shadows, specular or PBR shading, an object hierarchy, or collisions. GPU output, texture sampling,
+adds conservative bounds picking; it has no triangle-accurate hit, interaction
+events, or spatial index. `HelloCollision` adds box and sphere overlap detection
+and deterministic pair queries; it has no triangle-mesh collision, contact
+manifold, response, rigid body, physics solver, or broad phase. No example has
+shadows, specular or PBR shading, an object hierarchy, or a physics simulation. GPU output, texture sampling,
 compressed-format capability, lighting, frustum culling, LOD selection, distance
-culling, and input behavior are validated manually with
+culling, collision feedback, and input behavior are validated manually with
 [../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.

@@ -1,3 +1,4 @@
+using Nymeria.Core.Collision;
 using Nymeria.Core.Lod;
 using Nymeria.Core.Materials;
 using Nymeria.Core.Models;
@@ -142,6 +143,28 @@ public sealed class SceneObject
     /// </para>
     /// </remarks>
     public bool IsPickable { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the optional collision shape for this object in local model
+    /// space.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The default is <see langword="null"/>, which means the object does not
+    /// participate in <see cref="SceneCollision"/> queries. Assigning a shape
+    /// opts the object in without changing its mesh, material, LOD, pickability,
+    /// or rendering. The shape is independent of the render mesh and is not
+    /// derived from it; callers choose the bounds that suit their interaction.
+    /// </para>
+    /// <para>
+    /// Collision reads the object's current <see cref="Transform.CreateModelMatrix"/>
+    /// at query time. Frustum culling, distance culling, and the selected LOD
+    /// level do not affect collision. Removing an object or unloading its chunk
+    /// removes it from scene collision queries because collision traverses
+    /// current scene membership.
+    /// </para>
+    /// </remarks>
+    public CollisionShape? Collider { get; set; }
 
     /// <summary>
     /// Gets or sets the material assigned to this object.

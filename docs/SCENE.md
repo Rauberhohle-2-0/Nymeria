@@ -3,10 +3,11 @@
 This document is the authoritative description of Nymeria's minimal,
 format-independent scene layer. It covers transforms, scene objects, shared mesh
 and material references, optional scene lighting, resource ownership, and the
-`HelloScene`, `HelloMaterials`, `HelloLighting`, `HelloLOD`, and
-`HelloStreaming` examples. Related contracts are [MODEL_DATA.md](MODEL_DATA.md),
-[MATERIALS.md](MATERIALS.md), [LIGHTING.md](LIGHTING.md),
-[STREAMING.md](STREAMING.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
+`HelloScene`, `HelloMaterials`, `HelloLighting`, `HelloLOD`,
+`HelloStreaming`, and `HelloCollision` examples. Related contracts are
+[MODEL_DATA.md](MODEL_DATA.md), [MATERIALS.md](MATERIALS.md),
+[LIGHTING.md](LIGHTING.md), [STREAMING.md](STREAMING.md),
+[COLLISION.md](COLLISION.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
 [MODEL_DATA.md's coordinate conventions](MODEL_DATA.md#coordinate-and-index-conventions).
 
 ## Purpose and non-goals
@@ -17,9 +18,12 @@ and with which material? It is deliberately smaller than a scene graph.
 format-independent, and uses only `System.Numerics` and the base class library.
 There is no `Nymeria.Scene` project.
 
-The scene layer contains no ECS, parent-child hierarchy, physics, collision
-detection, animation, serialization, editor, material parser, GPU handle, SDL3,
-Metal, window, or file-format logic. Materials and lighting are references to
+The scene layer contains no ECS, parent-child hierarchy, physics simulation,
+collision response, animation, serialization, editor, material parser, GPU
+handle, SDL3, Metal, window, or file-format logic. Collision detection is a
+separate headless query helper; a scene object may carry an optional local
+collision shape, but the scene does not resolve contacts. [COLLISION.md](COLLISION.md)
+is the authoritative collision contract. Materials and lighting are references to
 format-independent CPU data, not a rendering pipeline. The scene layer carries
 one optional ambient-plus-directional lighting configuration; it does not
 calculate shading. [LIGHTING.md](LIGHTING.md) is the authoritative lighting
@@ -109,6 +113,11 @@ var second = new SceneObject(mesh, transformB, material, lod);
   return this object. Setting it to `false` does not hide, cull, distance-cull, or
   change the LOD of the object; it is an interaction flag only. Frustum and
   distance culling are not considered by picking. See [PICKING.md](PICKING.md).
+- `Collider` is an optional `CollisionShape?` in local model space. It defaults
+  to `null`, so existing objects do not participate in collision queries. Setting
+  it does not change rendering, LOD, material, or pickability. `SceneCollision`
+  transforms it with the current model matrix at query time. See
+  [COLLISION.md](COLLISION.md).
 - The object does not own or dispose its mesh, material, or LOD configuration.
   `MeshData`, `Material`, `Texture`, and `MeshLod` are managed data with no
   unmanaged resources.
@@ -152,6 +161,27 @@ behavior.
 
 The object limit is a practical application safeguard, not a format or GPU
 contract. It prevents accidental unbounded draw loops and resource requests.
+
+## Collision association
+
+Collision participation is an optional property, not a second scene graph:
+
+```csharp
+sceneObject.Collider = CollisionShape.FromBox(localBounds);
+```
+
+- The collider is defined in local model space and transformed by
+  `Transform.CreateModelMatrix()` when queried.
+- `SceneCollision` reads `Scene.Objects` in insertion order. Removing an object
+  or letting a streamed chunk unload removes it from later collision results.
+- Frustum culling, distance culling, LOD selection, and `IsPickable` do not
+  affect collision. An active off-screen object can still collide.
+- Pair queries are deterministic and O(n²), with no retained manager, spatial
+  index, or response. A `CollisionPair` holds managed references and can become
+  stale after removal; validate it with `Scene.Contains` before reuse.
+
+See [COLLISION.md](COLLISION.md) for shape and contact semantics, transform
+rules, query methods, limitations, and the `HelloCollision` example.
 
 ## Ownership and lifetime
 
@@ -382,9 +412,10 @@ limits.
   combined lighting, and `Scene.Lighting` default/replacement semantics.
 
 Bounds, frustum intersection, visibility counters, LOD selection, chunk
-streaming, and scene picking have headless tests in `tests/Nymeria.Core.Tests`;
-see [CULLING.md](CULLING.md), [LOD.md](LOD.md), [STREAMING.md](STREAMING.md), and
-[PICKING.md](PICKING.md).
+streaming, scene picking, and collision shapes and queries have headless tests in
+`tests/Nymeria.Core.Tests`; see [CULLING.md](CULLING.md), [LOD.md](LOD.md),
+[STREAMING.md](STREAMING.md), [PICKING.md](PICKING.md), and
+[COLLISION.md](COLLISION.md).
 GPU rendering, window behavior, and input are validated manually with
 [SMOKE_TEST.md](SMOKE_TEST.md), not by headless CI.
 
@@ -392,13 +423,15 @@ GPU rendering, window behavior, and input are validated manually with
 
 The following are out of scope for this milestone: parent-child transforms,
 scene graphs, ECS, instanced draw APIs beyond per-object uniform uploads,
-serialization, editors, occlusion culling, spatial indexes, physics, collision,
-animation, multiple lights, point or spot lights, shadows, specular or PBR
-shading, transparency sorting, texture streaming or hot reload, MTL or OMSI
-material parsing, automatic mesh simplification or LOD generation, and automatic
-background unloading of CPU assets. Frustum culling, explicit LOD selection,
-optional distance culling, synchronous chunk membership, and bounds-based raycast
-picking are supported separately and documented in [CULLING.md](CULLING.md),
-[LOD.md](LOD.md), [STREAMING.md](STREAMING.md), and [PICKING.md](PICKING.md). GPU caches can be reclaimed explicitly with
+serialization, editors, occlusion culling, spatial indexes, physics simulation
+or collision response, animation, multiple lights, point or spot lights, shadows,
+specular or PBR shading, transparency sorting, texture streaming or hot reload,
+MTL or OMSI material parsing, automatic mesh simplification or LOD generation,
+and automatic background unloading of CPU assets. Frustum culling, explicit LOD
+selection, optional distance culling, synchronous chunk membership, bounds-based
+raycast picking, and basic box/sphere overlap detection are supported separately
+and documented in [CULLING.md](CULLING.md),
+[LOD.md](LOD.md), [STREAMING.md](STREAMING.md), [PICKING.md](PICKING.md), and
+[COLLISION.md](COLLISION.md). GPU caches can be reclaimed explicitly with
 `MaterialRenderer.PruneUnusedResources`; the scene layer itself never owns or
 disposes a GPU resource.

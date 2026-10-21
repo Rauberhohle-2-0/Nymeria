@@ -252,6 +252,35 @@ reference that can become stale as a selection. Applications must validate it
 with `Scene.Contains` and must not treat it as a native handle. See
 [PICKING.md](PICKING.md).
 
+## Collision detection
+
+`Nymeria.Core.Collision` is a CPU-only overlap-query layer with no file or
+network access, native interop, GPU call, reflection, or telemetry. `BoundingBox`
+and `BoundingSphere` validate finite values and ordered bounds at construction;
+`BoundingSphere` also rejects negative or non-finite radii. `CollisionShape` can
+contain only those validated primitives, and a default empty shape is a safe
+no-op. Box, sphere, and mixed overlap tests use double precision and inclusive
+contact semantics.
+
+World conversion uses the object's current affine model matrix. Boxes transform
+all eight corners, so rotation and non-uniform or negative scale are covered
+conservatively. Spheres require a finite projective-free basis with orthogonal
+rows; shear and non-finite or projective transforms are rejected rather than
+under-reporting extent. Singular zero-scale transforms remain valid and can
+produce flat boxes or point spheres. Extreme finite results saturate instead of
+becoming NaN or infinite.
+
+`SceneCollision` reads only `Scene.Objects`, `SceneObject.Collider`, and
+`SceneObject.Transform`. It appends results to caller-owned collections, does not
+retain scene objects, and rejects a target that is not currently in the queried
+scene. Removed or unloaded streamed objects are absent from the next query; a
+stored `CollisionPair` holds ordinary managed references and must be validated
+with `Scene.Contains` before reuse. Pair queries are intentionally O(n²) and
+bounded by `Scene.MaxObjectCount`; they have no broad phase, cached world bounds,
+parallel work, or background thread. Callers must not run collision queries
+concurrently with scene mutation or a streaming update. See
+[COLLISION.md](COLLISION.md).
+
 ## Native and GPU ownership
 
 - Native handles are owned by the managed wrapper that created them. Do not

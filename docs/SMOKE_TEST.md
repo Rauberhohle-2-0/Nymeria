@@ -20,6 +20,7 @@ dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
+dotnet run --project examples/HelloCollision/HelloCollision.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
 dotnet run --project examples/HelloPicking/HelloPicking.csproj
@@ -33,14 +34,14 @@ The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/Shared/Shaders/Material.metal`. The model shader is embedded in
 `HelloOBJ`, `HelloO3D`, and `HelloScene` as
 `Nymeria.Examples.Shaders.Model.metal`; the material shader is embedded in
-`HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloLOD`,
+`HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloLOD`,
 `HelloStreaming`, and `HelloPicking` as
 `Nymeria.Examples.Shaders.Material.metal`. Shaders are
 embedded in their examples and compiled by SDL's Metal backend at startup, so
 there is no shader compiler step and no external shader file to deploy.
 
 Run each interactive example checklist separately. The failure-path checks at
-the end apply to all eleven interactive examples; `HelloBenchmark` has its own
+the end apply to all twelve interactive examples; `HelloBenchmark` has its own
 automated checks below.
 
 ## HelloTriangle checks
@@ -687,6 +688,38 @@ Expected: `0`.
     restore; rendering resumes, and picks still work. Close with the button and
     `Cmd+Q`; both exit with status `0` and restore the cursor.
 
+## HelloCollision checks
+
+1. **Window appears.** The window opens and the terminal prints the body,
+   collider, shape, and diagnostic summary. The title contains
+   `Nymeria - HelloCollision` and initially reports `player clear` and `animation
+   on`.
+2. **Contact feedback is current.** Within the first second, moving bodies cross
+   the static sphere and each other. Their materials change to the shared yellow
+   highlight and the title reports a nonzero overlapping-pair count. The bodies
+   continue along their paths; overlap must not push, stop, or resolve anything.
+3. **Player contact works.** Use the arrow keys to drive the cyan box into the
+   large center box or a moving body. Both turn yellow while they overlap. The
+   title changes to `player contact`, and the console's next once-per-second line
+   reports the same condition. Back away and confirm the highlight clears.
+4. **Pause works.** Press `P`. Orbit and bob motion stops, and the contact state
+   remains stable while the player can still move. Press `P` again and confirm
+   animation resumes from the paused time without a jump.
+5. **Reset works.** Move the player away, press `R`, and confirm the cyan box
+   returns to its starting position and animation time resets. The camera is not
+   reset by `R` in this example.
+6. **Diagnostics are bounded.** Once per second the terminal prints exactly one
+   collision line with six active colliders, fifteen tested unordered pairs, the
+   current overlapping-pair count, player contact, animation state, measured
+   query time, FPS, and drawn instances. No line is printed per frame.
+7. **Lifecycle remains stable.** Run for several minutes while moving through
+   contacts. Memory and CPU must remain stable, the example must not throw, and
+   no contact highlight may remain on a body after it separates.
+8. **Resize, minimize, and restore work.** Resize through wide and tall shapes
+   and confirm the highlight still matches current overlap. Minimize and restore;
+   rendering resumes and the next diagnostic line remains accurate. Close with
+   the button and `Cmd+Q`; both exit with status `0` and restore the cursor.
+
 ## HelloBenchmark checks
 
 `HelloBenchmark` is a CPU benchmark, not a visual or GPU-timing test. It opens a
@@ -800,8 +833,8 @@ These checks are optional and must not modify tracked files.
 Report the macOS version, architecture (`arm64` or `x86_64`), GPU model, date, and
 pass/fail for each check, separately for `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, and
-`HelloPicking`, plus the separate `HelloBenchmark` checks.
+`HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloLOD`, `HelloStreaming`,
+and `HelloPicking`, plus the separate `HelloBenchmark` checks.
 Do not describe this manual checklist as a CI result.
 State separately that the checked-in `HelloO3D` fixture is synthetic, that the
 `HelloX` fixture is original project content rather than an exported game asset,

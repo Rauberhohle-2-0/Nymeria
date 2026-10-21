@@ -28,7 +28,8 @@ extension is a direction, not a current feature.
   format-independent model data, the `IModelParser` contract, minimal scene data
   (`Scene`, `SceneObject`, and `Transform`), optional explicit mesh
   level-of-detail configurations, optional ambient and directional lighting
-  data, conservative bounds and frustum-culling helpers, bounded frame-timing
+  data, conservative bounds and frustum-culling helpers, a validated CPU
+  collision layer with box and sphere overlap queries, bounded frame-timing
   diagnostics, and format-independent material and texture data with RGBA and
   block-compressed mip chains.
 - `Nymeria.Formats.Obj`, a dependency-free Wavefront OBJ parser implementing
@@ -79,6 +80,9 @@ extension is a direction, not a current feature.
 - `examples/HelloCulling`, an interactive example that draws many instances of
   one shared mesh with optional conservative camera-frustum culling, a runtime
   toggle, and per-frame visibility statistics.
+- `examples/HelloCollision`, an interactive example that moves and animates box
+  and sphere colliders, highlights current overlapping pairs, and prints active
+  collider, tested-pair, overlapping-pair, and query-time diagnostics.
 - `examples/HelloLOD`, an interactive example that switches each instance among
   three explicit sphere-detail meshes at configurable camera distances, with
   optional distance culling, a free camera, and runtime LOD, distance, and
@@ -100,9 +104,11 @@ extension is a direction, not a current feature.
   selection, `Nymeria.Core.Streaming` validated scene-chunk definitions,
   bounded synchronous load/unload updates, failure retry, and diagnostics, and
   `Nymeria.Core.Raycasting` validated world-space rays, AABB intersection,
-  nearest-hit scene queries, viewport unprojection, and pick eligibility. They
-  are headless, use `System.Numerics` only, and contain no SDL3, GPU, window, or
-  format dependency.
+  nearest-hit scene queries, viewport unprojection, and pick eligibility, and
+  `Nymeria.Core.Collision` validated box and sphere primitives, inclusive
+  overlap tests, world-space conversion, an optional scene-object collider, and
+  deterministic O(n²) pair queries. They are headless, use `System.Numerics`
+  only, and contain no SDL3, GPU, window, or format dependency.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - `Nymeria.Core.Tests`, GPU-independent tests for model-data validation,
   parser-contract error behavior, transform composition, scene lifecycle,
@@ -112,8 +118,11 @@ extension is a direction, not a current feature.
   hysteresis, load budgets, teleports, failure retry, content rollback, shared
   references, chunk identifiers, counters, ray and AABB boundary behavior,
   scene nearest-hit selection and ties, transformed bounds, pick eligibility,
-  viewport camera rays, picking independence from frustum culling and LOD, and
-  bounded frame-timing aggregation with warm-up exclusion and invalid samples.
+  viewport camera rays, picking independence from frustum culling and LOD,
+  collision shape validation, inclusive box and sphere overlap, conservative
+  collision transforms, scene collider filtering and lifecycle, deterministic
+  pair ordering, and bounded frame-timing aggregation with warm-up exclusion and
+  invalid samples.
 - `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
   conversions, and diagnostics.
 - `Nymeria.Formats.O3d.Tests`, GPU-independent tests for the O3D header,
@@ -327,7 +336,10 @@ scale, normalizes rotation, and composes `scale * rotation * translation` for
 renderer owns one upload per distinct mesh and releases it; removing an object
 does not dispose or invalidate the shared CPU mesh. [SCENE.md](SCENE.md) is the
 authoritative contract. There is no ECS, hierarchy, serialization, editor,
-physics, or animation. Culling is a separate headless helper in
+physics simulation, collision response, or animation. Collision detection is a
+separate headless overlap-query helper in `Nymeria.Core.Collision`; a scene
+object may carry an optional local collision shape, but the scene layer does not
+resolve contacts. Culling is a separate headless helper in
 `Nymeria.Core.Culling`, not a scene-layer responsibility; it reads scene data and
 never mutates it. [CULLING.md](CULLING.md) is the authoritative culling contract.
 
@@ -351,8 +363,9 @@ software fallback.
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
 `examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloX`,
 `examples/HelloScene`, `examples/HelloMaterials`, `examples/HelloLighting`,
-`examples/HelloCulling`, `examples/HelloLOD`, `examples/HelloStreaming`,
-`examples/HelloPicking`, and `examples/HelloBenchmark`.
+`examples/HelloCulling`, `examples/HelloCollision`, `examples/HelloLOD`,
+`examples/HelloStreaming`, `examples/HelloPicking`, and
+`examples/HelloBenchmark`.
 Each has its own vertex data and draw calls, and uses `GpuDevice` for the device, window claim, shader
 creation, buffer and texture upload, sampler creation, and swapchain format.
 [examples/README.md](../examples/README.md) documents their run commands and
@@ -736,6 +749,28 @@ non-invertible matrices. Input mapping and logical-to-drawable pixel scaling
 remain in the application. [PICKING.md](PICKING.md) is the authoritative
 contract.
 
+### Collision detection
+
+`Nymeria.Core.Collision` is a small headless overlap-query layer, not a physics
+engine. `BoundingSphere` joins the existing validated `BoundingBox`, and
+`CollisionShape` holds exactly one box or sphere. `CollisionIntersections`
+implements inclusive AABB–AABB, sphere–sphere, and AABB–sphere tests in double
+precision. Contact counts as overlap, and a default empty shape never overlaps.
+
+A scene object opts in with an optional local-space `Collider`. Queries transform
+it with the object's current model matrix: boxes use the eight-corner world AABB,
+and spheres use the largest axis scale as a conservative radius. Non-finite and
+projective matrices are rejected; sphere conversion also rejects shear rather
+than under-reporting extent. `SceneCollision` answers overlap against one object
+or appends all unordered overlapping pairs. It reads current scene membership in
+insertion order, so unloaded chunks cannot be retained, self-pairs and duplicate
+pairs are impossible, and results are deterministic for fixed scene state.
+Collision ignores frustum culling, distance culling, LOD selection, and
+`IsPickable`; off-screen active objects still collide. The pair query is the
+deliberate O(n²) baseline, with no BVH, octree, spatial hash, cached world bounds,
+parallel work, or collision response. [COLLISION.md](COLLISION.md) is the
+authoritative contract.
+
 ### Ownership and lifetime
 
 - `GpuDevice` owns the GPU device and window claim. Each renderer owns its
@@ -762,9 +797,9 @@ contract.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
 - `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-  `HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, and
-  `HelloPicking` own their `Camera` instances and share the
-  `FlyCameraControls` implementation.
+  `HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloLOD`,
+  `HelloStreaming`, and `HelloPicking` own their `Camera` instances and share
+  the `FlyCameraControls` implementation.
   `HelloBenchmark` owns a fixed `Camera` and does not use input controls. The
   camera has no unmanaged resources. The input mapping disables relative mouse
   mode and discards pending mouse motion during disposal, before the window is
@@ -788,9 +823,10 @@ Limitations in this version:
   packages, which are not implemented.
 - Apple Silicon and Intel Macs both use Metal. The macOS native package contains
   both architectures.
-- There is no scene hierarchy, ECS, serialization, editor, shadow, or collision
-  system, and no engine-level input system. The scene layer holds flat objects
-  only. `Camera` is reusable math, but input mapping and timing stay in the
+- There is no scene hierarchy, ECS, serialization, editor, shadow, physics
+  simulation, or collision response, and no engine-level input system. The scene
+  layer holds flat objects only. Collision is limited to box and sphere overlap
+  queries. `Camera` is reusable math, but input mapping and timing stay in the
   examples; the triangle remains static clip-space geometry.
 - Culling is one conservative axis-aligned distance test plus one six-plane
   frustum test per instance. LOD chooses one explicit application-supplied mesh
@@ -806,6 +842,12 @@ Limitations in this version:
   non-uniformly scaled objects use conservative world AABBs, so a hit point can
   lie outside the mesh surface. Camera unprojection assumes a perspective
   projection. A stored hit does not keep a streamed object resident.
+- Collision is a bounding-volume overlap query, not physics. There is no
+  triangle-mesh collider, capsule, compound shape, contact manifold, penetration
+  depth, response, rigid body, force, gravity, trigger, event, spatial index, or
+  continuous collision detection. Sphere colliders under non-uniform scale use a
+  conservative largest-axis radius rather than an ellipsoid. The scene pair
+  query is O(n²), with no broad phase or cached world bounds.
 - Streaming is a synchronous, single-threaded chunk membership baseline. Chunk
   content callbacks run on the update thread, so a large or slow loader can stall
   that frame; `MaxLoadsPerUpdate` bounds the number of callbacks but not their
@@ -916,7 +958,10 @@ material data, `Nymeria.Graphics` for the device and camera, and
 for scene, streaming, mesh, and material data, `Nymeria.Graphics` for the device
 and camera, and `Nymeria.Platform` for the window; `HelloPicking` references `Nymeria.Core`
 for scene, streaming, picking, mesh, and material data, `Nymeria.Graphics` for
-the device and camera, and `Nymeria.Platform` for the window; `HelloBenchmark`
+the device and camera, and `Nymeria.Platform` for the window; `HelloCollision`
+references `Nymeria.Core` for scene, collision, mesh, and material data,
+`Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for the
+window; `HelloBenchmark`
 references `Nymeria.Core` for scene, LOD, mesh, material, and timing data,
 `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for the
 window; `HelloTriangle` does not need the core or formats projects.
@@ -992,6 +1037,13 @@ The following choices are implemented:
   `BoundingBox`, including LOD union bounds, and logical pickability is
   independent of frustum culling and selected LOD state. [PICKING.md](PICKING.md)
   is the authoritative contract.
+- **Collision:** `Nymeria.Core.Collision` contains validated box and sphere
+  primitives, inclusive overlap tests, conservative world-space conversion, an
+  optional local `SceneObject.Collider`, and deterministic unordered-pair and
+  per-object scene queries. It is headless, allocation-free inside the query
+  loops, and independent of rendering visibility and LOD. It is detection only:
+  there is no response or physics solver. [COLLISION.md](COLLISION.md) is the
+  authoritative contract.
 - **Performance diagnostics:** `Nymeria.Core.Diagnostics.FrameTimingWindow` is a
   bounded, warm-up-aware rolling window for CPU frame durations. It rejects
   invalid samples, reports average, nearest-rank p95, maximum, and FPS from the

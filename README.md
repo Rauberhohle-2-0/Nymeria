@@ -29,13 +29,13 @@ interactive, depth-tested cube scene.
   `examples/HelloMaterials`, the lit `examples/HelloLighting`, the conservative
   frustum-culling `examples/HelloCulling`, the explicit-LOD and distance-culling
   `examples/HelloLOD`, the chunk-streaming `examples/HelloStreaming`, the
-  raycasting and picking `examples/HelloPicking`, the CPU-profiling
-  `examples/HelloBenchmark`, bounded frame-timing diagnostics, headless
-  mesh-bounds, visibility, LOD, streaming, and raycasting helpers,
-  platform-independent unit tests, CI
-  restore/build/test on macOS, Windows, and
-  Linux, repository checks, an audited dependency restore, a documented security
-  baseline, and Dependabot updates for GitHub Actions and NuGet.
+  raycasting and picking `examples/HelloPicking`, the collision-detection
+  `examples/HelloCollision`, the CPU-profiling `examples/HelloBenchmark`,
+  bounded frame-timing diagnostics, headless mesh-bounds, visibility, LOD,
+  streaming, raycasting, and collision helpers, platform-independent unit tests,
+  CI restore/build/test on macOS, Windows, and Linux, repository checks, an
+  audited dependency restore, a documented security baseline, and Dependabot
+  updates for GitHub Actions and NuGet.
 - **Planned later:** engine-level input, the engine loop, further O3D features
   (scrambled vertices, bones, animation, and material rendering), additional
   graphics backends, and Windows/Linux rendering. See
@@ -79,6 +79,7 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/H
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj -- --no-culling
+dotnet run --project examples/HelloCollision/HelloCollision.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj -- --no-streaming
@@ -115,7 +116,10 @@ chunk-exclusive GPU buffers after unload; `S` toggles streaming, `T` teleports,
 chunks, picks whole objects with cursor or center-of-screen rays, highlights the
 selection, and shows its label and distance in the window title; left-click
 picks, `V` switches modes, `G` toggles the ghost box's pickability, and `R`
-resets the camera. `HelloBenchmark` is an
+resets the camera. `HelloCollision` animates box and sphere colliders around a
+movable player box, highlights every currently overlapping pair, and prints
+active-collider, tested-pair, overlapping-pair, and query-time diagnostics; the
+arrow keys move the player, `P` pauses animation, and `R` resets. `HelloBenchmark` is an
 auto-exiting Release CPU benchmark with a
 fixed camera, deterministic 512/2048/8192-instance scenes, culling and LOD
 modes, and 16 ms pacing control; it prints bounded phase timings, instance,
@@ -151,8 +155,8 @@ example owns its pipeline and depth target, while `HelloOBJ`, `HelloO3D`, and
 `examples/Shared`.
 `HelloScene` uses the shared geometry builder, model shader, and camera controls
 with its own scene renderer. `HelloMaterials`, `HelloLighting`, `HelloCulling`,
-`HelloLOD`, `HelloStreaming`, and `HelloPicking` share the material renderer and
-camera controls in `examples/Shared`. `HelloCulling` enables the renderer's optional conservative
+`HelloCollision`, `HelloLOD`, `HelloStreaming`, and `HelloPicking` share the
+material renderer and camera controls in `examples/Shared`. `HelloCulling` enables the renderer's optional conservative
 frustum culling and prints per-frame instance and draw-call counts; bounds,
 planes, fallbacks, and limitations are documented in
 [docs/CULLING.md](docs/CULLING.md). `HelloLOD` enables the renderer's optional
@@ -264,6 +268,19 @@ instances tested, submitted, culled, and actual indexed draw calls. See
 [docs/CULLING.md](docs/CULLING.md) for bounds semantics, safe fallbacks,
 statistics, measurements, and limits.
 
+`HelloCollision` renders six boxes and spheres through the shared material
+renderer and gives each one an explicit local `CollisionShape`. `SceneCollision`
+transforms them with the current model matrices, tests every unordered pair, and
+applies a shared yellow material to current overlaps; the underlying base
+materials are restored each frame. The cyan player box moves with the arrow keys,
+while orbit and bob paths cross the static obstacles without input. Boxes use
+conservative world AABBs; spheres use the largest axis scale as a conservative
+radius under non-uniform scale. `P` pauses animation and `R` resets. Once per
+second the console reports active colliders, tested pairs, overlapping pairs,
+player contact, query time, FPS, and drawn instances. This is detection only;
+overlaps do not move, stop, or resolve anything. See
+[docs/COLLISION.md](docs/COLLISION.md).
+
 `HelloPicking` renders a streamed nine-chunk world through the shared material
 renderer and picks whole objects with `Nymeria.Core.Raycasting`. A ray is built
 from the mouse pixel or the viewport center using the camera's actual view and
@@ -284,7 +301,7 @@ frustum-culled, distance-culled, drawn, draw-call, submitted-triangle, and
 per-level counts plus render-time average and p95; see
 [docs/LOD.md](docs/LOD.md) for the contract, benchmark method, and limits.
 
-All eleven interactive examples skip rendering while minimized and recover when
+All twelve interactive examples skip rendering while minimized and recover when
 a drawable is available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
@@ -305,9 +322,11 @@ The tests cover `WindowOptions` defaults and validation, model-data validation
 and parser-contract error semantics, transform composition, scene lifecycle and
 mesh sharing, mesh bounds, frustum intersection, visibility counts, bounded
 frame-timing aggregation and warm-up exclusion, material and texture-data
-validation, the lighting data, Lambert term, and normal-matrix math, and ray and
+validation, the lighting data, Lambert term, and normal-matrix math, ray and
 AABB boundary behavior, nearest-hit selection, transformed bounds, viewport
-camera rays, pick eligibility, and picking independence from culling and LOD in
+camera rays, pick eligibility, picking independence from culling and LOD,
+collision-shape validation, inclusive box and sphere overlap, conservative
+collision transforms, and scene collision lifecycle and ordering in
 `Nymeria.Core.Tests`, the
 OBJ subset and diagnostics in `Nymeria.Formats.Obj.Tests`, the O3D header,
 supported versions and flags, conversions, limits, and failure behavior in
@@ -337,8 +356,8 @@ src/formats/    Nymeria.Formats.Obj, O3d, DirectX, Png, Tga, Jpeg, Dds, Bmp,
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
 examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloX, HelloScene,
-                HelloMaterials, HelloLighting, HelloCulling, HelloLOD,
-                HelloStreaming, HelloPicking, and HelloBenchmark
+                HelloMaterials, HelloLighting, HelloCulling, HelloCollision,
+                HelloLOD, HelloStreaming, HelloPicking, and HelloBenchmark
 tests/          Headless unit tests for core, formats, and platform projects
 ```
 
@@ -353,6 +372,7 @@ tests/          Headless unit tests for core, formats, and platform projects
 - [Explicit mesh LOD](docs/LOD.md)
 - [Scene chunk streaming](docs/STREAMING.md)
 - [Raycasting and object picking](docs/PICKING.md)
+- [Basic collision detection](docs/COLLISION.md)
 - [Performance measurement](docs/PERFORMANCE.md)
 - [Performance baseline 01](docs/PERFORMANCE_BASELINE_01.md)
 - [Wavefront OBJ import](docs/OBJ.md)

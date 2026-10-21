@@ -10,8 +10,8 @@ This document is the authoritative contract for the query types, coordinate
 spaces, distance and tie semantics, hit eligibility, camera-ray conversion, the
 `HelloPicking` example, automated tests, and limitations. Related contracts are
 [SCENE.md](SCENE.md), [CULLING.md](CULLING.md), [LOD.md](LOD.md),
-[STREAMING.md](STREAMING.md), [MODEL_DATA.md](MODEL_DATA.md), and
-[ARCHITECTURE.md](ARCHITECTURE.md).
+[STREAMING.md](STREAMING.md), [COLLISION.md](COLLISION.md),
+[MODEL_DATA.md](MODEL_DATA.md), and [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Raycasting, bounding-volume picking, and triangle intersection
 
@@ -25,7 +25,9 @@ These are different levels of precision:
 
 Nymeria implements the first two. A `RaycastHit.Point` therefore lies on the
 object's transformed world-space bounds, not necessarily on its rendered
-surface. The bounds are always conservative, so a bounds hit can be slightly
+surface. Collision detection is a separate overlap-query layer in
+[COLLISION.md](COLLISION.md); a collider does not change pickability, and picking
+does not consult colliders. The bounds are always conservative, so a bounds hit can be slightly
 outside the visible geometry, and a thin gap between triangles inside the box
 still counts as a hit. That approximation is intentional and sufficient for
 selecting whole objects. It is not suitable for precise decals, muzzle impacts,

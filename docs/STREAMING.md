@@ -170,6 +170,14 @@ metadata. A `RaycastHit` obtained before an unload still holds the managed
 Validate a stored selection with `Scene.Contains` after streaming updates, as
 `HelloPicking` does. [PICKING.md](PICKING.md) documents the picking contract.
 
+Collision follows the same membership rule. `SceneCollision` scans the current
+scene, so an unloaded chunk's colliders disappear from later overlap results and
+the streamer retains no collision state. A target object that is no longer in the
+scene is rejected by per-object queries; a stored `CollisionPair` is a managed
+reference that must be validated before reuse. Frustum culling, distance culling,
+and LOD do not filter collision results. [COLLISION.md](COLLISION.md) documents
+the contract.
+
 Do not call pruning while another scene depends on the renderer's cache. Pruning
 is an occasional unload-path operation, not a per-frame operation.
 

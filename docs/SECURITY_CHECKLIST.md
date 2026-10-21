@@ -101,6 +101,25 @@ not a guarantee.
 - [ ] A new image dependency was reviewed for maintenance, license, transitive
       packages, native code, and NuGet advisories, and its version is pinned.
 
+## Scene and collision queries
+
+- [ ] Scene and collision shapes validate finite values, ordered box bounds, and
+      nonnegative sphere radii at construction; a default empty shape is a no-op.
+- [ ] World-space collision conversion rejects non-finite and projective
+      matrices, and rejects shear for sphere conversion when the conservative
+      radius rule would under-report extent. Zero scale is handled as a valid
+      degenerate shape rather than silently producing NaN geometry.
+- [ ] Query targets must currently belong to the scene; removed or unloaded
+      objects are rejected instead of being treated as current content.
+- [ ] Queries append to caller-owned bounded collections, do not retain scene
+      objects, and do not depend on frustum visibility, distance culling, LOD, or
+      pickability.
+- [ ] Pair-query complexity and the absence of a broad phase are documented, and
+      the active set is bounded by the scene object limit.
+- [ ] Collision queries are not run concurrently with scene mutation or streaming
+      updates, and returned references are validated with `Scene.Contains` after
+      reuse.
+
 ## Native and GPU resources
 
 - [ ] Handles are owned by one wrapper and are not destroyed elsewhere.
