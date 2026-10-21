@@ -288,23 +288,45 @@ to all six.
     example a 64 × 64 or 256 × 256 image with an obvious asymmetric pattern. The
     terminal reports the decoded dimensions and byte count, and both checkerboard
     materials show that image. The blue tint still multiplies it.
-15. **Invalid texture falls back.** Run the example with a missing path and then a
-    malformed or oversized PNG. The terminal prints a clear diagnostic naming the
-    path and reason, uses the generated checkerboard, and the window still opens.
-    Close it normally; the process exits with status code `0`.
-16. **Close button exits.** Click the red close button. The process ends, the
+15. **JPEG works.** Run with `examples/HelloMaterials/Assets/checker.jpg`. The
+    terminal reports 128 × 128 and 65536 RGBA bytes, the quadrants keep their
+    documented orientation, and every fragment is opaque.
+16. **Uncompressed TGA works.** Run with
+    `examples/HelloMaterials/Assets/checker.tga`. It is stored bottom-up, so a
+    correct decode still shows red top-left, green top-right, blue bottom-left,
+    and yellow bottom-right on each face.
+17. **RLE TGA works.** Run with
+    `examples/HelloMaterials/Assets/checker-rle.tga`. It is 24-bit BGR and
+    top-down; the four color bands appear in the same orientation and are fully
+    opaque.
+18. **Uncompressed DDS works.** Run with
+    `examples/HelloMaterials/Assets/checker-rgba.dds`. The terminal reports
+    128 × 128 and 65536 RGBA bytes, and the quadrants match the PNG result.
+19. **Compressed DDS works or reports capability.** Run with
+    `examples/HelloMaterials/Assets/checker-bc1.dds`. The terminal reports BC1 with
+    eight mip levels. On a backend that supports BC1, the checker pattern renders
+    without a capability warning. If support is missing, the terminal reports the
+    format and falls back to the generated checkerboard without crashing. Mip
+    levels below 4 × 4 are not uploaded, and the result does not show seams or
+    missing mips at a distance.
+20. **Invalid texture falls back.** Run the example with a missing path and then a
+    malformed or oversized PNG, JPEG, TGA, and DDS. The terminal prints a clear
+    diagnostic naming the path and reason, uses the generated checkerboard, and
+    the window still opens. Close it normally; the process exits with status code
+    `0`.
+21. **Close button exits.** Click the red close button. The process ends, the
     terminal prompt returns, and `echo $?` reports `0`. The cursor is visible.
-17. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
+22. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
     The process ends with status code `0`.
-18. **Repeated cycles work.** Repeat launch and close at least three times, with
-    and without a PNG path. Each launch opens one window; each close leaves no
-    orphan process.
-19. **No busy-spin or per-frame uploads.** CPU use stays well below one full core
+23. **Repeated cycles work.** Repeat launch and close at least three times, with
+    and without each texture format. Each launch opens one window; each close
+    leaves no orphan process.
+24. **No busy-spin or per-frame uploads.** CPU use stays well below one full core
     and memory use stays stable for several minutes. The texture and mesh are
-    uploaded once at first use, not every frame.
-20. **No unhandled exceptions.** No exception text appears in the terminal during
-    normal launch, movement, mouse look, resize, minimize, restore, PNG load,
-    fallback, or shutdown.
+    uploaded once at first use, not every frame, including mip chains.
+25. **No unhandled exceptions.** No exception text appears in the terminal during
+    normal launch, movement, mouse look, resize, minimize, restore, any texture
+    load, fallback, or shutdown.
 
 macOS notes:
 

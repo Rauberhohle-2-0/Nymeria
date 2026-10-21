@@ -4,7 +4,7 @@ using Nymeria.Core.Materials;
 using Nymeria.Core.Models;
 using Nymeria.Core.Scenes;
 using Nymeria.Examples;
-using Nymeria.Formats.Png;
+using Nymeria.Formats.Textures;
 using Nymeria.Graphics;
 using Nymeria.Platform;
 using SDL3;
@@ -32,7 +32,23 @@ internal static class Program
 
         try
         {
-            TextureData baseColorTexture = LoadBaseColorTexture(args);
+            Texture baseColorTexture = LoadBaseColorTexture(args);
+
+            using Window window = Window.Create(new WindowOptions());
+            using MaterialRenderer renderer = MaterialRenderer.Create(window.Handle);
+
+            // A compressed DDS variant may not be sampleable on this backend.
+            // Report it clearly and keep the demo usable with generated content
+            // instead of failing while a frame is being recorded.
+            if (!renderer.SupportsTexture(baseColorTexture))
+            {
+                string description = DescribeTexture(baseColorTexture);
+                Console.Error.WriteLine(
+                    $"The GPU backend cannot sample {description}. Falling back to the " +
+                    "generated checkerboard texture.");
+                baseColorTexture = MaterialFixtures.CreateCheckerboardTexture();
+            }
+
             var checkerMaterial = new Material(
                 Vector3.One,
                 baseColorTexture,
@@ -92,16 +108,14 @@ internal static class Program
                 MoveSpeed = 4.0f,
             };
 
-            using Window window = Window.Create(new WindowOptions());
-            using MaterialRenderer renderer = MaterialRenderer.Create(window.Handle);
             using var controls = new FlyCameraControls(window.Handle, camera);
 
             Console.WriteLine(
-                "HelloMaterials: two objects share the checkerboard material, " +
+                "HelloMaterials: two objects share the base-color material, " +
                 "one uses a blue-tinted variant of the same texture, and one is " +
                 "solid orange through the white fallback texture.");
             Console.WriteLine(
-                "Rotate the camera to check the checkerboard orientation, then " +
+                "Rotate the camera to check the texture orientation, then " +
                 "resize the window. WASD moves, Space/Ctrl moves up/down, hold " +
                 "the right mouse button to look, and Esc closes the example.");
 
@@ -170,12 +184,12 @@ internal static class Program
         }
     }
 
-    private static TextureData LoadBaseColorTexture(string[] args)
+    private static Texture LoadBaseColorTexture(string[] args)
     {
         if (args.Length == 0)
         {
             Console.WriteLine(
-                "No PNG path supplied. Using the generated 128 x 128 checkerboard " +
+                "No texture path supplied. Using the generated 128 x 128 checkerboard " +
                 "texture, which needs no external asset.");
             return MaterialFixtures.CreateCheckerboardTexture();
         }
@@ -185,42 +199,55 @@ internal static class Program
         try
         {
             using FileStream stream = File.OpenRead(path);
-            var decoder = new PngImageDecoder(path);
-            TextureData texture = decoder.Decode(stream);
-            Console.WriteLine(
-                $"Loaded base-color texture '{path}' " +
-                $"({texture.Width} x {texture.Height}, {texture.ByteCount} RGBA bytes).");
+            Texture texture = new TextureLoader().Load(stream, path);
+            Console.WriteLine($"Loaded base-color texture '{path}': {DescribeTexture(texture)}.");
             return texture;
         }
-        catch (PngFormatException exception)
+        catch (FormatException exception)
         {
-            Console.Error.WriteLine($"Could not decode PNG '{path}': {exception.Message}");
+            Console.Error.WriteLine(
+                $"Could not decode texture '{path}': {exception.Message}");
         }
         catch (FileNotFoundException)
         {
-            Console.Error.WriteLine($"PNG texture file not found: {path}");
+            Console.Error.WriteLine($"Texture file not found: {path}");
         }
         catch (DirectoryNotFoundException)
         {
-            Console.Error.WriteLine($"PNG texture directory not found: {path}");
+            Console.Error.WriteLine($"Texture directory not found: {path}");
         }
         catch (UnauthorizedAccessException exception)
         {
-            Console.Error.WriteLine($"Cannot read PNG texture '{path}': {exception.Message}");
+            Console.Error.WriteLine($"Cannot read texture '{path}': {exception.Message}");
         }
         catch (IOException exception)
         {
-            Console.Error.WriteLine($"Could not read PNG texture '{path}': {exception.Message}");
+            Console.Error.WriteLine($"Could not read texture '{path}': {exception.Message}");
         }
         catch (ArgumentException exception)
         {
-            Console.Error.WriteLine($"Invalid PNG texture path '{path}': {exception.Message}");
+            Console.Error.WriteLine($"Invalid texture path '{path}': {exception.Message}");
         }
 
         Console.Error.WriteLine(
             "Falling back to the generated checkerboard texture so the example " +
             "keeps running.");
         return MaterialFixtures.CreateCheckerboardTexture();
+    }
+
+    private static string DescribeTexture(Texture texture)
+    {
+        if (texture is CompressedTextureData compressed)
+        {
+            string colorSpace = compressed.IsSrgb ? " sRGB" : string.Empty;
+            return $"{compressed.Width} x {compressed.Height} " +
+                   $"{CompressedTextureData.GetFormatName(compressed.Format)}" +
+                   $"{colorSpace}, {compressed.MipLevelCount} mip level(s), " +
+                   $"{compressed.ByteCount} encoded bytes";
+        }
+
+        return $"{texture.Width} x {texture.Height}, {texture.MipLevelCount} mip " +
+               $"level(s), {((TextureData)texture).ByteCount} RGBA bytes";
     }
 
     private static SceneObject CreateObject(
@@ -242,10 +269,13 @@ internal static class Program
 
     private static void PrintUsage()
     {
-        Console.Error.WriteLine("Usage: HelloMaterials [path/to/base-color.png]");
+        Console.Error.WriteLine(
+            "Usage: HelloMaterials [path/to/texture.{png,jpg,jpeg,tga,dds}]");
         Console.Error.WriteLine(
             "With no path, the example uses a generated checkerboard texture and " +
-            "needs no external asset. A supplied PNG must be non-interlaced, " +
-            "8-bit, and at most 4096 x 4096 pixels.");
+            "needs no external asset. PNG, JPEG, and DDS are identified by their " +
+            "signatures; TGA is recognized by a .tga or .targa name and validated " +
+            "by its header. Limits: 32 MiB input, 4096 x 4096 pixels, 64 MiB " +
+            "decoded payload.");
     }
 }

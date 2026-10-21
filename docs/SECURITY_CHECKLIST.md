@@ -64,6 +64,18 @@ guarantee.
       or repaired pixels.
 - [ ] The caller owns the stream and the decoder leaves it open.
 - [ ] New limits are documented and have boundary and malformed-input tests.
+- [ ] Format selection uses signatures where the format has one; an extension may
+      only select a decoder that has no signature, and its header is still fully
+      validated.
+- [ ] JPEG segment lengths and the end-of-image marker are validated before
+      decoding, so a truncated file cannot be accepted as a complete image.
+- [ ] TGA RLE packets are checked against the remaining pixel count and the input
+      length before any pixel is written.
+- [ ] DDS header, DX10 extension, mip chain, block/row sizes, and the exact payload
+      length are validated with checked arithmetic; unsupported formats fail
+      explicitly instead of being approximated.
+- [ ] A new image dependency was reviewed for maintenance, license, transitive
+      packages, native code, and NuGet advisories, and its version is pinned.
 
 ## Native and GPU resources
 
@@ -80,8 +92,10 @@ guarantee.
 - [ ] SDL3 return values are checked and failures produce actionable errors.
 - [ ] Buffer sizes, strides, and bindings match the shader layout and use the
       buffer's actual element size.
-- [ ] Texture payload size, row pitch, and declared sampler/resource counts match
-      the upload and shader layout.
+- [ ] Texture payload size, row pitch, mip count, compressed block layout, and
+      declared sampler/resource counts match the upload and shader layout.
+- [ ] A compressed format is capability-checked before upload, and only mip levels
+      that exist and are block aligned are uploaded or sampled.
 - [ ] A shared mesh, material, or texture reference is not released by a renderer
       that did not create the corresponding GPU resource, and a GPU handle release
       does not dispose shared managed data.
@@ -125,6 +139,9 @@ guarantee.
   not by CI.
 - There is no general fuzzing campaign, address sanitizer run, SBOM, license scan,
   or third-party binary analysis.
-- The PNG decoder has targeted malformed and boundary tests, not a fuzzing
-  campaign. Its worst accepted case still allocates the documented payload.
+- The image decoders have targeted malformed and boundary tests, not a fuzzing
+  campaign. Their worst accepted case still allocates the documented payload.
+- JPEG decoding depends on `StbImageSharp`. NuGet advisory checks cover the pinned
+  package, but Nymeria does not audit or fuzz its internals. The structural
+  validation wrap reduces, but does not eliminate, that trust.
 - NuGet advisories do not prove the absence of unknown vulnerabilities.

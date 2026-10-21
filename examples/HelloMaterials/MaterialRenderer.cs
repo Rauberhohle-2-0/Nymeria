@@ -21,15 +21,19 @@ namespace HelloMaterials;
 /// </para>
 /// <para>
 /// The renderer owns one GPU upload per distinct <see cref="MeshData"/> and one
-/// GPU texture per distinct <see cref="TextureData"/> for its lifetime. Scene
-/// objects and materials only reference CPU data, so several objects can share
-/// the same mesh and material without duplicate uploads. Uploads happen before
-/// the frame command buffer is acquired; no upload occurs per frame.
+/// GPU texture per distinct <see cref="Texture"/> for its lifetime. RGBA mip
+/// chains and block-compressed DDS textures both upload once; compressed formats
+/// are capability-checked first. Scene objects and materials only reference CPU
+/// data, so several objects can share the same mesh and material without
+/// duplicate uploads. Uploads happen before the frame command buffer is acquired;
+/// no upload occurs per frame.
 /// </para>
 /// <para>
 /// A material without a texture, or a mesh without texture coordinates, binds
 /// a generated white fallback texture so the fragment shader still combines
-/// sampled RGB with the material tint.
+/// sampled RGB with the material tint. A texture with uploaded mip levels uses
+/// the mipped sampler; a single-level texture uses the sampler with a maximum
+/// LOD of zero, so no absent level is ever requested.
 /// </para>
 /// </remarks>
 public sealed class MaterialRenderer : IDisposable
@@ -45,11 +49,12 @@ public sealed class MaterialRenderer : IDisposable
     private readonly IntPtr _fragmentShader;
     private readonly IntPtr _pipeline;
     private readonly IntPtr _sampler;
+    private readonly IntPtr _mippedSampler;
     private readonly IntPtr _fallbackTexture;
     private readonly SDL.GPUTextureFormat _depthFormat;
     private readonly Dictionary<MeshData, GpuMesh> _meshes =
         new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<TextureData, IntPtr> _textures =
+    private readonly Dictionary<Texture, GpuTexture> _textures =
         new(ReferenceEqualityComparer.Instance);
     private IntPtr _depthTexture;
     private uint _depthWidth;
@@ -63,6 +68,7 @@ public sealed class MaterialRenderer : IDisposable
         IntPtr fragmentShader,
         IntPtr pipeline,
         IntPtr sampler,
+        IntPtr mippedSampler,
         IntPtr fallbackTexture,
         SDL.GPUTextureFormat depthFormat)
     {
@@ -72,6 +78,7 @@ public sealed class MaterialRenderer : IDisposable
         _fragmentShader = fragmentShader;
         _pipeline = pipeline;
         _sampler = sampler;
+        _mippedSampler = mippedSampler;
         _fallbackTexture = fallbackTexture;
         _depthFormat = depthFormat;
     }
@@ -99,6 +106,7 @@ public sealed class MaterialRenderer : IDisposable
         IntPtr fragmentShader = IntPtr.Zero;
         IntPtr pipeline = IntPtr.Zero;
         IntPtr sampler = IntPtr.Zero;
+        IntPtr mippedSampler = IntPtr.Zero;
         IntPtr fallbackTexture = IntPtr.Zero;
 
         try
@@ -116,7 +124,8 @@ public sealed class MaterialRenderer : IDisposable
                 FragmentEntryPoint,
                 uniformBufferCount: 1,
                 samplerCount: 1);
-            sampler = CreateSampler(device.Handle);
+            sampler = CreateSampler(device.Handle, useMipmaps: false);
+            mippedSampler = CreateSampler(device.Handle, useMipmaps: true);
             fallbackTexture = CreateFallbackTexture(device);
 
             SDL.GPUTextureFormat depthFormat = ChooseDepthFormat(device.Handle);
@@ -134,6 +143,7 @@ public sealed class MaterialRenderer : IDisposable
                 fragmentShader,
                 pipeline,
                 sampler,
+                mippedSampler,
                 fallbackTexture,
                 depthFormat);
         }
@@ -151,6 +161,11 @@ public sealed class MaterialRenderer : IDisposable
                 if (fallbackTexture != IntPtr.Zero)
                 {
                     SDL.ReleaseGPUTexture(device.Handle, fallbackTexture);
+                }
+
+                if (mippedSampler != IntPtr.Zero)
+                {
+                    SDL.ReleaseGPUSampler(device.Handle, mippedSampler);
                 }
 
                 if (sampler != IntPtr.Zero)
@@ -358,10 +373,11 @@ public sealed class MaterialRenderer : IDisposable
                 in indexBinding,
                 SDL.GPUIndexElementSize.IndexElementSize32Bit);
 
+            GpuTexture texture = ResolveTexture(mesh, material);
             samplerBindings[0] = new SDL.GPUTextureSamplerBinding
             {
-                Texture = ResolveTexture(mesh, material),
-                Sampler = _sampler,
+                Texture = texture.Handle,
+                Sampler = texture.UploadedMipLevels > 1 ? _mippedSampler : _sampler,
             };
             SDL.BindGPUFragmentSamplers(renderPass, 0, samplerBindings, 1);
 
@@ -399,9 +415,9 @@ public sealed class MaterialRenderer : IDisposable
             SDL.ReleaseGPUTexture(_device.Handle, _depthTexture);
         }
 
-        foreach (IntPtr texture in _textures.Values)
+        foreach (GpuTexture texture in _textures.Values)
         {
-            SDL.ReleaseGPUTexture(_device.Handle, texture);
+            SDL.ReleaseGPUTexture(_device.Handle, texture.Handle);
         }
 
         _textures.Clear();
@@ -415,6 +431,7 @@ public sealed class MaterialRenderer : IDisposable
         _meshes.Clear();
 
         SDL.ReleaseGPUTexture(_device.Handle, _fallbackTexture);
+        SDL.ReleaseGPUSampler(_device.Handle, _mippedSampler);
         SDL.ReleaseGPUSampler(_device.Handle, _sampler);
         SDL.ReleaseGPUGraphicsPipeline(_device.Handle, _pipeline);
         SDL.ReleaseGPUShader(_device.Handle, _fragmentShader);
@@ -427,7 +444,7 @@ public sealed class MaterialRenderer : IDisposable
         foreach (SceneObject sceneObject in scene.Objects)
         {
             GpuMesh mesh = GetOrCreateGpuMesh(sceneObject.Mesh);
-            TextureData? texture = sceneObject.Material.BaseColorTexture;
+            Texture? texture = sceneObject.Material.BaseColorTexture;
 
             // A mesh without UVs binds the fallback texture, so uploading its
             // material's texture would only waste memory.
@@ -486,31 +503,201 @@ public sealed class MaterialRenderer : IDisposable
         }
     }
 
-    private IntPtr GetOrCreateGpuTexture(TextureData texture)
+    private GpuTexture GetOrCreateGpuTexture(Texture texture)
     {
-        if (_textures.TryGetValue(texture, out IntPtr cached))
+        if (_textures.TryGetValue(texture, out GpuTexture cached))
         {
             return cached;
         }
 
-        IntPtr handle = _device.CreateTexture(
-            texture.Pixels.Span,
-            (uint)texture.Width,
-            (uint)texture.Height);
-        _textures.Add(texture, handle);
-        return handle;
+        IntPtr handle = UploadTexture(texture);
+        int uploadedLevels = texture is CompressedTextureData compressed
+            ? CountUploadableLevels(compressed)
+            : texture.MipLevelCount;
+        var gpuTexture = new GpuTexture(handle, uploadedLevels);
+        _textures.Add(texture, gpuTexture);
+        return gpuTexture;
     }
 
-    private IntPtr ResolveTexture(GpuMesh mesh, Material material)
+    /// <summary>
+    /// Reports whether this renderer can upload and sample a material texture.
+    /// </summary>
+    /// <remarks>
+    /// The example calls this after the device exists so an unsupported
+    /// compressed DDS variant produces a diagnostic and a fallback instead of a
+    /// failed frame. Decoded RGBA textures are always supported.
+    /// </remarks>
+    public bool SupportsTexture(Texture texture)
     {
-        if (!mesh.HasTextureCoordinates || material.BaseColorTexture is not { } texture)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(texture);
+
+        if (texture is not CompressedTextureData compressed)
         {
-            return _fallbackTexture;
+            return true;
         }
 
-        return _textures.TryGetValue(texture, out IntPtr handle)
-            ? handle
-            : _fallbackTexture;
+        if (!TryGetGpuFormat(compressed, out SDL.GPUTextureFormat format) ||
+            CountUploadableLevels(compressed) == 0)
+        {
+            return false;
+        }
+
+        return _device.SupportsTextureFormat(format);
+    }
+
+    private IntPtr UploadTexture(Texture texture)
+    {
+        if (texture is CompressedTextureData compressed)
+        {
+            if (!TryGetGpuFormat(compressed, out SDL.GPUTextureFormat format))
+            {
+                throw new NotSupportedException(
+                    $"The compressed texture format '{compressed.Format}' is not " +
+                    "supported by the material renderer on this backend.");
+            }
+
+            int levelCount = CountUploadableLevels(compressed);
+
+            if (levelCount == 0)
+            {
+                throw new NotSupportedException(
+                    $"The {CompressedTextureData.GetFormatName(compressed.Format)} " +
+                    $"texture is {compressed.Width} x {compressed.Height}, which is not " +
+                    "block aligned. Block-compressed uploads require dimensions that " +
+                    "are multiples of four.");
+            }
+
+            return UploadLevels(
+                format,
+                compressed.Width,
+                compressed.Height,
+                compressed.MipLevels,
+                levelCount);
+        }
+
+        if (texture is not TextureData rgba)
+        {
+            throw new NotSupportedException(
+                $"The texture type '{texture.GetType().Name}' is not supported by the " +
+                "material renderer.");
+        }
+
+        return UploadLevels(
+            SDL.GPUTextureFormat.R8G8B8A8Unorm,
+            texture.Width,
+            texture.Height,
+            rgba.MipLevels,
+            texture.MipLevelCount);
+    }
+
+    private IntPtr UploadLevels(
+        SDL.GPUTextureFormat format,
+        int width,
+        int height,
+        IReadOnlyList<ReadOnlyMemory<byte>> levels,
+        int levelCount)
+    {
+        var regions = new GpuDevice.TextureUploadRegion[levelCount];
+        int totalBytes = 0;
+
+        for (int level = 0; level < levelCount; level++)
+        {
+            regions[level] = new GpuDevice.TextureUploadRegion(
+                totalBytes,
+                levels[level].Length,
+                (uint)Math.Max(1, width >> level),
+                (uint)Math.Max(1, height >> level));
+            totalBytes = checked(totalBytes + levels[level].Length);
+        }
+
+        var payload = new byte[totalBytes];
+
+        for (int level = 0; level < levelCount; level++)
+        {
+            levels[level].Span.CopyTo(payload.AsSpan(regions[level].Offset, regions[level].Length));
+        }
+
+        return _device.CreateTexture(
+            format,
+            (uint)width,
+            (uint)height,
+            regions,
+            payload);
+    }
+
+    private static int CountUploadableLevels(CompressedTextureData texture)
+    {
+        int levels = 0;
+
+        for (int level = 0; level < texture.MipLevelCount; level++)
+        {
+            // SDL's D3D12 and Vulkan backends disagree about block edges below
+            // 4 x 4, so only a block-aligned prefix is uploaded.
+            if (texture.GetMipWidth(level) % 4 != 0 || texture.GetMipHeight(level) % 4 != 0)
+            {
+                break;
+            }
+
+            levels++;
+        }
+
+        return levels;
+    }
+
+    private static bool TryGetGpuFormat(
+        CompressedTextureData texture,
+        out SDL.GPUTextureFormat format)
+    {
+        format = default;
+
+        switch (texture.Format, texture.IsSrgb)
+        {
+            case (CompressedTextureFormat.Bc1, false):
+                format = SDL.GPUTextureFormat.BC1RGBAUnorm;
+                return true;
+            case (CompressedTextureFormat.Bc1, true):
+                format = SDL.GPUTextureFormat.BC1RGBAUnormSRGB;
+                return true;
+            case (CompressedTextureFormat.Bc2, false):
+                format = SDL.GPUTextureFormat.BC2RGBAUnorm;
+                return true;
+            case (CompressedTextureFormat.Bc2, true):
+                format = SDL.GPUTextureFormat.BC2RGBAUnormSRGB;
+                return true;
+            case (CompressedTextureFormat.Bc3, false):
+                format = SDL.GPUTextureFormat.BC3RGBAUnorm;
+                return true;
+            case (CompressedTextureFormat.Bc3, true):
+                format = SDL.GPUTextureFormat.BC3RGBAUnormSRGB;
+                return true;
+            case (CompressedTextureFormat.Bc4, false):
+                format = SDL.GPUTextureFormat.BC4RUnorm;
+                return true;
+            case (CompressedTextureFormat.Bc5, false):
+                format = SDL.GPUTextureFormat.BC5RGUnorm;
+                return true;
+            case (CompressedTextureFormat.Bc7, false):
+                format = SDL.GPUTextureFormat.BC7RGBAUnorm;
+                return true;
+            case (CompressedTextureFormat.Bc7, true):
+                format = SDL.GPUTextureFormat.BC7RGBAUnormSRGB;
+                return true;
+            default:
+                // BC4 and BC5 have no sRGB variants in SDL's GPU API.
+                return false;
+        }
+    }
+
+    private GpuTexture ResolveTexture(GpuMesh mesh, Material material)
+    {
+        if (!mesh.HasTextureCoordinates || material.BaseColorTexture is not { } texture ||
+            !_textures.TryGetValue(texture, out GpuTexture handle))
+        {
+            return new GpuTexture(_fallbackTexture, 1);
+        }
+
+        return handle;
     }
 
     private static byte[] ReadShaderSource()
@@ -530,20 +717,26 @@ public sealed class MaterialRenderer : IDisposable
         return memory.ToArray();
     }
 
-    private static IntPtr CreateSampler(IntPtr device)
+    private static IntPtr CreateSampler(IntPtr device, bool useMipmaps)
     {
+        // Two samplers keep the mipped path explicit: a single-level texture is
+        // sampled with MaxLod 0 and can never request a level that does not
+        // exist, while a texture with uploaded mips interpolates within the
+        // chain SDL actually holds.
         IntPtr sampler = SDL.CreateGPUSampler(
             device,
             new SDL.GPUSamplerCreateInfo
             {
                 MinFilter = SDL.GPUFilter.Linear,
                 MagFilter = SDL.GPUFilter.Linear,
-                MipmapMode = SDL.GPUSamplerMipmapMode.Nearest,
+                MipmapMode = useMipmaps
+                    ? SDL.GPUSamplerMipmapMode.Linear
+                    : SDL.GPUSamplerMipmapMode.Nearest,
                 AddressModeU = SDL.GPUSamplerAddressMode.ClampToEdge,
                 AddressModeV = SDL.GPUSamplerAddressMode.ClampToEdge,
                 AddressModeW = SDL.GPUSamplerAddressMode.ClampToEdge,
                 MinLod = 0.0f,
-                MaxLod = 0.0f,
+                MaxLod = useMipmaps ? 32.0f : 0.0f,
                 MaxAnisotropy = 1.0f,
                 EnableAnisotropy = false,
                 EnableCompare = false,
@@ -742,4 +935,6 @@ public sealed class MaterialRenderer : IDisposable
         IntPtr IndexBuffer,
         uint IndexCount,
         bool HasTextureCoordinates);
+
+    private readonly record struct GpuTexture(IntPtr Handle, int UploadedMipLevels);
 }

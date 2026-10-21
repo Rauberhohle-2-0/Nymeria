@@ -361,6 +361,31 @@ No new security finding was identified in this review. The residual risks remain
 the decoder is not fuzzed, a valid image at the limits still allocates the
 documented payload, and texture upload and sampling are not exercised by CI.
 
+A later follow-up added JPEG, TGA, and DDS decoding on the same trust model:
+
+- `StbImageSharp` 2.30.16 was approved as the JPEG decoder. It is a pure-managed
+  port of `stb_image`, licensed Unlicense OR MIT, with no native code and no
+  transitive package dependencies. NuGet audit mode is `all`, and restoration
+  reports no known advisory for the pinned version. The package is not fuzzed or
+  independently audited here.
+- The JPEG wrapper, not the library, owns the encoded-input bound, the
+  start-of-image check, segment-length and end-of-image validation, the
+  pre-decode dimension check, the decoded-size check, and opaque alpha. This
+  rejects truncated files that `stb_image` would otherwise decode with
+  synthesized pixels.
+- The TGA decoder is dependency-free and validates its header, origin flags,
+  alpha declaration, RLE packet sizes, and trailing data before use.
+- The DDS decoder is dependency-free and validates the header, the DX10
+  extension, caps, depth, dimensions, mip count, per-level sizes with checked
+  arithmetic, and the exact payload. It uploads blocks only after a GPU format
+  capability check and never decompresses them.
+- `TextureLoader` selects by signature for PNG, JPEG, and DDS. TGA, which has no
+  signature, requires a `.tga` name and is still header-validated.
+
+No new security finding was identified. Residual risk now also includes the
+third-party JPEG decoder and the fact that compressed texture upload and sampling
+remain manual macOS checks.
+
 The findings above are addressed at the source level. This audit does not claim
 that Nymeria is secure or fully audited; the residual risks listed earlier still
 apply.

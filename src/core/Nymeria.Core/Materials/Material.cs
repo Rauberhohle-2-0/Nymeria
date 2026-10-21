@@ -10,7 +10,7 @@ namespace Nymeria.Core.Materials;
 /// <para>
 /// A material is CPU data. It contains no GPU texture, sampler, or buffer
 /// handle. Renderers may share one material across many scene objects and may
-/// upload the referenced <see cref="TextureData"/> once per distinct instance.
+/// upload the referenced <see cref="Texture"/> once per distinct instance.
 /// </para>
 /// <para>
 /// The renderer combines the two inputs by multiplying the sampled texture RGB
@@ -37,8 +37,8 @@ public sealed class Material
     /// be finite and between 0 and 1.
     /// </param>
     /// <param name="baseColorTexture">
-    /// The optional base-color texture. The material references it and does not
-    /// own or copy its pixels.
+    /// The optional base-color texture, either decoded RGBA pixels or compressed
+    /// blocks. The material references it and does not own or copy its payload.
     /// </param>
     /// <param name="name">An optional name used in diagnostics.</param>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -46,7 +46,7 @@ public sealed class Material
     /// </exception>
     public Material(
         Vector3 baseColor,
-        TextureData? baseColorTexture = null,
+        Texture? baseColorTexture = null,
         string? name = null)
     {
         if (!float.IsFinite(baseColor.X) ||
@@ -77,7 +77,7 @@ public sealed class Material
     /// Gets the optional base-color texture, or null when the material is
     /// untextured.
     /// </summary>
-    public TextureData? BaseColorTexture { get; }
+    public Texture? BaseColorTexture { get; }
 
     /// <summary>Gets the optional name used in diagnostics.</summary>
     public string? Name { get; }

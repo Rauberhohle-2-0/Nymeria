@@ -14,7 +14,10 @@ interactive, depth-tested cube scene.
   texture data, `Nymeria.Formats.Obj` with a
   dependency-free Wavefront OBJ parser, `Nymeria.Formats.O3d` with a
   dependency-free OMSI O3D static-mesh parser, `Nymeria.Formats.Png` with a
-  bounded PNG decoder, `Nymeria.Graphics` with reusable
+  bounded PNG decoder, `Nymeria.Formats.Tga`, `Nymeria.Formats.Jpeg`, and
+  `Nymeria.Formats.Dds` with bounded texture decoders, and
+  `Nymeria.Formats.Textures` with a signature-first texture loader,
+  `Nymeria.Graphics` with reusable
   Metal GPU device infrastructure and camera math, `examples/HelloTriangle`, the
   interactive `examples/HelloCube`, the OBJ-rendering `examples/HelloOBJ`, the
   O3D-rendering `examples/HelloO3D`, the scene-instancing `examples/HelloScene`,
@@ -58,6 +61,7 @@ dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
 dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-bc1.dds
 ```
 
 A resizable native window titled `Nymeria` opens at 960 × 540. `HelloTriangle`
@@ -70,7 +74,7 @@ path to another O3D file. `HelloScene` draws several transformed instances of on
 shared mesh; press `E` to add an instance, `Q` to remove the last object, and `R`
 to reset. `HelloMaterials` draws objects that share a checkerboard texture and a
 mesh, a blue-tinted variant of that texture, and a solid-color material; pass a
-PNG path after `--` to use a different base-color texture. Move with
+PNG, JPEG, TGA, or DDS path after `--` to use a different base-color texture. Move with
 `W`/`A`/`S`/`D`, `Space`, and
 `Left Control`; hold `Shift` to go faster; hold the right mouse button and move
 the mouse to look around. Close any window with the red close button or the
@@ -90,7 +94,8 @@ GPU device and the `Camera` math type; `Nymeria.Core` provides the model data
 used by `HelloCube` and the scene data used by `HelloScene`;
 `Nymeria.Formats.Obj` parses the file used by `HelloOBJ`, and
 `Nymeria.Formats.O3d` parses the file used by `HelloO3D`;
-`Nymeria.Formats.Png` decodes the optional texture used by `HelloMaterials`. Each
+`Nymeria.Formats.Textures` loads the PNG, JPEG, TGA, or DDS texture used by
+`HelloMaterials`. Each
 example owns its pipeline and depth target, while `HelloOBJ` and `HelloO3D` share
 the renderer, shader, model-viewer loop, and camera controls in `examples/Shared`.
 `HelloScene` uses the shared geometry builder, model shader, and camera controls
@@ -149,18 +154,21 @@ other instances. `E`, `Q`, and `R` add, remove, and reset objects at runtime.
 See [docs/SCENE.md](docs/SCENE.md) for the data and ownership contract.
 
 `HelloMaterials` renders a scene whose objects carry a `Material`: a base-color
-tint and an optional base-color `TextureData`. It generates a four-quadrant
+tint and an optional base-color `Texture`. It generates a four-quadrant
 checkerboard in code, shares one mesh and one material between two objects, tints
 the same texture blue for a third, and shows a solid orange material on a
-fourth. The renderer caches one GPU
-mesh per distinct `MeshData` and one GPU texture per distinct `TextureData`, and
-binds a generated white fallback for untextured materials and meshes without
-UVs. The fragment shader multiplies sampled RGB by the tint and writes an opaque
-fragment. A PNG path supplied on the command line is decoded by
-`Nymeria.Formats.Png`; a missing, unreadable, malformed, or oversized file prints
-a diagnostic and falls back to the generated checkerboard. See
-[docs/MATERIALS.md](docs/MATERIALS.md) for the data contract, decoder limits, and
-resource ownership.
+fourth. The renderer caches one GPU mesh per distinct `MeshData` and one GPU
+texture per distinct `Texture`, uploads mip chains once, and binds a generated
+white fallback for untextured materials and meshes without UVs. The fragment
+shader multiplies sampled RGB by the tint and writes an opaque fragment. A PNG,
+JPEG, TGA, or DDS path supplied on the command line is decoded by
+`Nymeria.Formats.Textures`; signatures take precedence over extensions, and TGA
+is recognized by its extension plus header validation. A missing, unreadable,
+malformed, oversized, or unsupported file prints a diagnostic and falls back to
+the generated checkerboard. Block-compressed DDS is uploaded directly when the
+backend supports the format; otherwise the example reports it and falls back. See
+[docs/MATERIALS.md](docs/MATERIALS.md) for the data contract, supported DDS
+variants, decoder limits, and resource ownership.
 
 All six examples skip rendering while minimized and recover when a drawable is
 available again. [examples/README.md](examples/README.md) records the matrix
@@ -185,9 +193,11 @@ mesh sharing, material and texture-data validation in `Nymeria.Core.Tests`, the
 OBJ subset and diagnostics in `Nymeria.Formats.Obj.Tests`, the O3D header,
 supported versions and flags, conversions, limits, and failure behavior in
 `Nymeria.Formats.O3d.Tests`, and the PNG subset, malformed input, and decode
-limits in `Nymeria.Formats.Png.Tests`. There are deliberately no fake GUI tests:
-native window behavior is covered by the manual smoke test below and is not
-claimed as a headless CI result.
+limits in `Nymeria.Formats.Png.Tests`, and the JPEG, TGA, DDS, and loader paths in
+`Nymeria.Formats.Jpeg.Tests`, `Nymeria.Formats.Tga.Tests`,
+`Nymeria.Formats.Dds.Tests`, and `Nymeria.Formats.Textures.Tests`. There are
+deliberately no fake GUI tests: native window behavior is covered by the manual
+smoke test below and is not claimed as a headless CI result.
 
 ## Manual smoke test
 
@@ -200,7 +210,7 @@ manually; it is not claimed as a headless CI result.
 .github/        Repository checks and Dependabot configuration
 docs/           Architecture, Git policy, and manual smoke test
 src/core/       Nymeria.Core model data, parser contract, scene, and material data
-src/formats/    Nymeria.Formats.Obj, Nymeria.Formats.O3d, and Nymeria.Formats.Png
+src/formats/    Nymeria.Formats.Obj, O3d, Png, Tga, Jpeg, Dds, and Textures
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
 examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloScene, and HelloMaterials

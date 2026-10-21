@@ -10,13 +10,15 @@ in [SECURITY_AUDIT_01.md](SECURITY_AUDIT_01.md).
 | Input | Trust |
 | --- | --- |
 | Project source, embedded shaders, checked-in test fixtures | Trusted project content. |
-| OBJ, O3D, and PNG files, streams, and paths supplied at run time | Untrusted. |
+| OBJ, O3D, PNG, JPEG, TGA, and DDS files, streams, and paths supplied at run time | Untrusted. |
 | Package restore input and GitHub Actions metadata | Untrusted external data that the build must validate or pin. |
 | SDL3, Metal, and the operating system | External native dependencies. Nymeria does not sandbox them. |
 
-The parsers and the PNG decoder are headless libraries. They must not depend on
-SDL3, Metal, a GPU, a window, or the current working directory. This keeps parsing
-testable and keeps untrusted input away from the native boundary.
+The parsers and the image decoders are headless libraries. They must not depend
+on SDL3, Metal, a GPU, a window, or the current working directory. This keeps
+parsing testable and keeps untrusted input away from the native boundary. The
+JPEG decoder wraps the pure-managed `StbImageSharp` package; the wrap still owns
+the input bound, structural validation, and dimension checks.
 
 ## Untrusted model input
 
@@ -60,8 +62,13 @@ and is enforced before the model is uploaded.
 
 ## Untrusted image input
 
-`Nymeria.Formats.Png.PngImageDecoder` is a headless decoder for untrusted PNG
-streams. It must:
+`Nymeria.Formats.Png.PngImageDecoder`,
+`Nymeria.Formats.Jpeg.JpegImageDecoder`, `Nymeria.Formats.Tga.TgaImageDecoder`,
+and `Nymeria.Formats.Dds.DdsTextureDecoder` are headless decoders for untrusted
+image input. `Nymeria.Formats.Textures.TextureLoader` chooses a decoder by
+signature (PNG, JPEG, DDS) or, for TGA only, by extension plus header validation;
+an extension never selects a decoder whose signature is present. The PNG decoder
+must:
 
 - Verify the PNG signature, chunk structure, chunk ordering, and every chunk CRC
   before using the chunk.
@@ -90,10 +97,32 @@ The current PNG limits are:
 | Width and height | 4096 pixels each |
 | Decoded RGBA payload | 64 MiB |
 
-`TextureData` independently validates dimensions and payload length at
-construction, so an invalid texture cannot reach the GPU path through a different
-caller. GPU-side texture creation adds a defensive 16384-pixel and 256 MiB limit,
-but normal CPU data is smaller.
+The JPEG wrapper must verify the start-of-image marker, walk the segment chain,
+reject a missing end-of-image marker or a truncated segment before decoding,
+bound encoded input, read dimensions with `ImageInfo` before allocating pixels,
+verify the decoded dimensions and payload length, and force opaque alpha. It must
+not apply EXIF orientation or resolve any embedded path.
+
+The TGA decoder must accept only image types 2 and 10, 24-bit and 32-bit pixels,
+no color map, and no interleaving. It must validate the header before reading
+pixels, honor both origin flags, validate every RLE packet against the remaining
+pixel count before writing, reject truncated run and raw packets, and reject
+unexpected trailing data while allowing only the documented TGA 2.0 footer.
+
+The DDS decoder must validate the signature, header and pixel-format sizes,
+required flags, caps and caps2, depth, dimensions, mip count, DX10 resource
+dimension, array size, and cubemap flag. It must derive every level's exact block
+or row size with checked arithmetic, require the payload to match the declared
+chain exactly, and reject unsupported formats explicitly. It must not decompress
+blocks or follow metadata paths.
+
+Each decoder applies its documented defaults through an internal limits object
+that tests can lower; this keeps the boundary checks exercised without building
+maximum-size inputs. `TextureData` and `CompressedTextureData` independently
+validate dimensions, mip layout, block sizes, and payload lengths at
+construction, so an invalid texture cannot reach the GPU path through a
+different caller. GPU-side texture creation
+adds a defensive 16384-pixel and 256 MiB limit, but normal CPU data is smaller.
 
 The `HelloMaterials` example accepts one explicit PNG path and does not resolve
 textures relative to a model or search the working directory. A missing,
@@ -116,8 +145,10 @@ parser result.
   releases one upload per distinct mesh and one GPU texture per distinct texture.
   Removing an object must not dispose data that another object still references.
 - A material or texture reference is not GPU ownership. Releasing a GPU texture
-  or sampler releases only that native handle, never the managed `TextureData` or
-  `Material` object that other callers may share.
+  or sampler releases only that native handle, never the managed `TextureData`,
+  `CompressedTextureData`, or `Material` object that other callers may share.
+  Compressed levels are uploaded as blocks; the CPU payload is never decompressed
+  or retained by the device.
 - After `SDL_AcquireGPUSwapchainTexture` returns a texture, submit the command
   buffer. Do not cancel an acquired command buffer. A null texture or a failed
   acquisition may still be cancelled.
@@ -173,8 +204,11 @@ instead of opening a public issue with exploit details.
 Nymeria does not run a general fuzzing campaign, address sanitizer, SBOM or
 license scan, or third-party binary analysis. Parser and decoder work is linear in
 accepted input, so a local attacker can still consume the documented maximum. The
-O3D parser's worst case is bounded but memory-amplifying. The PNG decoder bounds
+O3D parser's worst case is bounded but memory-amplifying. The image decoders bound
 encoded, dimension, and decoded payload sizes, but a valid image at the limits can
-still request 64 MiB of decoded pixels plus GPU memory. SDL3, Metal, and the
-operating system are trusted native dependencies and are not sandboxed. The GPU
-examples, including texture upload and sampling, are not exercised in CI.
+still request 64 MiB of decoded pixels or encoded blocks plus GPU memory. JPEG
+decoding additionally relies on `StbImageSharp`, a third-party pure-managed
+library; its version is pinned and audited by NuGet, but Nymeria does not fuzz it.
+SDL3, Metal, and the operating system are trusted native dependencies and are not
+sandboxed. The GPU examples, including texture upload, mip upload, compressed
+format capability, and sampling, are not exercised in CI.

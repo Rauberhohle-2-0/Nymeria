@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Nymeria.Formats.Jpeg</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../core/Nymeria.Core/Nymeria.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nymeria.Formats.Jpeg.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pure-managed stb_image port. License: Unlicense OR MIT. No native code
+         and no transitive package dependencies. Approved for JPEG decoding in
+         this task; see docs/MATERIALS.md and docs/ARCHITECTURE.md. -->
+    <PackageReference Include="StbImageSharp" Version="2.30.16" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nymeria.Formats.Jpeg.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -7,7 +7,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/core/Nymeria.Core/Nymeria.Core.csproj" />
-    <ProjectReference Include="../../src/formats/Nymeria.Formats.Png/Nymeria.Formats.Png.csproj" />
+    <ProjectReference Include="../../src/formats/Nymeria.Formats.Textures/Nymeria.Formats.Textures.csproj" />
     <ProjectReference Include="../../src/graphics/Nymeria.Graphics/Nymeria.Graphics.csproj" />
     <ProjectReference Include="../../src/platform/Nymeria.Platform/Nymeria.Platform.csproj" />
   </ItemGroup>
@@ -19,6 +19,10 @@
   <ItemGroup>
     <EmbeddedResource Include="Shaders/Material.metal"
                       LogicalName="HelloMaterials.Shaders.Material.metal" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets/**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -11,8 +11,9 @@ the O3D parser used by `HelloO3D`. `HelloOBJ` and `HelloO3D` share the renderer,
 geometry builder, shader, model-viewer loop, and input mapping in
 `examples/Shared`. `HelloScene` uses the scene layer in `Nymeria.Core`, the
 shared geometry builder, the shared model shader, and the shared camera controls.
-`HelloMaterials` uses the material and texture data in `Nymeria.Core`, the PNG
-decoder in `Nymeria.Formats.Png`, and the shared camera controls.
+`HelloMaterials` uses the material and texture data in `Nymeria.Core`, the
+PNG/JPEG/TGA/DDS loader in `Nymeria.Formats.Textures`, and the shared camera
+controls.
 
 All examples use SDL3's GPU API with the Metal backend and Metal Shading
 Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
@@ -272,7 +273,11 @@ scene layer, camera, depth test, and input mapping as `HelloScene`.
 
 ```bash
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
-dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- path/to/image.png
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker.jpg
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker.tga
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-rle.tga
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-bc1.dds
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-rgba.dds
 ```
 
 - Materials: a `Material` carries an optional `TextureData` reference and a
@@ -299,12 +304,29 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- path/to/im
   `HelloMaterials.Shaders.Material.metal`, with one vertex and one fragment
   uniform buffer plus one texture/sampler pair. It uses the same row-major matrix
   upload convention as the other examples.
-- PNG input: a supplied path is decoded by `Nymeria.Formats.Png`. A missing,
-  unreadable, malformed, oversized, or unsupported file prints a diagnostic and
-  falls back to the generated checkerboard; the window still opens. The decoder
-  accepts non-interlaced 8-bit PNGs up to 4096 × 4096 pixels.
+- Formats: a supplied path is decoded by `Nymeria.Formats.Textures`. PNG, JPEG,
+  and DDS are identified by signature; TGA uses a `.tga`/`.targa` name plus
+  header validation. The checked-in `Assets` fixtures are original project
+  content, and their layout is documented in `Assets/README.md`.
+- JPEG: decoded through the pure-managed `StbImageSharp` package with Nymeria's
+  own input bound, segment-chain validation, and dimension checks. Alpha is
+  opaque. EXIF orientation is not applied.
+- TGA: uncompressed or RLE true-color, 24-bit BGR or 32-bit BGRA, both origin
+  flags. Color maps, interleaving, and other depths are rejected.
+- DDS: BC1, BC2, BC3, BC4, BC5, and BC7 block data (legacy fourCC and DX10
+  formats, including sRGB where available) and supported uncompressed RGBA8
+  layouts. Mip chains upload once. Block-compressed regions must be block
+  aligned; levels below 4 × 4 stay on the CPU, and a single-level or mipped
+  sampler is chosen to match.
+- GPU capability: if the backend cannot sample a compressed DDS format, or a
+  compressed texture is not block aligned, the example prints a diagnostic and
+  uses the generated checkerboard instead.
+- Errors: a missing, unreadable, malformed, oversized, or unsupported file prints
+  a diagnostic and falls back; the window still opens. Limits are 32 MiB of
+  encoded input, 4096 × 4096 pixels, and 64 MiB of payload.
 - Scope: no MTL or OMSI material parsing, lighting, PBR, transparency sorting,
-  texture streaming, mipmap generation, hot reload, or material graphs.
+  texture streaming, mipmap generation, CPU block decompression, hot reload, or
+  material graphs.
 
 ## Platform limits
 
@@ -314,7 +336,9 @@ formats. `HelloOBJ` and `HelloO3D` use focused format subsets, not general
 material or scene importers. `HelloO3D` accepts only unscrambled static meshes
 and rejects bones and animation. `HelloCube` still constructs its model data in
 code. `HelloScene` adds flat, transformed instances but no hierarchy.
-`HelloMaterials` adds a tint and an optional base-color texture, not a material
-pipeline. No example has lighting, an object hierarchy, or collisions. GPU
-output, texture sampling, and input behavior are validated manually with
+`HelloMaterials` adds a tint and an optional base-color texture from PNG, JPEG,
+TGA, or a documented DDS subset, not a material pipeline. DDS support is not
+universal, and compressed formats depend on backend capability. No example has
+lighting, an object hierarchy, or collisions. GPU output, texture sampling,
+compressed-format capability, and input behavior are validated manually with
 [../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.

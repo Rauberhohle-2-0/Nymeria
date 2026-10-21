@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Nymeria.Formats.Textures</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../core/Nymeria.Core/Nymeria.Core.csproj" />
+    <ProjectReference Include="../Nymeria.Formats.Dds/Nymeria.Formats.Dds.csproj" />
+    <ProjectReference Include="../Nymeria.Formats.Jpeg/Nymeria.Formats.Jpeg.csproj" />
+    <ProjectReference Include="../Nymeria.Formats.Png/Nymeria.Formats.Png.csproj" />
+    <ProjectReference Include="../Nymeria.Formats.Tga/Nymeria.Formats.Tga.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nymeria.Formats.Textures.Tests" />
+  </ItemGroup>
+
+</Project>

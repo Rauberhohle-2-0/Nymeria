@@ -27,13 +27,23 @@ extension is a direction, not a current feature.
 - `Nymeria.Core`, a dependency-free class library containing validated,
   format-independent model data, the `IModelParser` contract, minimal scene data
   (`Scene`, `SceneObject`, and `Transform`), and format-independent material and
-  texture data.
+  texture data with RGBA and block-compressed mip chains.
 - `Nymeria.Formats.Obj`, a dependency-free Wavefront OBJ parser implementing
   `IModelParser` for a documented polygonal subset.
 - `Nymeria.Formats.O3d`, a dependency-free OMSI O3D parser implementing
   `IModelParser` for a documented unscrambled static-mesh subset.
 - `Nymeria.Formats.Png`, a dependency-free PNG decoder producing validated RGBA
   texture data for a documented, bounded subset.
+- `Nymeria.Formats.Tga`, a dependency-free TGA decoder for documented
+  uncompressed and RLE true-color subsets.
+- `Nymeria.Formats.Jpeg`, a JPEG decoder built on the pure-managed
+  `StbImageSharp` package, with Nymeria-owned input bounds, structural validation,
+  and dimension checks.
+- `Nymeria.Formats.Dds`, a dependency-free DDS header and payload decoder for
+  documented BC1–BC5/BC7 and uncompressed subsets, returning compressed or RGBA
+  texture data without decompressing blocks.
+- `Nymeria.Formats.Textures`, a signature-first `TextureLoader` that dispatches
+  to the PNG, JPEG, TGA, and DDS decoders without touching the GPU.
 - `Nymeria.Graphics`, a class library that owns the SDL3 GPU device and window
   presentation claim, provides reusable MSL shader, buffer, texture, and sampler
   creation, and contains a reusable, SDL-independent free-fly `Camera`.
@@ -49,8 +59,9 @@ extension is a direction, not a current feature.
   user-supplied path, using the shared example renderer.
 - `examples/HelloScene`, an interactive example that draws multiple transformed
   instances of one shared mesh through the scene layer, with runtime add/remove.
-- `examples/HelloMaterials`, an interactive example that draws shared, tinted, and
-  untextured materials with a generated checkerboard or a user-supplied PNG.
+- `examples/HelloMaterials`, an interactive example that draws shared, tinted,
+  and untextured materials with a generated checkerboard or a user-supplied PNG,
+  JPEG, TGA, or DDS texture.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - `Nymeria.Core.Tests`, GPU-independent tests for model-data validation,
   parser-contract error behavior, transform composition, scene lifecycle,
@@ -62,6 +73,11 @@ extension is a direction, not a current feature.
   behavior.
 - `Nymeria.Formats.Png.Tests`, GPU-independent tests for the PNG subset, malformed
   and truncated input, decompression limits, and decoded texture data.
+- `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`, and
+  `Nymeria.Formats.Dds.Tests`, GPU-independent tests for their supported subsets,
+  orientation, channel order, mip layouts, malformed input, and limits.
+- `Nymeria.Formats.Textures.Tests`, GPU-independent tests for signature-based
+  format detection and loader error behavior.
 - SDL3 windowing and GPU rendering through the pinned `SDL3-CS` and
   `SDL3-CS.MacOS` packages.
 - A `Repository checks` GitHub Actions workflow that validates repository
@@ -110,11 +126,14 @@ would require maintainer approval.
 
 `src/platform/` contains the `Nymeria.Platform` project, `src/graphics/`
 contains `Nymeria.Graphics`, `src/core/` contains `Nymeria.Core`, `src/formats/`
-contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`, and
-`Nymeria.Formats.Png`, `examples/` contains `HelloTriangle`, `HelloCube`,
+contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`, `Nymeria.Formats.Png`,
+`Nymeria.Formats.Tga`, `Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`, and
+`Nymeria.Formats.Textures`, `examples/` contains `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloScene`, and `HelloMaterials`, and `tests/` contains
 `Nymeria.Core.Tests`, `Nymeria.Formats.Obj.Tests`,
-`Nymeria.Formats.O3d.Tests`, `Nymeria.Formats.Png.Tests`, and
+`Nymeria.Formats.O3d.Tests`, `Nymeria.Formats.Png.Tests`,
+`Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
+`Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Textures.Tests`, and
 `Nymeria.Platform.Tests`.
 
 `Nymeria.Core` owns the format-independent model data and parser contract
@@ -126,9 +145,12 @@ in `Nymeria.Core`: it is reusable 3D rendering math with no SDL, window, or GPU
 dependency, and the model-loading foundation is the first demonstrated need for
 the core project. `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d` reference only
 `Nymeria.Core` and the base class library; their supported subsets are documented
-in [OBJ.md](OBJ.md) and [O3D.md](O3D.md). `Nymeria.Formats.Png` also references
-only `Nymeria.Core` and the base class library; [MATERIALS.md](MATERIALS.md)
-documents its supported subset and limits.
+in [OBJ.md](OBJ.md) and [O3D.md](O3D.md). `Nymeria.Formats.Png`,
+`Nymeria.Formats.Tga`, and `Nymeria.Formats.Dds` also reference only
+`Nymeria.Core` and the base class library. `Nymeria.Formats.Jpeg` references
+`Nymeria.Core` and the pure-managed `StbImageSharp` package.
+`Nymeria.Formats.Textures` references `Nymeria.Core` and the four image decoders.
+[MATERIALS.md](MATERIALS.md) documents every supported subset and limit.
 
 ## Windowing
 
@@ -270,9 +292,14 @@ pairs. Shaders that declare neither leave both at the default of zero.
 `GpuDevice.CreateTexture` accepts tightly packed RGBA pixels and dimensions,
 validates its own defensive GPU limits, creates an `R8G8B8A8Unorm` 2D texture with
 one mip and sampler usage, and uploads the pixels through a transfer buffer and a
-copy pass. It does not generate mipmaps, convert color space, or retain the CPU
-payload. The caller owns the texture and releases it after pending GPU work has
-completed.
+copy pass. A second overload accepts an explicit `SDL_GPUTextureFormat`, one
+`TextureUploadRegion` per mip level, and one payload, so block-compressed DDS
+data and mip chains upload without CPU decompression. It checks
+`SDL_GPUTextureSupportsFormat`, pads each level's transfer offset to 512 bytes,
+uploads every level in one copy pass, and exposes `SupportsTextureFormat` for
+callers that need to choose a fallback before creating a resource. Neither
+overload generates mipmaps, converts color space, or retains the CPU payload. The
+caller owns the texture and releases it after pending GPU work has completed.
 
 ### Camera
 
@@ -428,12 +455,14 @@ ownership rules.
 ### Materials and textures
 
 `Nymeria.Core.Materials` adds an immutable `Material` with a validated base-color
-tint and an optional `TextureData` reference, and a validated, format-independent
-`TextureData` holding top-down tightly packed RGBA pixels. Materials and textures
-are managed CPU data; they contain no GPU handle, SDL3, window, or format
-dependency. `SceneObject` references a material without copying it and defaults
-to the shared, untextured `Material.Default`. [MATERIALS.md](MATERIALS.md) is the
-authoritative contract.
+tint and an optional `Texture` reference. `Texture` is the shared abstract base
+for validated CPU texture data with a mip chain: `TextureData` holds top-down
+tightly packed RGBA pixels, and `CompressedTextureData` holds BC1–BC5/BC7 blocks
+with an sRGB flag and no decompression. Materials and textures are managed CPU
+data; they contain no GPU handle, SDL3, window, or format dependency.
+`SceneObject` references a material without copying it and defaults to the shared,
+untextured `Material.Default`. [MATERIALS.md](MATERIALS.md) is the authoritative
+contract.
 
 `Nymeria.Formats.Png.PngImageDecoder` is a dependency-free decoder for a bounded
 PNG subset. It verifies the signature, chunk order, every chunk CRC, declared
@@ -445,22 +474,44 @@ dimension limit, and a 64 MiB decoded-payload limit. Its headers and palette are
 validated before allocation, and decompression is bounded to the exact scanline
 payload implied by the validated header.
 
+`Nymeria.Formats.Tga.TgaImageDecoder` handles uncompressed and RLE true-color
+TGA with 24-bit BGR or 32-bit BGRA pixels, both origin flags, and explicit
+rejection of color maps, interlacing, unsupported depths, and malformed RLE
+packets. `Nymeria.Formats.Dds.DdsTextureDecoder` validates DDS headers and the
+DX10 extension, then returns `CompressedTextureData` for BC1–BC5/BC7 (including
+sRGB variants) or RGBA `TextureData` for supported uncompressed layouts. Neither
+implements CPU block decompression or mipmap generation.
+
+`Nymeria.Formats.Jpeg.JpegImageDecoder` uses the pure-managed `StbImageSharp`
+package (Unlicense OR MIT, no native code, no transitive packages) for JPEG
+decoding. Nymeria owns the safety boundary: it bounds the encoded bytes, walks the
+JPEG segment chain to reject truncation before decoding, reads dimensions with
+`ImageInfo` before allocating pixels, and forces opaque alpha because JPEG has no
+alpha channel. EXIF orientation is not applied.
+
+`Nymeria.Formats.Textures.TextureLoader` identifies PNG, JPEG, and DDS by
+their signatures and TGA by a `.tga`/`.targa` source name plus header validation.
+It never opens a file, resolves a path, caches data, or makes a GPU call.
+
 `HelloMaterials` demonstrates the path without requiring an external asset. It
 builds a UV-mapped cube and a generated four-quadrant checkerboard in code, shares
 one checkerboard material and one mesh between two objects, adds a blue-tinted
 variant of the same texture, and adds an untextured solid material. Its renderer
 caches one GPU upload per distinct `MeshData` and one GPU texture per distinct
-`TextureData`, both by reference, and binds a generated white texture for
-materials without a texture or meshes without UVs. The fragment shader multiplies
-sampled RGB by the material tint; alpha is not blended. A supplied PNG path is
-decoded through the PNG decoder; a missing, unreadable, malformed, or oversized
+`Texture`, both by reference, uploads mip chains once, selects a mipped sampler
+for chains, and binds a generated white texture for materials without a texture
+or meshes without UVs. The fragment shader multiplies sampled RGB by the material
+tint; alpha is not blended. A supplied PNG, JPEG, TGA, or DDS path is decoded
+through the loader; a missing, unreadable, malformed, oversized, or unsupported
 file prints a diagnostic and falls back to the generated checkerboard while the
-example keeps running.
+example keeps running. A compressed DDS format the GPU cannot sample is reported
+and also falls back, using `GpuDevice.SupportsTextureFormat` before a frame is
+recorded.
 
 The example uses the existing position/UV layout, MSL shader embedding, depth
 target, resize, minimize, frame budget, and shutdown rules. It is not a material
 pipeline: it does not parse MTL, map O3D material names, stream or reload
-textures, generate mipmaps, or sort transparent objects.
+textures, generate mipmaps, decompress BC blocks, or sort transparent objects.
 
 ### Ownership and lifetime
 
@@ -469,15 +520,16 @@ textures, generate mipmaps, or sort transparent objects.
   renderer must be created after the window and disposed before it.
 - `Scene` and `SceneObject` own no GPU resources. `SceneObject.Mesh` is a shared
   reference to managed `MeshData`, and `SceneObject.Material` is a shared
-  reference to managed `Material` and `TextureData`. The scene renderer owns one
+  reference to managed `Material` and its `Texture`. The scene renderer owns one
   upload per distinct mesh; `MaterialRenderer` owns one upload per distinct mesh
   and texture. Each cached upload is released exactly once. Removing an object
   never disposes a mesh, material, or texture that other objects may still
   reference.
 - A texture reference is not ownership. The code that constructs `TextureData`
-  owns the pixel buffer and must not mutate it. The renderer that calls
-  `GpuDevice.CreateTexture` owns the GPU texture and releases it after
-  `SDL_WaitForGPUIdle`.
+  or `CompressedTextureData` owns the memory and must not mutate it. The renderer
+  that calls `GpuDevice.CreateTexture` owns the GPU texture and releases it after
+  `SDL_WaitForGPUIdle`. It releases only the GPU handle, never the managed
+  texture data.
 - Each `Dispose` waits for the GPU to become idle, releases its resources, and
   then disposes the `GpuDevice`, which releases the window claim and destroys the
   device. Initialization failures release whatever was created in reverse order
@@ -504,11 +556,16 @@ Limitations in this version:
   collision system, and no engine-level input system. The scene layer holds flat
   objects only. `Camera` is reusable math, but input mapping and timing stay in
   the examples; the triangle remains static clip-space geometry.
-- Materials are a base-color tint plus an optional base-color texture. There is no
-  MTL or OMSI material parsing, PBR, lighting, transparency sorting, texture
-  streaming or reload, mipmap generation, or animation. Alpha is decoded but not
-  blended. `HelloMaterials` accepts one explicit PNG path and does not search for
-  textures relative to a model.
+- Materials are a base-color tint plus an optional base-color texture. There is
+  no MTL or OMSI material parsing, PBR, lighting, transparency sorting, texture
+  streaming or reload, mipmap generation, CPU block decompression, or animation.
+  Alpha is decoded but not blended. `HelloMaterials` accepts one explicit texture
+  path and does not search for textures relative to a model.
+- Texture formats are PNG, JPEG, TGA, and a documented DDS subset. DDS support is
+  not universal: BC6H, ASTC, ETC, cubemaps, volumes, texture arrays, 3D textures,
+  padded row pitches, and uncompressed sRGB DDS layouts are rejected explicitly.
+  Compressed upload requires the backend to support the format, and only a
+  block-aligned prefix of a compressed mip chain is uploaded.
 - The Wavefront OBJ parser handles a documented polygonal subset only. It does
   not load MTL materials or textures, tessellate concave or non-planar polygons,
   or import lines, points, or free-form geometry. `HelloCube` still constructs
@@ -531,15 +588,18 @@ and platform projects and the examples exist today.
 examples  -----------------------> engine projects
    |
    v
-Nymeria.Graphics   Nymeria.Platform   Nymeria.Formats.Obj   Nymeria.Formats.O3d   Nymeria.Formats.Png
-        \                /                    |                      |                    |
-         v              v                     v                      v                    v
+Nymeria.Graphics   Nymeria.Platform   Nymeria.Formats.* (Obj, O3d, Png, Tga, Jpeg, Dds)
+        \                /                                |
+         v              v                                 v
                             Nymeria.Core
+
+Nymeria.Formats.Textures  ->  Nymeria.Core + Png + Jpeg + Tga + Dds
 ```
 
 - `Nymeria.Core` must not depend on graphics, platform, or format code.
-- `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`, and `Nymeria.Formats.Png` depend
-  on `Nymeria.Core` and must not depend on graphics or platform code.
+- Every `Nymeria.Formats.*` decoder depends on `Nymeria.Core` and must not depend
+  on graphics or platform code. `Nymeria.Formats.Textures` additionally depends
+  on the four image decoders.
 - `Nymeria.Graphics` and `Nymeria.Platform` may depend on `Nymeria.Core`.
 - `Nymeria.Graphics` and `Nymeria.Platform` must not depend on each other
   directly unless the maintainer approves and this document records the reason.
@@ -548,8 +608,11 @@ Nymeria.Graphics   Nymeria.Platform   Nymeria.Formats.Obj   Nymeria.Formats.O3d 
 
 `Nymeria.Core` has no project references; it uses `System.Numerics` and the base
 class library only. Its scene types reference `MeshData`, `Material`, and
-`TextureData` but no GPU, SDL3, or format code. `Nymeria.Formats.Obj`,
-`Nymeria.Formats.O3d`, and `Nymeria.Formats.Png` reference `Nymeria.Core` only.
+`Texture` but no GPU, SDL3, or format code. `Nymeria.Formats.Obj`,
+`Nymeria.Formats.O3d`, `Nymeria.Formats.Png`, `Nymeria.Formats.Tga`, and
+`Nymeria.Formats.Dds` reference `Nymeria.Core` only. `Nymeria.Formats.Jpeg`
+references `Nymeria.Core` and `StbImageSharp`; `Nymeria.Formats.Textures`
+references `Nymeria.Core` and the four decoders.
 `Nymeria.Graphics` and `Nymeria.Platform` have no
 `Nymeria.Core` reference because neither has a demonstrated need for it yet.
 They do not reference each other: each example creates the window and passes
@@ -562,13 +625,15 @@ references `Nymeria.Core`, `Nymeria.Formats.O3d`, `Nymeria.Graphics`, and
 `Nymeria.Platform`; `HelloScene` references `Nymeria.Core` for scene and mesh
 data, `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for
 the window; `HelloMaterials` references `Nymeria.Core` for materials and mesh
-data, `Nymeria.Formats.Png` for texture decoding, `Nymeria.Graphics` for the
+data, `Nymeria.Formats.Textures` for texture decoding, `Nymeria.Graphics` for the
 device and camera, and `Nymeria.Platform` for the window; `HelloTriangle` does
 not need the core or formats projects.
 No engine project references an example. `Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
-`Nymeria.Formats.Png.Tests`, and `Nymeria.Platform.Tests` reference their project
-or projects under test. No interfaces or abstractions are created to enforce the
+`Nymeria.Formats.Png.Tests`, `Nymeria.Formats.Tga.Tests`,
+`Nymeria.Formats.Jpeg.Tests`, `Nymeria.Formats.Dds.Tests`,
+`Nymeria.Formats.Textures.Tests`, and `Nymeria.Platform.Tests` reference their
+project or projects under test. No interfaces or abstractions are created to enforce the
 future direction. Adding them speculatively would violate YAGNI.
 
 ## Technical choices
@@ -582,7 +647,8 @@ The following choices are implemented:
   package `SDL3-CS.MacOS` 3.4.18.
 - **GPU rendering:** SDL3's GPU API with the Metal backend and MSL shader source,
   reached through `SDL3-CS`. `Nymeria.Graphics` provides the reusable
-  `GpuDevice`, including buffer, RGBA texture, sampler, and shader creation; the
+  `GpuDevice`, including buffer, RGBA and block-compressed texture, sampler, and
+  shader creation; the
   examples embed their own `.metal` files, and `HelloOBJ` and `HelloO3D` share
   `examples/Shared/Shaders/Model.metal`, compiled by SDL at runtime. No direct
   Metal interop or shader compiler is used.
@@ -604,20 +670,27 @@ The following choices are implemented:
   supported subsets and limitations in [OBJ.md](OBJ.md) and [O3D.md](O3D.md). No
   third-party OBJ or O3D loader is used.
 - **Material data:** `Nymeria.Core.Materials` contains the shared base-color
-  tint, optional texture reference, and validated top-down RGBA texture data.
-  Materials, textures, and scene objects own no GPU handle or SDL3 state.
-- **Texture parsing:** `Nymeria.Formats.Png` is a dependency-free decoder for a
-  bounded 8-bit non-interlaced PNG subset. It uses only the base class library
-  and `Nymeria.Core`, verifies chunk structure and CRCs, and enforces the input,
-  dimension, and decoded-payload limits documented in
-  [MATERIALS.md](MATERIALS.md). No third-party image library is used.
-- **External packages:** the SDL3 binding and macOS native runtime, plus the
-  xUnit test packages `xunit` 2.9.3, `xunit.runner.visualstudio` 4.0.1, and
-  `Microsoft.NET.Test.Sdk` 18.11.0. The headless tests cover platform-independent
-  `WindowOptions` behavior, model-data validation and parser error semantics,
-  transform composition, scene lifecycle and mesh sharing, material and texture
-  data, the OBJ subset, the O3D subset, and the PNG decoder; they do not launch a
-  GUI or create a GPU device.
+  tint, optional `Texture` reference, RGBA texture data with mip chains, and
+  block-compressed texture data for BC1–BC5/BC7. Materials, textures, and scene
+  objects own no GPU handle or SDL3 state.
+- **Texture parsing:** `Nymeria.Formats.Png`, `Nymeria.Formats.Tga`, and
+  `Nymeria.Formats.Dds` are dependency-free decoders that use only the base class
+  library and `Nymeria.Core`; `Nymeria.Formats.Jpeg` adds the pure-managed
+  `StbImageSharp` package; `Nymeria.Formats.Textures` dispatches by signature.
+  Every decoder enforces the input, dimension, mip, and payload limits documented
+  in [MATERIALS.md](MATERIALS.md).
+- **Texture upload:** `GpuDevice` supports RGBA8 and BC1–BC7 mip chains with a
+  capability check, 512-byte level offsets, and one copy pass per texture. The
+  example owns two samplers so single-level textures never request absent levels.
+- **External packages:** the SDL3 binding and macOS native runtime, the
+  pure-managed `StbImageSharp` 2.30.16 JPEG decoder (Unlicense OR MIT, no
+  transitive packages), plus the xUnit test packages `xunit` 2.9.3,
+  `xunit.runner.visualstudio` 4.0.1, and `Microsoft.NET.Test.Sdk` 18.11.0. The
+  headless tests cover platform-independent `WindowOptions` behavior, model-data
+  validation and parser error semantics, transform composition, scene lifecycle
+  and mesh sharing, material and texture data, the OBJ subset, the O3D subset,
+  and the PNG, JPEG, TGA, DDS, and loader paths; they do not launch a GUI or
+  create a GPU device.
 
 The following choices remain open:
 
