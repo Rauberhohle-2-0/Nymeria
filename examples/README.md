@@ -11,6 +11,8 @@ the O3D parser used by `HelloO3D`. `HelloOBJ` and `HelloO3D` share the renderer,
 geometry builder, shader, model-viewer loop, and input mapping in
 `examples/Shared`. `HelloScene` uses the scene layer in `Nymeria.Core`, the
 shared geometry builder, the shared model shader, and the shared camera controls.
+`HelloMaterials` uses the material and texture data in `Nymeria.Core`, the PNG
+decoder in `Nymeria.Formats.Png`, and the shared camera controls.
 
 All examples use SDL3's GPU API with the Metal backend and Metal Shading
 Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
@@ -26,6 +28,7 @@ dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
 dotnet run --project examples/HelloScene/HelloScene.csproj
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 ```
 
 ## HelloTriangle
@@ -72,8 +75,8 @@ renders continuously, and targets about 16 ms per frame.
 
 ### Controls
 
-`HelloCube`, `HelloOBJ`, `HelloO3D`, and `HelloScene` share
-`examples/Shared/FlyCameraControls.cs`, so these controls apply to all four
+`HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloScene`, and `HelloMaterials` share
+`examples/Shared/FlyCameraControls.cs`, so these controls apply to all five
 examples.
 
 | Input | Action |
@@ -261,14 +264,57 @@ dotnet run --project examples/HelloScene/HelloScene.csproj
 - Scope: no hierarchy, ECS, serialization, editor, physics, animation, culling,
   textures, lighting, or material system.
 
+## HelloMaterials
+
+`HelloMaterials` demonstrates the format-independent material data and the base
+color texture path. It needs no external asset by default and uses the same
+scene layer, camera, depth test, and input mapping as `HelloScene`.
+
+```bash
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- path/to/image.png
+```
+
+- Materials: a `Material` carries an optional `TextureData` reference and a
+  base-color tint. Materials and textures are CPU data with no GPU handle; see
+  [../docs/MATERIALS.md](../docs/MATERIALS.md).
+- Generated texture: with no argument, the example builds a 128 × 128
+  checkerboard with four differently colored quadrants and an alternating
+  brightness pattern. It is original project content generated in code, so no
+  image file is checked in.
+- Sharing: two objects reference one checkerboard material and one procedural
+  UV-cube mesh. `MaterialRenderer` caches one GPU mesh per distinct `MeshData`
+  and one GPU texture per distinct `TextureData`, so neither is uploaded twice.
+- Tint: a third object reuses the same `TextureData` through a blue-tinted
+  material. The fragment shader samples the base-color texture and multiplies its
+  RGB value by the tint; alpha is not blended.
+- Solid color and fallback: a fourth object uses an untextured orange material.
+  The renderer binds a generated 1 × 1 white texture, so the tint is displayed
+  unchanged. A mesh without UVs also binds that fallback.
+- UV orientation: the model contract uses a top-left origin with `+V` down, and
+  the vertex layout passes `(0, 1)` at the bottom-left and `(0, 0)` at the
+  top-left of each face as seen from outside. The four quadrants make a flipped
+  axis visible.
+- Shader: `HelloMaterials/Shaders/Material.metal`, embedded as
+  `HelloMaterials.Shaders.Material.metal`, with one vertex and one fragment
+  uniform buffer plus one texture/sampler pair. It uses the same row-major matrix
+  upload convention as the other examples.
+- PNG input: a supplied path is decoded by `Nymeria.Formats.Png`. A missing,
+  unreadable, malformed, oversized, or unsupported file prints a diagnostic and
+  falls back to the generated checkerboard; the window still opens. The decoder
+  accepts non-interlaced 8-bit PNGs up to 4096 × 4096 pixels.
+- Scope: no MTL or OMSI material parsing, lighting, PBR, transparency sorting,
+  texture streaming, mipmap generation, hot reload, or material graphs.
+
 ## Platform limits
 
-All five examples are macOS-only for now. They require SDL's Metal backend and
+All six examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
 formats. `HelloOBJ` and `HelloO3D` use focused format subsets, not general
 material or scene importers. `HelloO3D` accepts only unscrambled static meshes
 and rejects bones and animation. `HelloCube` still constructs its model data in
-code. `HelloScene` adds flat, transformed instances but no hierarchy. No example
-has textures, lighting, an object hierarchy, or collisions. GPU output and input
-behavior are validated manually with
+code. `HelloScene` adds flat, transformed instances but no hierarchy.
+`HelloMaterials` adds a tint and an optional base-color texture, not a material
+pipeline. No example has lighting, an object hierarchy, or collisions. GPU
+output, texture sampling, and input behavior are validated manually with
 [../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.

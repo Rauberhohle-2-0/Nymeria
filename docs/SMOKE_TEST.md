@@ -16,18 +16,21 @@ dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
 dotnet run --project examples/HelloScene/HelloScene.csproj
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 ```
 
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
-`examples/HelloCube/Shaders/Cube.metal`, and the shared
-`examples/Shared/Shaders/Model.metal`. The model shader is embedded in
+`examples/HelloCube/Shaders/Cube.metal`, the shared
+`examples/Shared/Shaders/Model.metal`, and
+`examples/HelloMaterials/Shaders/Material.metal`. The model shader is embedded in
 `HelloOBJ`, `HelloO3D`, and `HelloScene` as
-`Nymeria.Examples.Shaders.Model.metal`. Shaders are embedded in their examples
+`Nymeria.Examples.Shaders.Model.metal`; the material shader is embedded as
+`HelloMaterials.Shaders.Material.metal`. Shaders are embedded in their examples
 and compiled by SDL's Metal backend at startup, so there is no shader compiler
 step and no external shader file to deploy.
 
 Run each example checklist separately. The failure-path checks at the end apply
-to all five.
+to all six.
 
 ## HelloTriangle checks
 
@@ -242,6 +245,66 @@ to all five.
 17. **No unhandled exceptions.** No exception text appears in the terminal during
     normal launch, movement, mouse look, add, remove, reset, resize, minimize,
     restore, or shutdown.
+
+## HelloMaterials checks
+
+1. **Window appears.** With no arguments, a native window opens without a console
+   error. The terminal reports that the generated checkerboard texture is in use.
+2. **Title is correct.** The title bar reads `Nymeria`.
+3. **Materials render.** Four cubes are visible against the dark background. Two
+   show a four-quadrant checkerboard, one shows the same pattern with a blue tint,
+   and one is solid orange. The output is not blank, black, stretched, or
+   untextured.
+4. **Texture orientation is correct.** On each checkerboard face seen from
+   outside, the top-left quadrant is red, the top-right is green, the bottom-left
+   is blue, and the bottom-right is yellow. Rotate the camera around the cubes and
+   confirm the pattern is not mirrored vertically or horizontally.
+5. **Shared material and mesh are consistent.** The two plain checkerboard cubes
+   use the same pattern, scale, and colors; only their transforms differ. The
+   renderer uploads the mesh and texture once, not once per object.
+6. **Tint combines with the texture.** The blue-tinted cube shows the same
+   checkerboard pattern darker and blue-shifted, not a flat color. Its bright
+   cells must still be distinguishable.
+7. **Solid material uses the fallback.** The orange cube is uniformly orange with
+   no checker pattern, showing that an untextured material samples the white
+   fallback and displays its base color directly.
+8. **Depth occlusion is correct.** Near faces hide faces behind them, and nearer
+   cubes hide farther cubes where they overlap. The scene reads as solid objects.
+9. **Movement and mouse look work.** The shared controls behave as in `HelloCube`:
+   `W`/`A`/`S`/`D`, `Space`, `Left Control`, `Shift`, and held right mouse button
+   for look. Releasing the button restores the cursor.
+10. **Camera framing is stable.** Without input, the camera does not drift and all
+    four objects stay visible.
+11. **Resize works.** Drag a corner or edge, including to a very wide and a very
+    tall window. Proportions stay correct, textures keep their orientation, and
+    the window remains responsive.
+12. **High-DPI works.** On a Retina display, cube and texture edges are drawn at
+    the display's native pixel density rather than an upscaled low-resolution
+    image.
+13. **Minimize and restore work.** Minimize the window for a few seconds, then
+    restore it. The textured scene reappears correctly and the process does not
+    crash or freeze while minimized.
+14. **User-supplied PNG works.** Run the example with a valid PNG path, for
+    example a 64 × 64 or 256 × 256 image with an obvious asymmetric pattern. The
+    terminal reports the decoded dimensions and byte count, and both checkerboard
+    materials show that image. The blue tint still multiplies it.
+15. **Invalid texture falls back.** Run the example with a missing path and then a
+    malformed or oversized PNG. The terminal prints a clear diagnostic naming the
+    path and reason, uses the generated checkerboard, and the window still opens.
+    Close it normally; the process exits with status code `0`.
+16. **Close button exits.** Click the red close button. The process ends, the
+    terminal prompt returns, and `echo $?` reports `0`. The cursor is visible.
+17. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
+    The process ends with status code `0`.
+18. **Repeated cycles work.** Repeat launch and close at least three times, with
+    and without a PNG path. Each launch opens one window; each close leaves no
+    orphan process.
+19. **No busy-spin or per-frame uploads.** CPU use stays well below one full core
+    and memory use stays stable for several minutes. The texture and mesh are
+    uploaded once at first use, not every frame.
+20. **No unhandled exceptions.** No exception text appears in the terminal during
+    normal launch, movement, mouse look, resize, minimize, restore, PNG load,
+    fallback, or shutdown.
 
 macOS notes:
 

@@ -10,13 +10,13 @@ in [SECURITY_AUDIT_01.md](SECURITY_AUDIT_01.md).
 | Input | Trust |
 | --- | --- |
 | Project source, embedded shaders, checked-in test fixtures | Trusted project content. |
-| OBJ and O3D files, streams, and model paths supplied at run time | Untrusted. |
+| OBJ, O3D, and PNG files, streams, and paths supplied at run time | Untrusted. |
 | Package restore input and GitHub Actions metadata | Untrusted external data that the build must validate or pin. |
 | SDL3, Metal, and the operating system | External native dependencies. Nymeria does not sandbox them. |
 
-The parsers are headless libraries. They must not depend on SDL3, Metal, a GPU,
-a window, or the current working directory. This keeps parsing testable and keeps
-untrusted input away from the native boundary.
+The parsers and the PNG decoder are headless libraries. They must not depend on
+SDL3, Metal, a GPU, a window, or the current working directory. This keeps parsing
+testable and keeps untrusted input away from the native boundary.
 
 ## Untrusted model input
 
@@ -58,6 +58,49 @@ The examples add a separate GPU budget of 2,000,000 converted vertices and
 6,000,000 indices. This budget belongs to the viewer, not to the format contract,
 and is enforced before the model is uploaded.
 
+## Untrusted image input
+
+`Nymeria.Formats.Png.PngImageDecoder` is a headless decoder for untrusted PNG
+streams. It must:
+
+- Verify the PNG signature, chunk structure, chunk ordering, and every chunk CRC
+  before using the chunk.
+- Validate `IHDR` (dimensions, bit depth, color type, compression, filter, and
+  interlace methods), `PLTE` size and position, contiguous `IDAT` chunks, and an
+  empty `IEND` with no trailing bytes.
+- Reject unknown critical chunks, unsupported bit depths and color types,
+  interlaced images, invalid palette indices, unsupported scanline filters, and
+  malformed, truncated, or over-long compressed data.
+- Bound the encoded input before reading it and enforce the same limit for
+  seekable and non-seekable streams.
+- Use checked or wider arithmetic for dimensions, row sizes, scanline sizes, and
+  decoded payload sizes. Reject zero dimensions, dimensions above the limit, and
+  payloads above the limit before allocating the RGBA output.
+- Decompress only the exact scanline payload implied by the validated header and
+  reject both short and extra output.
+- Return `TextureData` or throw `PngFormatException`; never return partial or
+  repaired pixels. The caller owns and disposes the stream, and the decoder must
+  leave it open.
+
+The current PNG limits are:
+
+| Limit | Default |
+| --- | --- |
+| Encoded PNG input | 32 MiB |
+| Width and height | 4096 pixels each |
+| Decoded RGBA payload | 64 MiB |
+
+`TextureData` independently validates dimensions and payload length at
+construction, so an invalid texture cannot reach the GPU path through a different
+caller. GPU-side texture creation adds a defensive 16384-pixel and 256 MiB limit,
+but normal CPU data is smaller.
+
+The `HelloMaterials` example accepts one explicit PNG path and does not resolve
+textures relative to a model or search the working directory. A missing,
+unreadable, oversized, or malformed file prints a diagnostic and uses a generated
+checkerboard instead of exiting. That fallback is example presentation, not a
+parser result.
+
 ## Native and GPU ownership
 
 - Native handles are owned by the managed wrapper that created them. Do not
@@ -69,9 +112,12 @@ and is enforced before the model is uploaded.
 - Wait for the GPU to become idle before releasing resources that pending work
   may reference, including in failure paths.
 - Scene data owns no native or GPU resources. A `SceneObject` references shared
-  managed `MeshData`; the renderer owns and releases one upload per distinct
-  mesh. Removing an object must not dispose a mesh that another object still
-  references.
+  managed `MeshData`, `Material`, and `TextureData`; the renderer owns and
+  releases one upload per distinct mesh and one GPU texture per distinct texture.
+  Removing an object must not dispose data that another object still references.
+- A material or texture reference is not GPU ownership. Releasing a GPU texture
+  or sampler releases only that native handle, never the managed `TextureData` or
+  `Material` object that other callers may share.
 - After `SDL_AcquireGPUSwapchainTexture` returns a texture, submit the command
   buffer. Do not cancel an acquired command buffer. A null texture or a failed
   acquisition may still be cancelled.
@@ -107,8 +153,8 @@ that the configured feed reported no known vulnerable package at that time.
 
 ## Verification expectations
 
-Every change that touches parsing, native ownership, GPU resources, dependencies,
-or automation must:
+Every change that touches parsing, image decoding, native ownership, GPU
+resources, dependencies, or automation must:
 
 1. Build in Release with zero warnings.
 2. Pass all headless tests.
@@ -125,8 +171,10 @@ instead of opening a public issue with exploit details.
 ## Residual risk
 
 Nymeria does not run a general fuzzing campaign, address sanitizer, SBOM or
-license scan, or third-party binary analysis. Parser work is linear in accepted
-input, so a local attacker can still consume the documented maximum. The O3D
-parser's worst case is bounded but memory-amplifying. SDL3, Metal, and the
+license scan, or third-party binary analysis. Parser and decoder work is linear in
+accepted input, so a local attacker can still consume the documented maximum. The
+O3D parser's worst case is bounded but memory-amplifying. The PNG decoder bounds
+encoded, dimension, and decoded payload sizes, but a valid image at the limits can
+still request 64 MiB of decoded pixels plus GPU memory. SDL3, Metal, and the
 operating system are trusted native dependencies and are not sandboxed. The GPU
-examples are not exercised in CI.
+examples, including texture upload and sampling, are not exercised in CI.

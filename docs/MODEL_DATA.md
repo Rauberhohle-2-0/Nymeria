@@ -9,8 +9,10 @@ describe any file format. Wavefront OBJ support lives in
 
 `Nymeria.Core` owns a small model representation that both a text format and a
 binary format can produce without depending on SDL3, Metal, a window, or GPU
-resources. It contains no file-format parsing, format detection, material
-system, texture decoding, scene graph, animation, asset cache, or renderer.
+resources. The model types contain no file-format parsing, format detection,
+model-level material assignment, texture decoding, scene graph, animation, asset
+cache, or renderer. Material and texture data are separate CPU types described in
+[MATERIALS.md](MATERIALS.md).
 
 A format parser converts source geometry into these types and returns a
 `ModelData`. Validation happens while those types are constructed, so an invalid
@@ -40,8 +42,10 @@ var model = new ModelData(
 ```
 
 `ModelData` does not contain node transforms, a scene hierarchy, materials,
-textures, animation, or renderer state. A parser must apply or bake any source
-transforms needed to express the geometry in one model space.
+textures, animation, or renderer state. Subset material names remain opaque source
+labels; a material is assigned to a `SceneObject` instead, as described in
+[MATERIALS.md](MATERIALS.md) and [SCENE.md](SCENE.md). A parser must apply or bake
+any source transforms needed to express the geometry in one model space.
 
 ### `MeshData`
 
@@ -216,6 +220,12 @@ the example shader and pipeline, not to the model data.
 A future renderer should perform the same kind of explicit conversion for its
 own vertex layout. Loading model data must remain independent of GPU resource
 creation and disposal.
+
+`HelloMaterials` builds a cube as `MeshData` with texture coordinates and converts
+it to an interleaved position/UV layout. Materials are assigned per
+`SceneObject`; subset names in `ModelData` are not resolved into materials. The
+renderer samples the material's optional texture and multiplies it by the
+material tint as described in [MATERIALS.md](MATERIALS.md).
 
 ## Tests
 

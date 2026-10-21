@@ -25,15 +25,18 @@ extension is a direction, not a current feature.
 - `Nymeria.slnx`, containing the C# projects that exist today.
 - `Nymeria.Platform`, a class library exposing a minimal native window API.
 - `Nymeria.Core`, a dependency-free class library containing validated,
-  format-independent model data, the `IModelParser` contract, and minimal scene
-  data (`Scene`, `SceneObject`, and `Transform`).
+  format-independent model data, the `IModelParser` contract, minimal scene data
+  (`Scene`, `SceneObject`, and `Transform`), and format-independent material and
+  texture data.
 - `Nymeria.Formats.Obj`, a dependency-free Wavefront OBJ parser implementing
   `IModelParser` for a documented polygonal subset.
 - `Nymeria.Formats.O3d`, a dependency-free OMSI O3D parser implementing
   `IModelParser` for a documented unscrambled static-mesh subset.
+- `Nymeria.Formats.Png`, a dependency-free PNG decoder producing validated RGBA
+  texture data for a documented, bounded subset.
 - `Nymeria.Graphics`, a class library that owns the SDL3 GPU device and window
-  presentation claim, provides reusable MSL shader and buffer creation, and
-  contains a reusable, SDL-independent free-fly `Camera`.
+  presentation claim, provides reusable MSL shader, buffer, texture, and sampler
+  creation, and contains a reusable, SDL-independent free-fly `Camera`.
 - `examples/HelloTriangle`, a console executable that opens the window and draws
   the triangle with example-owned shaders and geometry.
 - `examples/HelloCube`, an interactive console executable that draws multiple
@@ -46,14 +49,19 @@ extension is a direction, not a current feature.
   user-supplied path, using the shared example renderer.
 - `examples/HelloScene`, an interactive example that draws multiple transformed
   instances of one shared mesh through the scene layer, with runtime add/remove.
+- `examples/HelloMaterials`, an interactive example that draws shared, tinted, and
+  untextured materials with a generated checkerboard or a user-supplied PNG.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - `Nymeria.Core.Tests`, GPU-independent tests for model-data validation,
-  parser-contract error behavior, transform composition, and scene lifecycle.
+  parser-contract error behavior, transform composition, scene lifecycle,
+  materials, and texture-data validation.
 - `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
   conversions, and diagnostics.
 - `Nymeria.Formats.O3d.Tests`, GPU-independent tests for the O3D header,
   supported versions and flags, geometry conversion, limits, and failure
   behavior.
+- `Nymeria.Formats.Png.Tests`, GPU-independent tests for the PNG subset, malformed
+  and truncated input, decompression limits, and decoded texture data.
 - SDL3 windowing and GPU rendering through the pinned `SDL3-CS` and
   `SDL3-CS.MacOS` packages.
 - A `Repository checks` GitHub Actions workflow that validates repository
@@ -102,20 +110,25 @@ would require maintainer approval.
 
 `src/platform/` contains the `Nymeria.Platform` project, `src/graphics/`
 contains `Nymeria.Graphics`, `src/core/` contains `Nymeria.Core`, `src/formats/`
-contains `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d`, `examples/` contains
-`HelloTriangle`, `HelloCube`, `HelloOBJ`, `HelloO3D`, and `HelloScene`, and
-`tests/` contains `Nymeria.Core.Tests`, `Nymeria.Formats.Obj.Tests`,
-`Nymeria.Formats.O3d.Tests`, and `Nymeria.Platform.Tests`.
+contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`, and
+`Nymeria.Formats.Png`, `examples/` contains `HelloTriangle`, `HelloCube`,
+`HelloOBJ`, `HelloO3D`, `HelloScene`, and `HelloMaterials`, and `tests/` contains
+`Nymeria.Core.Tests`, `Nymeria.Formats.Obj.Tests`,
+`Nymeria.Formats.O3d.Tests`, `Nymeria.Formats.Png.Tests`, and
+`Nymeria.Platform.Tests`.
 
 `Nymeria.Core` owns the format-independent model data and parser contract
-described in [MODEL_DATA.md](MODEL_DATA.md), plus the minimal scene data
-described in [SCENE.md](SCENE.md). It references `System.Numerics` and the base
-class library only. The camera lives in `Nymeria.Graphics` rather than
+described in [MODEL_DATA.md](MODEL_DATA.md), the minimal scene data described in
+[SCENE.md](SCENE.md), and the material and texture data described in
+[MATERIALS.md](MATERIALS.md). It references `System.Numerics` and the base class
+library only. The camera lives in `Nymeria.Graphics` rather than
 in `Nymeria.Core`: it is reusable 3D rendering math with no SDL, window, or GPU
 dependency, and the model-loading foundation is the first demonstrated need for
 the core project. `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d` reference only
 `Nymeria.Core` and the base class library; their supported subsets are documented
-in [OBJ.md](OBJ.md) and [O3D.md](O3D.md).
+in [OBJ.md](OBJ.md) and [O3D.md](O3D.md). `Nymeria.Formats.Png` also references
+only `Nymeria.Core` and the base class library; [MATERIALS.md](MATERIALS.md)
+documents its supported subset and limits.
 
 ## Windowing
 
@@ -226,9 +239,10 @@ physics, animation, or culling.
 
 `Nymeria.Graphics` contains reusable graphics infrastructure. `GpuDevice`
 creates and owns an SDL3 GPU device, claims a native window for presentation,
-reports the swapchain format, and creates MSL shaders and uploaded GPU buffers.
-It uses SDL3's GPU API through the same `SDL3-CS` binding; there is no direct
-Metal interop, native wrapper, second binding, or software fallback.
+reports the swapchain format, and creates MSL shaders, uploaded GPU buffers,
+2D RGBA textures, and samplers. It uses SDL3's GPU API through the same `SDL3-CS`
+binding; there is no direct Metal interop, native wrapper, second binding, or
+software fallback.
 
 `GpuDevice.Create(IntPtr window)`:
 
@@ -239,17 +253,26 @@ Metal interop, native wrapper, second binding, or software fallback.
 - claims the window for presentation and reads its swapchain format.
 
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
-`examples/HelloOBJ`, `examples/HelloO3D`, and `examples/HelloScene`. Each has its
-own vertex data and draw calls, and uses `GpuDevice` for the device, window
-claim, shader creation, buffer upload, and swapchain format.
+`examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloScene`, and
+`examples/HelloMaterials`. Each has its own vertex data and draw calls, and uses
+`GpuDevice` for the device, window claim, shader creation, buffer and texture
+upload, sampler creation, and swapchain format.
 [examples/README.md](../examples/README.md) documents their run commands and
 rendering conventions. `HelloOBJ` and `HelloO3D` share the renderer, geometry
 builder, shader, model-viewer loop, and camera controls in `examples/Shared`; the
 only difference is the format parser that produces the `ModelData`.
 
-`GpuDevice.CreateShader` accepts an optional uniform-buffer count. SDL needs the
-count to bind data pushed with `SDL_PushGPUVertexUniformData`; shaders that
-declare no uniform buffer leave it at the default of zero.
+`GpuDevice.CreateShader` accepts optional uniform-buffer and sampler counts. SDL
+needs the uniform count to bind data pushed with `SDL_PushGPUVertexUniformData`
+or `SDL_PushGPUFragmentUniformData`, and the sampler count to bind texture/sampler
+pairs. Shaders that declare neither leave both at the default of zero.
+
+`GpuDevice.CreateTexture` accepts tightly packed RGBA pixels and dimensions,
+validates its own defensive GPU limits, creates an `R8G8B8A8Unorm` 2D texture with
+one mip and sampler usage, and uploads the pixels through a transfer buffer and a
+copy pass. It does not generate mipmaps, convert color space, or retain the CPU
+payload. The caller owns the texture and releases it after pending GPU work has
+completed.
 
 ### Camera
 
@@ -402,29 +425,73 @@ minimize, resize, zero-sized-drawable, and shutdown paths follow the other
 interactive examples. [SCENE.md](SCENE.md) documents the data contract and
 ownership rules.
 
+### Materials and textures
+
+`Nymeria.Core.Materials` adds an immutable `Material` with a validated base-color
+tint and an optional `TextureData` reference, and a validated, format-independent
+`TextureData` holding top-down tightly packed RGBA pixels. Materials and textures
+are managed CPU data; they contain no GPU handle, SDL3, window, or format
+dependency. `SceneObject` references a material without copying it and defaults
+to the shared, untextured `Material.Default`. [MATERIALS.md](MATERIALS.md) is the
+authoritative contract.
+
+`Nymeria.Formats.Png.PngImageDecoder` is a dependency-free decoder for a bounded
+PNG subset. It verifies the signature, chunk order, every chunk CRC, declared
+lengths, dimensions, palette indices, scanline filters, and decompressed size;
+rejects unknown critical chunks, 16-bit, interlaced, and malformed images; and
+returns `TextureData` or a `PngFormatException`. It reads a caller-owned stream,
+never opens a file, and enforces a 32 MiB encoded-input limit, a 4096-pixel
+dimension limit, and a 64 MiB decoded-payload limit. Its headers and palette are
+validated before allocation, and decompression is bounded to the exact scanline
+payload implied by the validated header.
+
+`HelloMaterials` demonstrates the path without requiring an external asset. It
+builds a UV-mapped cube and a generated four-quadrant checkerboard in code, shares
+one checkerboard material and one mesh between two objects, adds a blue-tinted
+variant of the same texture, and adds an untextured solid material. Its renderer
+caches one GPU upload per distinct `MeshData` and one GPU texture per distinct
+`TextureData`, both by reference, and binds a generated white texture for
+materials without a texture or meshes without UVs. The fragment shader multiplies
+sampled RGB by the material tint; alpha is not blended. A supplied PNG path is
+decoded through the PNG decoder; a missing, unreadable, malformed, or oversized
+file prints a diagnostic and falls back to the generated checkerboard while the
+example keeps running.
+
+The example uses the existing position/UV layout, MSL shader embedding, depth
+target, resize, minimize, frame budget, and shutdown rules. It is not a material
+pipeline: it does not parse MTL, map O3D material names, stream or reload
+textures, generate mipmaps, or sort transparent objects.
+
 ### Ownership and lifetime
 
 - `GpuDevice` owns the GPU device and window claim. Each renderer owns its
-  shaders, geometry buffers, pipeline, and, for the cube, model, and scene
-  examples, the depth texture. A renderer must be created after the window and
-  disposed before it.
+  shaders, geometry buffers, textures, samplers, pipeline, and depth texture. A
+  renderer must be created after the window and disposed before it.
 - `Scene` and `SceneObject` own no GPU resources. `SceneObject.Mesh` is a shared
-  reference to managed `MeshData`; `SceneRenderer` owns one upload per distinct
-  mesh and releases every cached upload once. Removing an object never disposes
-  a mesh that other objects may still reference.
+  reference to managed `MeshData`, and `SceneObject.Material` is a shared
+  reference to managed `Material` and `TextureData`. The scene renderer owns one
+  upload per distinct mesh; `MaterialRenderer` owns one upload per distinct mesh
+  and texture. Each cached upload is released exactly once. Removing an object
+  never disposes a mesh, material, or texture that other objects may still
+  reference.
+- A texture reference is not ownership. The code that constructs `TextureData`
+  owns the pixel buffer and must not mutate it. The renderer that calls
+  `GpuDevice.CreateTexture` owns the GPU texture and releases it after
+  `SDL_WaitForGPUIdle`.
 - Each `Dispose` waits for the GPU to become idle, releases its resources, and
   then disposes the `GpuDevice`, which releases the window claim and destroys the
   device. Initialization failures release whatever was created in reverse order
   and then rethrow.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
-- `HelloCube`, `HelloOBJ`, `HelloO3D`, and `HelloScene` own their `Camera`
-  instances and share the `FlyCameraControls` implementation. The camera has no
-  unmanaged resources. The input mapping disables relative mouse mode and
-  discards pending mouse motion during disposal, before the window is destroyed.
-- No renderer creates per-frame GPU resources. The scene renderer uploads a
-  newly referenced mesh once and reuses it; command buffers and swapchain
-  textures are owned and recycled by SDL.
+- `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloScene`, and `HelloMaterials` own
+  their `Camera` instances and share the `FlyCameraControls` implementation. The
+  camera has no unmanaged resources. The input mapping disables relative mouse
+  mode and discards pending mouse motion during disposal, before the window is
+  destroyed.
+- No renderer creates per-frame GPU resources. The scene and material renderers
+  upload newly referenced meshes and textures once and reuse them; command buffers
+  and swapchain textures are owned and recycled by SDL.
 
 Limitations in this version:
 
@@ -433,10 +500,15 @@ Limitations in this version:
   packages, which are not implemented.
 - Apple Silicon and Intel Macs both use Metal. The macOS native package contains
   both architectures.
-- There is no scene hierarchy, ECS, serialization, editor, texture, lighting,
-  material system, collision system, or engine-level input system. The scene
-  layer holds flat objects only. `Camera` is reusable math, but input mapping and
-  timing stay in the examples; the triangle remains static clip-space geometry.
+- There is no scene hierarchy, ECS, serialization, editor, lighting, shadow, or
+  collision system, and no engine-level input system. The scene layer holds flat
+  objects only. `Camera` is reusable math, but input mapping and timing stay in
+  the examples; the triangle remains static clip-space geometry.
+- Materials are a base-color tint plus an optional base-color texture. There is no
+  MTL or OMSI material parsing, PBR, lighting, transparency sorting, texture
+  streaming or reload, mipmap generation, or animation. Alpha is decoded but not
+  blended. `HelloMaterials` accepts one explicit PNG path and does not search for
+  textures relative to a model.
 - The Wavefront OBJ parser handles a documented polygonal subset only. It does
   not load MTL materials or textures, tessellate concave or non-planar polygons,
   or import lines, points, or free-form geometry. `HelloCube` still constructs
@@ -459,15 +531,15 @@ and platform projects and the examples exist today.
 examples  -----------------------> engine projects
    |
    v
-Nymeria.Graphics   Nymeria.Platform   Nymeria.Formats.Obj   Nymeria.Formats.O3d
-        \                /                    |                      |
-         v              v                     v                      v
+Nymeria.Graphics   Nymeria.Platform   Nymeria.Formats.Obj   Nymeria.Formats.O3d   Nymeria.Formats.Png
+        \                /                    |                      |                    |
+         v              v                     v                      v                    v
                             Nymeria.Core
 ```
 
 - `Nymeria.Core` must not depend on graphics, platform, or format code.
-- `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d` depend on `Nymeria.Core` and
-  must not depend on graphics or platform code.
+- `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`, and `Nymeria.Formats.Png` depend
+  on `Nymeria.Core` and must not depend on graphics or platform code.
 - `Nymeria.Graphics` and `Nymeria.Platform` may depend on `Nymeria.Core`.
 - `Nymeria.Graphics` and `Nymeria.Platform` must not depend on each other
   directly unless the maintainer approves and this document records the reason.
@@ -475,9 +547,10 @@ Nymeria.Graphics   Nymeria.Platform   Nymeria.Formats.Obj   Nymeria.Formats.O3d
 - `tests/` may reference the project under test.
 
 `Nymeria.Core` has no project references; it uses `System.Numerics` and the base
-class library only. Its scene types reference `MeshData` but no GPU, SDL3, or
-format code. `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d` reference
-`Nymeria.Core` only. `Nymeria.Graphics` and `Nymeria.Platform` have no
+class library only. Its scene types reference `MeshData`, `Material`, and
+`TextureData` but no GPU, SDL3, or format code. `Nymeria.Formats.Obj`,
+`Nymeria.Formats.O3d`, and `Nymeria.Formats.Png` reference `Nymeria.Core` only.
+`Nymeria.Graphics` and `Nymeria.Platform` have no
 `Nymeria.Core` reference because neither has a demonstrated need for it yet.
 They do not reference each other: each example creates the window and passes
 `Window.Handle` to its renderer, which creates a `GpuDevice` in
@@ -488,12 +561,15 @@ They do not reference each other: each example creates the window and passes
 references `Nymeria.Core`, `Nymeria.Formats.O3d`, `Nymeria.Graphics`, and
 `Nymeria.Platform`; `HelloScene` references `Nymeria.Core` for scene and mesh
 data, `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for
-the window; `HelloTriangle` does not need the core or formats projects.
+the window; `HelloMaterials` references `Nymeria.Core` for materials and mesh
+data, `Nymeria.Formats.Png` for texture decoding, `Nymeria.Graphics` for the
+device and camera, and `Nymeria.Platform` for the window; `HelloTriangle` does
+not need the core or formats projects.
 No engine project references an example. `Nymeria.Core.Tests`,
-`Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`, and
-`Nymeria.Platform.Tests` reference their project or projects under test. No
-interfaces or abstractions are created to enforce the future direction. Adding
-them speculatively would violate YAGNI.
+`Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
+`Nymeria.Formats.Png.Tests`, and `Nymeria.Platform.Tests` reference their project
+or projects under test. No interfaces or abstractions are created to enforce the
+future direction. Adding them speculatively would violate YAGNI.
 
 ## Technical choices
 
@@ -506,9 +582,10 @@ The following choices are implemented:
   package `SDL3-CS.MacOS` 3.4.18.
 - **GPU rendering:** SDL3's GPU API with the Metal backend and MSL shader source,
   reached through `SDL3-CS`. `Nymeria.Graphics` provides the reusable
-  `GpuDevice`; the examples embed their own `.metal` files, and `HelloOBJ` and
-  `HelloO3D` share `examples/Shared/Shaders/Model.metal`, compiled by SDL at
-  runtime. No direct Metal interop or shader compiler is used.
+  `GpuDevice`, including buffer, RGBA texture, sampler, and shader creation; the
+  examples embed their own `.metal` files, and `HelloOBJ` and `HelloO3D` share
+  `examples/Shared/Shaders/Model.metal`, compiled by SDL at runtime. No direct
+  Metal interop or shader compiler is used.
 - **Math:** `System.Numerics` vectors, quaternions, and matrices, with no custom
   math library. `Camera` uses it for yaw/pitch view and projection math.
   `Transform` uses it for normalized quaternion rotation and row-vector
@@ -526,12 +603,21 @@ The following choices are implemented:
   library and `Nymeria.Core` only, implement `IModelParser`, and document their
   supported subsets and limitations in [OBJ.md](OBJ.md) and [O3D.md](O3D.md). No
   third-party OBJ or O3D loader is used.
+- **Material data:** `Nymeria.Core.Materials` contains the shared base-color
+  tint, optional texture reference, and validated top-down RGBA texture data.
+  Materials, textures, and scene objects own no GPU handle or SDL3 state.
+- **Texture parsing:** `Nymeria.Formats.Png` is a dependency-free decoder for a
+  bounded 8-bit non-interlaced PNG subset. It uses only the base class library
+  and `Nymeria.Core`, verifies chunk structure and CRCs, and enforces the input,
+  dimension, and decoded-payload limits documented in
+  [MATERIALS.md](MATERIALS.md). No third-party image library is used.
 - **External packages:** the SDL3 binding and macOS native runtime, plus the
   xUnit test packages `xunit` 2.9.3, `xunit.runner.visualstudio` 4.0.1, and
   `Microsoft.NET.Test.Sdk` 18.11.0. The headless tests cover platform-independent
   `WindowOptions` behavior, model-data validation and parser error semantics,
-  transform composition, scene lifecycle and mesh sharing, the OBJ subset, and
-  the O3D subset; they do not launch a GUI or create a GPU device.
+  transform composition, scene lifecycle and mesh sharing, material and texture
+  data, the OBJ subset, the O3D subset, and the PNG decoder; they do not launch a
+  GUI or create a GPU device.
 
 The following choices remain open:
 

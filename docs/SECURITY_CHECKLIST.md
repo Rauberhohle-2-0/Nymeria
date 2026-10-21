@@ -10,11 +10,11 @@ guarantee.
 
 - [ ] The change identifies which data is untrusted and where it crosses into
       managed or native code.
-- [ ] Parsers remain headless: no SDL3, Metal, GPU, window, or working-directory
-      dependency.
-- [ ] The change does not add a model-relative path lookup, texture loading, or
-      material-file access without an explicit review of traversal and
-      sandboxing.
+- [ ] Parsers and the PNG decoder remain headless: no SDL3, Metal, GPU, window, or
+      working-directory dependency.
+- [ ] The change does not add a model-relative path lookup or material-file
+      access. An explicit image path supplied by the user was reviewed for
+      traversal and sandboxing.
 - [ ] New public API or architecture was approved by the maintainer.
 - [ ] No speculative scaffolding, placeholder sources, or unrequested features
       were added.
@@ -49,6 +49,22 @@ guarantee.
 - [ ] Seekable and non-seekable inputs both enforce the input limit.
 - [ ] Streaming reads stop as soon as a limit is crossed.
 
+## Image decoding
+
+- [ ] The image signature, chunk order, chunk lengths, and every chunk checksum are
+      validated before the chunk is used.
+- [ ] Image dimensions and the decoded payload are checked against documented
+      limits before allocation.
+- [ ] Encoded input is bounded for both seekable and non-seekable streams.
+- [ ] Unsupported color types, bit depths, interlacing, filters, palette indices,
+      and unknown critical chunks are rejected.
+- [ ] Decompression is limited to the exact scanline payload implied by the
+      validated header; short and extra output both fail.
+- [ ] Decoding returns validated texture data or throws; it never returns partial
+      or repaired pixels.
+- [ ] The caller owns the stream and the decoder leaves it open.
+- [ ] New limits are documented and have boundary and malformed-input tests.
+
 ## Native and GPU resources
 
 - [ ] Handles are owned by one wrapper and are not destroyed elsewhere.
@@ -64,6 +80,11 @@ guarantee.
 - [ ] SDL3 return values are checked and failures produce actionable errors.
 - [ ] Buffer sizes, strides, and bindings match the shader layout and use the
       buffer's actual element size.
+- [ ] Texture payload size, row pitch, and declared sampler/resource counts match
+      the upload and shader layout.
+- [ ] A shared mesh, material, or texture reference is not released by a renderer
+      that did not create the corresponding GPU resource, and a GPU handle release
+      does not dispose shared managed data.
 - [ ] `unsafe`, custom P/Invoke, and new native dependencies were explicitly
       approved and reviewed.
 
@@ -104,4 +125,6 @@ guarantee.
   not by CI.
 - There is no general fuzzing campaign, address sanitizer run, SBOM, license scan,
   or third-party binary analysis.
+- The PNG decoder has targeted malformed and boundary tests, not a fuzzing
+  campaign. Its worst accepted case still allocates the documented payload.
 - NuGet advisories do not prove the absence of unknown vulnerabilities.

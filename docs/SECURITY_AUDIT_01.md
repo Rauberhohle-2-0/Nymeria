@@ -337,6 +337,30 @@ no known vulnerable package during this audit.
   during this audit. The manual [smoke test](SMOKE_TEST.md) remains required
   before treating the GPU lifetime fixes as runtime-verified.
 
+### Post-audit material and PNG review
+
+The material and texture milestone was added after this audit's initial scope. It
+was reviewed against the same trust model and baseline rather than treated as a
+pass:
+
+- `Material` and `TextureData` are managed CPU data with tint, dimension, and
+  payload validation. They contain no native or GPU handle.
+- `PngImageDecoder` treats streams as untrusted. It validates the signature,
+  chunk order, lengths, CRCs, dimensions, palette indices, filters, and exact
+  decompressed size; rejects unknown critical chunks and unsupported formats; and
+  enforces 32 MiB encoded, 4096-pixel, and 64 MiB decoded limits before use.
+- `GpuDevice.CreateTexture` validates its own GPU limits and payload length,
+  uploads through a transfer buffer, and releases the texture on failure.
+- `HelloMaterials` accepts only an explicit PNG path, never resolves a texture
+  relative to a model, and prints a diagnostic and uses generated content for a
+  missing or invalid file.
+- Tests cover the tint, texture payload, scene material references, malformed and
+  truncated PNG structures, boundary limits, and decompression behavior.
+
+No new security finding was identified in this review. The residual risks remain:
+the decoder is not fuzzed, a valid image at the limits still allocates the
+documented payload, and texture upload and sampling are not exercised by CI.
+
 The findings above are addressed at the source level. This audit does not claim
 that Nymeria is secure or fully audited; the residual risks listed earlier still
 apply.

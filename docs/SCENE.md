@@ -2,21 +2,23 @@
 
 This document is the authoritative description of Nymeria's minimal,
 format-independent scene layer. It covers transforms, scene objects, shared mesh
-references, resource ownership, and the `HelloScene` example. Related contracts
-are [MODEL_DATA.md](MODEL_DATA.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
+and material references, resource ownership, and the `HelloScene` and
+`HelloMaterials` examples. Related contracts are [MODEL_DATA.md](MODEL_DATA.md),
+[MATERIALS.md](MATERIALS.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
 [MODEL_DATA.md's coordinate conventions](MODEL_DATA.md#coordinate-and-index-conventions).
 
 ## Purpose and non-goals
 
-The scene layer answers one question: which mesh instances should be drawn, and
-where? It is deliberately smaller than a scene graph. `Nymeria.Core` owns the
-data because it is platform-independent, format-independent, and uses only
-`System.Numerics` and the base class library. There is no `Nymeria.Scene`
-project.
+The scene layer answers one question: which mesh instances should be drawn, where,
+and with which material? It is deliberately smaller than a scene graph.
+`Nymeria.Core` owns the data because it is platform-independent,
+format-independent, and uses only `System.Numerics` and the base class library.
+There is no `Nymeria.Scene` project.
 
 The scene layer contains no ECS, parent-child hierarchy, physics, collision
-detection, animation, serialization, editor, culling, lighting, material system,
-GPU handle, SDL3, Metal, window, or file-format logic. Those features are outside
+detection, animation, serialization, editor, culling, lighting, material parser,
+GPU handle, SDL3, Metal, window, or file-format logic. Materials are references to
+format-independent CPU data, not a rendering pipeline. Those features are outside
 this milestone.
 
 ## Public types
@@ -66,23 +68,28 @@ non-uniform scale.
 
 ### `SceneObject`
 
-A scene object is one renderable instance with a mesh reference and its own
-transform:
+A scene object is one renderable instance with a mesh reference, its own
+transform, and a material reference:
 
 ```csharp
 MeshData mesh = CreateSharedMesh();
-var first = new SceneObject(mesh, transformA);
-var second = new SceneObject(mesh, transformB);
+Material material = CreateSharedMaterial();
+var first = new SceneObject(mesh, transformA, material);
+var second = new SceneObject(mesh, transformB, material);
 ```
 
 - `Mesh` is a shared reference to validated `MeshData`. The geometry is not
   copied.
 - Several objects may reference the same `MeshData` instance.
-- The object does not own or dispose its mesh. `MeshData` is managed data and
-  has no unmanaged resources.
+- `Material` is a shared reference to an immutable `Material`. It is not copied.
+  It defaults to the shared `Material.Default`, an untextured white material, when
+  none is supplied. Assigning `null` throws `ArgumentNullException`.
+- The object does not own or dispose its mesh or material. `MeshData`,
+  `Material`, and `TextureData` are managed data with no unmanaged resources.
 - The constructor copies the supplied transform values into a new `Transform`,
   so objects do not accidentally share mutable transform state.
-- Mutate `sceneObject.Transform` to change an instance; replace the mesh only by
+- Mutate `sceneObject.Transform` to change an instance, replace
+  `sceneObject.Material` to change its surface, and replace the mesh only by
   creating a new `SceneObject`.
 
 ### `Scene`
@@ -119,19 +126,24 @@ prevents accidental unbounded draw loops and resource requests.
 - `SceneObject.Mesh` references CPU `MeshData`. The caller that owns the CPU
   arrays remains responsible for not mutating them after `MeshData` construction,
   as described in [MODEL_DATA.md](MODEL_DATA.md#meshdata).
+- `SceneObject.Material` references CPU `Material` and optional `TextureData`
+  owned by the caller. Sharing one material or texture across objects is intended
+  and does not copy pixels. See [MATERIALS.md](MATERIALS.md).
 - A renderer owns its GPU device, shaders, pipeline, depth target, and one GPU
-  upload per distinct `MeshData` it draws. It releases them in reverse order when
+  upload per distinct `MeshData` it draws. A material-aware renderer also owns one
+  GPU texture per distinct `TextureData`. It releases them in reverse order when
   disposed, after waiting for the GPU to become idle.
-- Removing a scene object does not dispose a shared mesh or invalidate another
-  object that references it.
-- Dependencies in this milestone do not need explicit mesh disposal. A future
+- Removing a scene object does not dispose a shared mesh, material, or texture or
+  invalidate another object that references it.
+- Dependencies in this milestone do not need explicit resource disposal. A future
   GPU resource wrapper must keep the same rule: the owner that created a GPU
   resource releases it, and instances only hold references.
 
 The `HelloScene` renderer caches uploads by `MeshData` reference for its own
-lifetime. Removing objects therefore does not leak per-instance data; the cache
-holds at most one upload per distinct mesh the renderer has drawn. It is cleared
-when the renderer is disposed.
+lifetime. The `HelloMaterials` renderer also caches one GPU texture per
+`TextureData` reference. Removing objects therefore does not leak per-instance
+data; each cache holds at most one upload per distinct reference it has drawn and
+is cleared when the renderer is disposed.
 
 ## Rendering integration
 
@@ -146,6 +158,14 @@ The scene layer does not render. `HelloScene` owns a `SceneRenderer` that:
    `object.Transform.CreateModelMatrix() * view * projection` to uniform slot 0,
    binds the cached vertex/index buffers for `object.Mesh`, and draws its indices;
 5. ends and submits the command buffer.
+
+`HelloScene` draws one opaque color per vertex. `HelloMaterials` uses the same
+traversal shape with a material-aware renderer: it uploads one mesh per distinct
+`MeshData` and one texture per distinct `TextureData` before the frame command
+buffer is acquired, pushes the model matrix and the material tint to separate
+uniform slots, binds the material's texture or a white fallback, and draws the
+cached geometry. A material without a texture and a mesh without UVs both use the
+fallback, so the tint is always well-defined.
 
 An empty scene still clears the color and depth targets. Removed objects are
 simply absent from the traversal. Minimized windows skip the frame, zero-sized
@@ -175,6 +195,26 @@ procedural cube mesh. It needs no OBJ or O3D file and no OMSI asset.
 The example prints this control summary once at startup. It uses the same
 16 ms frame budget and elapsed-time cap as the other interactive examples.
 
+## `HelloMaterials`
+
+`examples/HelloMaterials` demonstrates materials and shared base-color textures
+over the same scene layer. It needs no external asset by default.
+
+- Two objects reference one checkerboard `Material` and one procedural UV-cube
+  `MeshData`. The renderer uploads both once.
+- A third object reuses the same `TextureData` through a blue-tinted material.
+- A fourth object uses an untextured solid-orange `Material` and the renderer's
+  white fallback texture.
+- A PNG path on the command line is decoded with `Nymeria.Formats.Png`. A missing,
+  oversized, or malformed file prints a diagnostic and falls back to the generated
+  checkerboard.
+- Camera controls are the shared `FlyCameraControls`. Depth, resize, minimize,
+  frame-budget, and shutdown behavior follow `HelloScene`.
+
+The generated checkerboard uses four differently colored quadrants, so a flipped
+U or V axis is visible on a face. [MATERIALS.md](MATERIALS.md) documents the
+material and texture contract.
+
 ## Tests
 
 `tests/Nymeria.Core.Tests` covers the scene layer without SDL3 or a GPU:
@@ -185,7 +225,8 @@ The example prints this control summary once at startup. It uses the same
 - rejection of non-finite position and scale;
 - empty scenes, insertion order, removal order, duplicate rejection, clearing,
   re-adding removed objects, and the object limit;
-- shared-mesh semantics and transform copying on object construction.
+- shared-mesh semantics, shared-material and default-material semantics, material
+  replacement and null rejection, and transform copying on object construction.
 
 GPU rendering, window behavior, and input are validated manually with
 [SMOKE_TEST.md](SMOKE_TEST.md), not by headless CI.
@@ -195,5 +236,6 @@ GPU rendering, window behavior, and input are validated manually with
 The following are out of scope for this milestone: parent-child transforms,
 scene graphs, ECS, instanced draw APIs beyond per-object uniform uploads,
 serialization, editors, culling, physics, collision, animation, lighting,
-shadows, materials, textures, multithreaded rendering, and automatic unloading
-of a cached GPU mesh when the last referencing object is removed.
+shadows, transparency sorting, texture streaming or hot reload, MTL or OMSI
+material parsing, and automatic unloading of a cached GPU mesh or texture when the
+last referencing object is removed.
