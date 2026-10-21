@@ -9,6 +9,7 @@
     <Project Path="src/core/Nymeria.Core/Nymeria.Core.csproj" />
   </Folder>
   <Folder Name="/src/formats/">
+    <Project Path="src/formats/Nymeria.Formats.O3d/Nymeria.Formats.O3d.csproj" />
     <Project Path="src/formats/Nymeria.Formats.Obj/Nymeria.Formats.Obj.csproj" />
   </Folder>
   <Folder Name="/src/graphics/">
@@ -19,6 +20,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Nymeria.Core.Tests/Nymeria.Core.Tests.csproj" />
+    <Project Path="tests/Nymeria.Formats.O3d.Tests/Nymeria.Formats.O3d.Tests.csproj" />
     <Project Path="tests/Nymeria.Formats.Obj.Tests/Nymeria.Formats.Obj.Tests.csproj" />
     <Project Path="tests/Nymeria.Platform.Tests/Nymeria.Platform.Tests.csproj" />
   </Folder>
