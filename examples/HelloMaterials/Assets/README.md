@@ -15,8 +15,17 @@ flipped U or V axis immediately visible.
 | `checker.jpg` | Baseline JPEG, no alpha | JPEG decoding; decoded pixels are opaque |
 | `checker.tga` | Uncompressed 32-bit BGRA, bottom-left origin | TGA channel swap and origin-flag handling |
 | `checker-rle.tga` | RLE-compressed 24-bit BGR, top-left origin | TGA RLE packets and 24-bit opaque pixels |
+| `checker.bmp` | Uncompressed 24-bit BGR, bottom-up rows | BMP channel order, row padding, and bottom-up orientation |
+| `checker-32.bmp` | Uncompressed 32-bit BGRA, top-down rows, opaque | BMP negative height and the reserved-alpha/BGRX rule |
 | `checker-bc1.dds` | BC1, eight mip levels | Compressed DDS with a mip chain; levels below 4 × 4 are uploaded only when block aligned |
 | `checker-rgba.dds` | Uncompressed 32-bit RGBA (`DDSD_PITCH`) | Uncompressed DDS channel and pitch handling |
+
+The two BMP files are written by hand from the same checkerboard pixels as
+`checker.png`. `checker.bmp` uses a 40-byte `BITMAPINFOHEADER`, positive height,
+four-byte row padding, and no alpha. `checker-32.bmp` uses a 40-byte header with a
+negative height, so its rows are stored top-down; its fourth byte is reserved and
+the decoder therefore returns opaque pixels. There is no alpha mask in either
+file, so alpha is not claimed to have been imported.
 
 The `.dds` files use the legacy `DXT1` fourCC and uncompressed RGB masks rather
 than the DX10 extension header, so they exercise the older header path. The

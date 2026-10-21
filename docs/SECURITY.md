@@ -10,7 +10,7 @@ in [SECURITY_AUDIT_01.md](SECURITY_AUDIT_01.md).
 | Input | Trust |
 | --- | --- |
 | Project source, embedded shaders, checked-in test fixtures | Trusted project content. |
-| OBJ, O3D, PNG, JPEG, TGA, and DDS files, streams, and paths supplied at run time | Untrusted. |
+| OBJ, O3D, text DirectX `.x`, PNG, JPEG, TGA, DDS, and BMP files, streams, and paths supplied at run time | Untrusted. |
 | Package restore input and GitHub Actions metadata | Untrusted external data that the build must validate or pin. |
 | SDL3, Metal, and the operating system | External native dependencies. Nymeria does not sandbox them. |
 
@@ -22,7 +22,7 @@ the input bound, structural validation, and dimension checks.
 
 ## Untrusted model input
 
-The OBJ and O3D parsers must:
+The OBJ, O3D, and text DirectX `.x` parsers must:
 
 - Validate magic values, versions, flags, keys, section tags, duplicate sections,
   declared counts, offsets, lengths, and remaining bytes before allocating or
@@ -32,6 +32,12 @@ The OBJ and O3D parsers must:
   non-finite numbers, and counts beyond the documented limits.
 - Fail with `ModelFormatException` and never return partial or silently repaired
   geometry. Ordinary I/O errors from the caller's stream may propagate.
+- For text `.x`, validate the ASCII `xof` header before creating a UTF-8 reader
+  so binary and compressed files are rejected as such, and bound the token
+  count, token length, frame nesting, frame count, face size, and face-index
+  count. Template declarations may be skipped structurally only at the top
+  level; unknown objects, animation, skinning, and unsupported mesh elements
+  must fail rather than be ignored.
 - Read text as strict UTF-8. Invalid byte sequences are errors, not replacement
   characters.
 - Reject input as soon as a limit is crossed, including while streaming a
@@ -41,7 +47,7 @@ The OBJ and O3D parsers must:
   no model-relative path resolution and therefore no path traversal surface in
   the parsers.
 
-The current defaults are shared by both parsers unless noted:
+The current defaults are shared by the parsers unless noted:
 
 | Limit | Default |
 | --- | --- |
@@ -51,6 +57,12 @@ The current defaults are shared by both parsers unless noted:
 | Triangles | 4,000,000 |
 | Material subsets | 65,536 |
 | OBJ source line length | 1,048,576 characters |
+| `.x` face vertices | 65,536 per face |
+| `.x` face indices | 12,000,000 per face list |
+| `.x` frame nesting | 64 levels |
+| `.x` frames | 4,096 |
+| `.x` token length | 1,048,576 characters |
+| `.x` tokens | 32,000,000 |
 
 These are practical viewer limits, not format requirements. A future service that
 accepts untrusted models should lower them or isolate parsing in a memory-limited
@@ -64,7 +76,8 @@ and is enforced before the model is uploaded.
 
 `Nymeria.Formats.Png.PngImageDecoder`,
 `Nymeria.Formats.Jpeg.JpegImageDecoder`, `Nymeria.Formats.Tga.TgaImageDecoder`,
-and `Nymeria.Formats.Dds.DdsTextureDecoder` are headless decoders for untrusted
+`Nymeria.Formats.Bmp.BmpImageDecoder`, and
+`Nymeria.Formats.Dds.DdsTextureDecoder` are headless decoders for untrusted
 image input. `Nymeria.Formats.Textures.TextureLoader` chooses a decoder by
 signature (PNG, JPEG, DDS) or, for TGA only, by extension plus header validation;
 an extension never selects a decoder whose signature is present. The PNG decoder
@@ -109,6 +122,16 @@ pixels, honor both origin flags, validate every RLE packet against the remaining
 pixel count before writing, reject truncated run and raw packets, and reject
 unexpected trailing data while allowing only the documented TGA 2.0 footer.
 
+The BMP decoder must verify the `BM` signature, the declared file size when
+non-zero, the supported DIB header size, dimensions, plane count, bit depth,
+compression type, channel and alpha masks, palette count and placement, row
+stride, `biSizeImage` when non-zero, the pixel offset, and the exact payload
+length before allocating or copying pixels. It must reject OS/2 core headers,
+RLE, embedded JPEG/PNG streams, 1/4/16-bit pixels, non-standard masks, trailing
+bytes, and dimensions or payloads above the documented limits. Alpha is
+preserved only when the header declares a standard alpha mask; otherwise the
+fourth byte of a 32-bit pixel is reserved and the image is opaque.
+
 The DDS decoder must validate the signature, header and pixel-format sizes,
 required flags, caps and caps2, depth, dimensions, mip count, DX10 resource
 dimension, array size, and cubemap flag. It must derive every level's exact block
@@ -124,8 +147,9 @@ construction, so an invalid texture cannot reach the GPU path through a
 different caller. GPU-side texture creation
 adds a defensive 16384-pixel and 256 MiB limit, but normal CPU data is smaller.
 
-The `HelloMaterials` example accepts one explicit PNG path and does not resolve
-textures relative to a model or search the working directory. A missing,
+The `HelloMaterials` example accepts one explicit PNG, JPEG, TGA, DDS, or BMP
+path and does not resolve textures relative to a model or search the working
+directory. A missing,
 unreadable, oversized, or malformed file prints a diagnostic and uses a generated
 checkerboard instead of exiting. That fallback is example presentation, not a
 parser result.

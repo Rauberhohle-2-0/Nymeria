@@ -7,13 +7,16 @@
     <Project Path="examples/HelloOBJ/HelloOBJ.csproj" />
     <Project Path="examples/HelloScene/HelloScene.csproj" />
     <Project Path="examples/HelloTriangle/HelloTriangle.csproj" />
+    <Project Path="examples/HelloX/HelloX.csproj" />
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/core/">
     <Project Path="src/core/Nymeria.Core/Nymeria.Core.csproj" />
   </Folder>
   <Folder Name="/src/formats/">
+    <Project Path="src/formats/Nymeria.Formats.Bmp/Nymeria.Formats.Bmp.csproj" />
     <Project Path="src/formats/Nymeria.Formats.Dds/Nymeria.Formats.Dds.csproj" />
+    <Project Path="src/formats/Nymeria.Formats.DirectX/Nymeria.Formats.DirectX.csproj" />
     <Project Path="src/formats/Nymeria.Formats.Jpeg/Nymeria.Formats.Jpeg.csproj" />
     <Project Path="src/formats/Nymeria.Formats.O3d/Nymeria.Formats.O3d.csproj" />
     <Project Path="src/formats/Nymeria.Formats.Obj/Nymeria.Formats.Obj.csproj" />
@@ -29,7 +32,9 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Nymeria.Core.Tests/Nymeria.Core.Tests.csproj" />
+    <Project Path="tests/Nymeria.Formats.Bmp.Tests/Nymeria.Formats.Bmp.Tests.csproj" />
     <Project Path="tests/Nymeria.Formats.Dds.Tests/Nymeria.Formats.Dds.Tests.csproj" />
+    <Project Path="tests/Nymeria.Formats.DirectX.Tests/Nymeria.Formats.DirectX.Tests.csproj" />
     <Project Path="tests/Nymeria.Formats.Jpeg.Tests/Nymeria.Formats.Jpeg.Tests.csproj" />
     <Project Path="tests/Nymeria.Formats.O3d.Tests/Nymeria.Formats.O3d.Tests.csproj" />
     <Project Path="tests/Nymeria.Formats.Obj.Tests/Nymeria.Formats.Obj.Tests.csproj" />

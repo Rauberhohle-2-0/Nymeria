@@ -270,12 +270,14 @@ internal static class Program
     private static void PrintUsage()
     {
         Console.Error.WriteLine(
-            "Usage: HelloMaterials [path/to/texture.{png,jpg,jpeg,tga,dds}]");
+            "Usage: HelloMaterials [path/to/texture.{png,jpg,jpeg,tga,bmp,dds}]");
         Console.Error.WriteLine(
             "With no path, the example uses a generated checkerboard texture and " +
-            "needs no external asset. PNG, JPEG, and DDS are identified by their " +
-            "signatures; TGA is recognized by a .tga or .targa name and validated " +
-            "by its header. Limits: 32 MiB input, 4096 x 4096 pixels, 64 MiB " +
-            "decoded payload.");
+            "needs no external asset. PNG, JPEG, BMP, and DDS are identified by " +
+            "their signatures; TGA is recognized by a .tga or .targa name and " +
+            "validated by its header. BMP supports uncompressed 24-bit BGR, " +
+            "32-bit BGRA/BGRX, 8-bit indexed, and standard 32-bit BI_BITFIELDS " +
+            "images. Limits: 32 MiB input, 4096 x 4096 pixels, 64 MiB decoded " +
+            "payload.");
     }
 }

@@ -43,6 +43,14 @@ guarantee.
 
 - [ ] Decoding is strict UTF-8; invalid byte sequences are errors, not `U+FFFD`.
 - [ ] Lines and tokens are bounded. A line limit fails before the line is parsed.
+- [ ] Token count, token length, nesting depth, frame count, face size, and
+      face-index count are bounded before the corresponding collection grows.
+- [ ] A text format's magic header is validated before constructing a UTF-8
+      reader, so binary or compressed variants are rejected with an accurate
+      diagnostic rather than decoded as text.
+- [ ] Unknown objects, unsupported mesh elements, skinning, and animation are
+      rejected rather than skipped. Template declarations are skipped only if
+      they contain no scene data and the skip is structurally balanced.
 - [ ] Numeric parsing uses invariant culture, rejects non-finite values, and
       rejects trailing garbage.
 - [ ] Zero, negative, and out-of-range indices fail with line-based diagnostics.
@@ -71,6 +79,11 @@ guarantee.
       decoding, so a truncated file cannot be accepted as a complete image.
 - [ ] TGA RLE packets are checked against the remaining pixel count and the input
       length before any pixel is written.
+- [ ] BMP signature, declared file size, DIB header size and position, dimensions,
+      plane count, bit depth, compression, channel/alpha masks, palette placement,
+      row stride, image size, pixel offset, exact payload length, and decoded RGBA
+      size are validated before allocation. Unsupported BMP variants fail
+      explicitly; a 32-bit image without an alpha mask is opaque.
 - [ ] DDS header, DX10 extension, mip chain, block/row sizes, and the exact payload
       length are validated with checked arithmetic; unsupported formats fail
       explicitly instead of being approximated.

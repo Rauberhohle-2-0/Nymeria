@@ -1,4 +1,5 @@
 using Nymeria.Core.Materials;
+using Nymeria.Formats.Bmp;
 using Nymeria.Formats.Dds;
 using Nymeria.Formats.Png;
 using Nymeria.Formats.Tga;
@@ -41,6 +42,27 @@ public sealed class TextureLoaderTests
 
         var rgba = Assert.IsType<TextureData>(texture);
         Assert.Equal(new byte[] { 9, 8, 7, 6 }, rgba.Pixels.ToArray());
+    }
+
+    [Fact]
+    public void Load_UsesBmpSignatureInsteadOfExtension()
+    {
+        byte[] bmp = TestImageBuilder.BmpUncompressedBgr(21, 22, 23);
+
+        Texture texture = Loader.Load(new MemoryStream(bmp), "misleading.tga");
+
+        var rgba = Assert.IsType<TextureData>(texture);
+        Assert.Equal(new byte[] { 21, 22, 23, 255 }, rgba.Pixels.ToArray());
+    }
+
+    [Fact]
+    public void Load_ReportsTheFormatDecoderErrorForMalformedBmp()
+    {
+        byte[] bmp = TestImageBuilder.BmpUncompressedBgr(1, 2, 3);
+        bmp[14] = 41; // unsupported DIB header size
+
+        Assert.Throws<BmpFormatException>(
+            () => Loader.Load(new MemoryStream(bmp), "broken.bmp"));
     }
 
     [Theory]

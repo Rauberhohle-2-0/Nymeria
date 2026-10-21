@@ -1,10 +1,11 @@
 # Materials and Textures
 
 This document is the authoritative description of Nymeria's format-independent
-material data, validated CPU texture data, the PNG, JPEG, TGA, and DDS decoders,
-the texture loader, and the `HelloMaterials` example. Related contracts are
-[MODEL_DATA.md](MODEL_DATA.md), [SCENE.md](SCENE.md), [ARCHITECTURE.md](ARCHITECTURE.md),
-and the [UV conventions](MODEL_DATA.md#coordinate-and-index-conventions).
+material data, validated CPU texture data, the PNG, JPEG, TGA, DDS, and BMP
+decoders, the texture loader, and the `HelloMaterials` example. Related contracts
+are [MODEL_DATA.md](MODEL_DATA.md), [SCENE.md](SCENE.md),
+[ARCHITECTURE.md](ARCHITECTURE.md), and the
+[UV conventions](MODEL_DATA.md#coordinate-and-index-conventions).
 
 ## Purpose and non-goals
 
@@ -146,6 +147,7 @@ Texture texture = new TextureLoader().Load(stream, path);
 | PNG | Signature `89 50 4E 47 0D 0A 1A 0A` |
 | JPEG | Signature `FF D8 FF` |
 | DDS | Signature `DDS ` |
+| BMP | Signature `42 4D` (`BM`) |
 | TGA | Source name ends in `.tga` or `.targa`, then header validation |
 
 Signatures take precedence over file extensions, so a JPEG named `.png` decodes
@@ -153,8 +155,8 @@ as JPEG. TGA has no signature, so its extension only selects the decoder; the TG
 header and every packet are still validated. Content that matches no format
 throws `TextureFormatException`; a malformed file of a recognized format throws
 that decoder's exception (`PngFormatException`, `JpegFormatException`,
-`TgaFormatException`, or `DdsFormatException`). The loader never opens a file,
-resolves a path, keeps a cache, or makes a GPU call.
+`TgaFormatException`, `BmpFormatException`, or `DdsFormatException`). The loader
+never opens a file, resolves a path, keeps a cache, or makes a GPU call.
 
 The default limits are constants on each decoder. An internal limits object
 allows the tests to lower the encoded-input, dimension, and payload bounds and
@@ -174,6 +176,7 @@ Every decoder:
 | PNG | 32 MiB | 4096 | 64 MiB decoded | 8-bit non-interlaced |
 | JPEG | 32 MiB | 4096 | 64 MiB decoded | common JPEG |
 | TGA | 32 MiB | 4096 | 64 MiB decoded | true-color 24/32-bit |
+| BMP | 32 MiB | 4096 | 64 MiB decoded | uncompressed 8/24/32-bit |
 | DDS | 32 MiB | 4096 | 64 MiB encoded | BC1–BC5, BC7, RGBA8 |
 
 ### PNG
@@ -227,6 +230,41 @@ alpha-bit count. RLE packets are validated before pixels are written: a packet
 may not exceed the remaining pixel count, and a truncated run or raw packet
 fails. An optional TGA 2.0 footer (`TRUEVISION-XFILE.`) is accepted; any other
 trailing data is rejected.
+
+### BMP
+
+`Nymeria.Formats.Bmp.BmpImageDecoder` decodes a documented Windows BMP/DIB
+subset and returns top-down RGBA `TextureData`:
+
+- the `BM` file signature and a 40-byte `BITMAPINFOHEADER`, 108-byte
+  `BITMAPV4HEADER`, or 124-byte `BITMAPV5HEADER`;
+- uncompressed (`BI_RGB`) 24-bit BGR and 32-bit BGRA/BGRX pixels;
+- uncompressed 8-bit indexed pixels with a Windows palette (`biClrUsed` entries,
+  or 256 when the count is zero);
+- 32-bit `BI_BITFIELDS` pixels with the standard BGRA masks and an optional
+  alpha mask;
+- bottom-up rows (positive height) and top-down rows (negative height);
+- the four-byte row padding required by the format.
+
+Alpha is preserved only when the header declares a standard alpha mask
+(`0xFF000000`), either in a V4/V5 header or as the fourth `BI_BITFIELDS` mask.
+A 32-bit image with no alpha mask is treated as BGRX and every pixel is opaque,
+which matches the Windows convention for the reserved fourth byte. 24-bit and
+8-bit images are always opaque.
+
+The decoder validates the signature, the declared file size when non-zero, the
+DIB header size and position, dimensions, plane count, bit depth, compression
+type, channel masks, palette size and placement, row stride, `biSizeImage` when
+non-zero, the pixel array offset, the exact pixel payload length, and the
+decoded RGBA size before allocating or copying pixels. The pixel array must end
+exactly at the end of the input; trailing profile or metadata bytes are rejected
+rather than skipped.
+
+Rejected explicitly: 1-bit, 4-bit, and 16-bit pixels; `BI_RLE8` and `BI_RLE4`
+compression; embedded `BI_JPEG` and `BI_PNG` streams; `BI_ALPHABITFIELDS`; OS/2
+`BITMAPCOREHEADER` (12-byte) and other DIB header sizes; non-standard channel or
+alpha masks; zero or negative dimensions; and dimensions, strides, or payloads
+above the documented limits.
 
 ### DDS
 
@@ -323,9 +361,9 @@ but not blended.
 
 Nymeria does not apply color-space conversion in any CPU decoder:
 
-- PNG, JPEG, TGA, and uncompressed DDS pixels keep their stored encoded values.
-  They are uploaded as `R8G8B8A8Unorm` and sampled without conversion, preserving
-  the behavior of earlier milestones.
+- PNG, JPEG, TGA, BMP, and uncompressed DDS pixels keep their stored encoded
+  values. They are uploaded as `R8G8B8A8Unorm` and sampled without conversion,
+  preserving the behavior of earlier milestones.
 - Compressed DDS textures whose source declares an sRGB variant are uploaded as
   the matching SRGB GPU format (`BC1RGBAUnormSRGB`, `BC2RGBAUnormSRGB`,
   `BC3RGBAUnormSRGB`, or `BC7RGBAUnormSRGB`), so the backend decodes sampled
@@ -350,6 +388,8 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker.jpg
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker.tga
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-rle.tga
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker.bmp
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-32.bmp
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-bc1.dds
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-rgba.dds
 ```
@@ -375,8 +415,9 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/H
 
 The checked-in fixtures under `examples/HelloMaterials/Assets` are original
 project content: a baseline JPEG, an uncompressed 32-bit bottom-origin TGA, an
-RLE-compressed 24-bit TGA, a BC1 DDS with a mip chain, and an uncompressed RGBA
-DDS. Their provenance and layout are documented in that directory's `README.md`.
+RLE-compressed 24-bit TGA, a 24-bit bottom-up BMP, a 32-bit top-down BMP, a BC1
+DDS with a mip chain, and an uncompressed RGBA DDS. Their provenance and layout
+are documented in that directory's `README.md`.
 
 The example is presentation code, not a material or asset pipeline. It does not
 parse MTL, associate O3D material names with textures, blend transparency, stream
@@ -406,7 +447,13 @@ checked-in 8 × 8 BC1, BC2, BC3, BC4, BC5, BC7, and BC1-sRGB files, covering
 legacy fourCCs, DX10 formats and sRGB flags, mip chains, uncompressed channel
 masks, pitch and linear-size validation, truncation, trailing bytes,
 array/cubemap/3D rejection, unsupported formats, and an unrepresentable mip
-count. `tests/Nymeria.Formats.Textures.Tests` covers signature-first dispatch,
+count. `tests/Nymeria.Formats.Bmp.Tests` builds fixtures in memory and covers
+24-bit and 32-bit channel order, top-down and bottom-up rows, row padding, V4
+and `BI_BITFIELDS` alpha masks, indexed palettes, malformed and truncated
+headers, compression and bit-depth rejection, invalid offsets and sizes, exact
+payload lengths, truncation at every prefix, resource limits, stream ownership,
+and the two checked-in BMP fixtures. `tests/Nymeria.Formats.Textures.Tests`
+covers signature-first dispatch,
 extension-based TGA detection, format-specific errors, configured input limits,
 and unknown or empty input.
 
@@ -418,7 +465,10 @@ are validated manually with [SMOKE_TEST.md](SMOKE_TEST.md), not by headless CI.
 OBJ MTL parsing, OMSI material mapping, PBR, shadows, transparency sorting,
 texture streaming, mipmap generation, hot reload, animation, an editor, and a
 general asset pipeline are out of scope. Lighting is limited to the single
-ambient plus directional Lambert model in [LIGHTING.md](LIGHTING.md). Alpha is decoded but not blended.
-BC decompression on the CPU, BC6H, ASTC, ETC, cubemaps, texture arrays, 3D
+ambient plus directional Lambert model in [LIGHTING.md](LIGHTING.md). Alpha is
+decoded but not blended. BC decompression on the CPU, BC6H, ASTC, ETC, cubemaps,
+texture arrays, 3D
 textures, and volume textures are not supported. The supported DDS subset is not
-a claim of universal DDS compatibility.
+a claim of universal DDS compatibility. BMP support is also a documented subset:
+RLE, 1/4/16-bit, OS/2 headers, embedded JPEG/PNG data, and non-standard channel
+masks are rejected rather than approximated.

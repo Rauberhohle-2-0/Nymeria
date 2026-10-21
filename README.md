@@ -13,17 +13,18 @@ interactive, depth-tested cube scene.
   contract, a minimal scene layer, and base-color materials with validated
   texture data, `Nymeria.Formats.Obj` with a
   dependency-free Wavefront OBJ parser, `Nymeria.Formats.O3d` with a
-  dependency-free OMSI O3D static-mesh parser, `Nymeria.Formats.Png` with a
-  bounded PNG decoder, `Nymeria.Formats.Tga`, `Nymeria.Formats.Jpeg`, and
-  `Nymeria.Formats.Dds` with bounded texture decoders, and
-  `Nymeria.Formats.Textures` with a signature-first texture loader,
+  dependency-free OMSI O3D static-mesh parser, `Nymeria.Formats.DirectX` with a
+  bounded text DirectX `.x` static-mesh parser, `Nymeria.Formats.Png` with a
+  bounded PNG decoder, `Nymeria.Formats.Tga`, `Nymeria.Formats.Jpeg`,
+  `Nymeria.Formats.Dds`, and `Nymeria.Formats.Bmp` with bounded texture decoders,
+  and `Nymeria.Formats.Textures` with a signature-first texture loader,
   ambient and single-directional lighting data with Lambert diffuse shading,
   `Nymeria.Graphics` with reusable
   Metal GPU device infrastructure and camera math, `examples/HelloTriangle`, the
   interactive `examples/HelloCube`, the OBJ-rendering `examples/HelloOBJ`, the
-  O3D-rendering `examples/HelloO3D`, the scene-instancing `examples/HelloScene`,
-  the textured and solid-material `examples/HelloMaterials`, the lit
-  `examples/HelloLighting`,
+  O3D-rendering `examples/HelloO3D`, the text-`.x`-rendering `examples/HelloX`,
+  the scene-instancing `examples/HelloScene`, the textured and solid-material
+  `examples/HelloMaterials`, the lit `examples/HelloLighting`,
   platform-independent unit tests, CI restore/build/test on macOS, Windows, and
   Linux, repository checks, an audited dependency restore, a documented security
   baseline, and Dependabot updates for GitHub Actions and NuGet.
@@ -61,8 +62,11 @@ dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
 dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
+dotnet run --project examples/HelloX/HelloX.csproj
 dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker.bmp
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-32.bmp
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-bc1.dds
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 ```
@@ -73,11 +77,13 @@ positions with perspective projection and depth testing, plus a free-fly camera.
 `HelloOBJ` loads its checked-in cube fixture and renders it through the same
 camera and GPU path; pass a path after `--` to load a different OBJ file.
 `HelloO3D` uses the same viewer and GPU path with its synthetic O3D fixture or a
-path to another O3D file. `HelloScene` draws several transformed instances of one
-shared mesh; press `E` to add an instance, `Q` to remove the last object, and `R`
-to reset. `HelloMaterials` draws objects that share a checkerboard texture and a
-mesh, a blue-tinted variant of that texture, and a solid-color material; pass a
-PNG, JPEG, TGA, or DDS path after `--` to use a different base-color texture.
+path to another O3D file. `HelloX` uses it with its checked-in text `.x` fixture
+or a path to another text `.x` file. `HelloScene` draws several transformed
+instances of one shared mesh; press `E` to add an instance, `Q` to remove the
+last object, and `R` to reset. `HelloMaterials` draws objects that share a
+checkerboard texture and a mesh, a blue-tinted variant of that texture, and a
+solid-color material; pass a PNG, JPEG, TGA, DDS, or BMP path after `--` to use a
+different base-color texture.
 `HelloLighting` draws three instances of an imported OBJ cube under ambient and
 directional Lambert light; press `L` to toggle ambient-only mode, use the arrow
 keys to move the light, `[` and `]` to change its intensity, and `R` to reset it. Move with
@@ -90,7 +96,8 @@ on a normal shutdown.
 The startup path prints an actionable error and exits with status code `1` if the
 native SDL3 library is missing or mismatched, SDL initialization fails, the Metal
 GPU backend is unavailable, the window cannot be created or claimed, a shader or
-pipeline cannot be created, or the OBJ/O3D example cannot read or parse its file.
+pipeline cannot be created, or the OBJ/O3D/`.x` example cannot read or parse its
+file.
 
 ### GPU examples
 
@@ -98,13 +105,15 @@ The GPU examples use SDL3's GPU API on the Metal backend. There is no direct
 Metal interop and no software fallback. `Nymeria.Graphics` provides the reusable
 GPU device and the `Camera` math type; `Nymeria.Core` provides the model data
 used by `HelloCube` and the scene data used by `HelloScene`;
-`Nymeria.Formats.Obj` parses the file used by `HelloOBJ`, and
-`Nymeria.Formats.O3d` parses the file used by `HelloO3D`;
-`Nymeria.Formats.Textures` loads the PNG, JPEG, TGA, or DDS texture used by
+`Nymeria.Formats.Obj` parses the file used by `HelloOBJ`,
+`Nymeria.Formats.O3d` parses the file used by `HelloO3D`, and
+`Nymeria.Formats.DirectX` parses the file used by `HelloX`;
+`Nymeria.Formats.Textures` loads the PNG, JPEG, TGA, DDS, or BMP texture used by
 `HelloMaterials`, and `Nymeria.Formats.Obj` provides the cube used by
 `HelloLighting`. Each
-example owns its pipeline and depth target, while `HelloOBJ` and `HelloO3D` share
-the renderer, shader, model-viewer loop, and camera controls in `examples/Shared`.
+example owns its pipeline and depth target, while `HelloOBJ`, `HelloO3D`, and
+`HelloX` share the renderer, shader, model-viewer loop, and camera controls in
+`examples/Shared`.
 `HelloScene` uses the shared geometry builder, model shader, and camera controls
 with its own scene renderer. `HelloMaterials` and `HelloLighting` share the
 material renderer and camera controls in `examples/Shared`.
@@ -153,6 +162,14 @@ bones, unknown sections, and unknown flags with offset-based diagnostics. See
 [docs/O3D.md](docs/O3D.md) for the exact support matrix, provenance, and known
 uncertainties.
 
+`HelloX` uses the same viewer with
+`examples/HelloX/Assets/cube.x`, an original text `.x` fixture, or a path passed
+on the command line. The importer supports text `xof 0302txt`/`0303txt` files with
+static meshes, baked frame transforms, normals, texture coordinates, and material
+names. It rejects binary, compressed, skinned, animated, and unknown constructs
+with line-based diagnostics. See [docs/DIRECTX_X.md](docs/DIRECTX_X.md) for the
+support matrix, conversions, limits, and known limitations.
+
 `HelloScene` renders a `Nymeria.Core.Scenes.Scene` containing objects that share
 one procedural cube mesh. Its renderer uploads one GPU mesh per distinct
 `MeshData` and draws each object with its own model matrix. Scenes own no GPU
@@ -168,11 +185,13 @@ fourth. The renderer caches one GPU mesh per distinct `MeshData` and one GPU
 texture per distinct `Texture`, uploads mip chains once, and binds a generated
 white fallback for untextured materials and meshes without UVs. The fragment
 shader multiplies sampled RGB by the tint and writes an opaque fragment. A PNG,
-JPEG, TGA, or DDS path supplied on the command line is decoded by
+JPEG, TGA, DDS, or BMP path supplied on the command line is decoded by
 `Nymeria.Formats.Textures`; signatures take precedence over extensions, and TGA
-is recognized by its extension plus header validation. A missing, unreadable,
-malformed, oversized, or unsupported file prints a diagnostic and falls back to
-the generated checkerboard. Block-compressed DDS is uploaded directly when the
+is recognized by its extension plus header validation. BMP support covers
+uncompressed 24-bit, 32-bit, 8-bit indexed, and standard `BI_BITFIELDS` images
+with both row orientations; RLE and other variants are rejected explicitly. A
+missing, unreadable, malformed, oversized, or unsupported file prints a
+diagnostic and falls back to the generated checkerboard. Block-compressed DDS is uploaded directly when the
 backend supports the format; otherwise the example reports it and falls back. See
 [docs/MATERIALS.md](docs/MATERIALS.md) for the data contract, supported DDS
 variants, decoder limits, and resource ownership.
@@ -188,8 +207,8 @@ remains unlit. See [docs/LIGHTING.md](docs/LIGHTING.md) for the light data model
 the equation, the coordinate-space and normal-matrix conventions, and the
 deferred features.
 
-All seven examples skip rendering while minimized and recover when a drawable is
-available again. [examples/README.md](examples/README.md) records the matrix
+All eight interactive examples skip rendering while minimized and recover when a
+drawable is available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
 This path is macOS-only for now. Windows and Linux need their own native SDL3
@@ -211,10 +230,13 @@ mesh sharing, material and texture-data validation, and the lighting data, Lambe
 term, and normal-matrix math in `Nymeria.Core.Tests`, the
 OBJ subset and diagnostics in `Nymeria.Formats.Obj.Tests`, the O3D header,
 supported versions and flags, conversions, limits, and failure behavior in
-`Nymeria.Formats.O3d.Tests`, and the PNG subset, malformed input, and decode
-limits in `Nymeria.Formats.Png.Tests`, and the JPEG, TGA, DDS, and loader paths in
-`Nymeria.Formats.Jpeg.Tests`, `Nymeria.Formats.Tga.Tests`,
-`Nymeria.Formats.Dds.Tests`, and `Nymeria.Formats.Textures.Tests`. There are
+`Nymeria.Formats.O3d.Tests`, the text `.x` header, frames, transforms, mesh
+elements, conversions, malformed input, and limits in
+`Nymeria.Formats.DirectX.Tests`, the PNG subset, malformed input, and decode
+limits in `Nymeria.Formats.Png.Tests`, and the JPEG, TGA, DDS, BMP, and loader
+paths in `Nymeria.Formats.Jpeg.Tests`, `Nymeria.Formats.Tga.Tests`,
+`Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Bmp.Tests`, and
+`Nymeria.Formats.Textures.Tests`. There are
 deliberately no fake GUI tests: native window behavior is covered by the manual
 smoke test below and is not claimed as a headless CI result.
 
@@ -229,10 +251,11 @@ manually; it is not claimed as a headless CI result.
 .github/        Repository checks and Dependabot configuration
 docs/           Architecture, Git policy, and manual smoke test
 src/core/       Nymeria.Core model data, parser contract, scene, and material data
-src/formats/    Nymeria.Formats.Obj, O3d, Png, Tga, Jpeg, Dds, and Textures
+src/formats/    Nymeria.Formats.Obj, O3d, DirectX, Png, Tga, Jpeg, Dds, Bmp,
+                and Textures
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
-examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloScene,
+examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloX, HelloScene,
                 HelloMaterials, and HelloLighting
 tests/          Headless unit tests for core, formats, and platform projects
 ```
@@ -246,6 +269,7 @@ tests/          Headless unit tests for core, formats, and platform projects
 - [Ambient and directional lighting](docs/LIGHTING.md)
 - [Wavefront OBJ import](docs/OBJ.md)
 - [OMSI O3D import](docs/O3D.md)
+- [Text DirectX .x import](docs/DIRECTX_X.md)
 - [Examples](examples/README.md)
 - [Security baseline](docs/SECURITY.md)
 - [Security checklist](docs/SECURITY_CHECKLIST.md)

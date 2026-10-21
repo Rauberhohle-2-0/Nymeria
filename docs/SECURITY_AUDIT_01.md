@@ -386,6 +386,26 @@ No new security finding was identified. Residual risk now also includes the
 third-party JPEG decoder and the fact that compressed texture upload and sampling
 remain manual macOS checks.
 
+A later follow-up added BMP decoding and text DirectX `.x` import without a new
+dependency:
+
+- `Nymeria.Formats.Bmp` is dependency-free and validates the signature, declared
+  file size, DIB header, dimensions, planes, bit depth, compression, masks,
+  palette placement, stride, image size, offset, exact payload, and decoded size
+  before allocation. It rejects RLE, embedded JPEG/PNG, OS/2 headers, and
+  non-standard masks, and treats a 32-bit image without an alpha mask as opaque.
+- `Nymeria.Formats.DirectX` is dependency-free and validates the ASCII header
+  before creating a UTF-8 reader, then bounds tokens, token length, frame
+  nesting, frame count, face size, face indices, vertices, and triangles. It
+  rejects binary, compressed, animated, skinned, and unknown constructs rather
+  than silently producing partial geometry.
+- `TextureLoader` now also selects BMP by signature; TGA still requires a
+  `.tga`/`.targa` name plus header validation.
+
+No new security finding was identified for these additions. Their limits and
+rejection behavior are documented in [SECURITY.md](SECURITY.md),
+[MATERIALS.md](MATERIALS.md), and [DIRECTX_X.md](DIRECTX_X.md).
+
 The findings above are addressed at the source level. This audit does not claim
 that Nymeria is secure or fully audited; the residual risks listed earlier still
 apply.

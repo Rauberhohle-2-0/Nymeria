@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../core/Nymeria.Core/Nymeria.Core.csproj" />
+    <ProjectReference Include="../Nymeria.Formats.Bmp/Nymeria.Formats.Bmp.csproj" />
     <ProjectReference Include="../Nymeria.Formats.Dds/Nymeria.Formats.Dds.csproj" />
     <ProjectReference Include="../Nymeria.Formats.Jpeg/Nymeria.Formats.Jpeg.csproj" />
     <ProjectReference Include="../Nymeria.Formats.Png/Nymeria.Formats.Png.csproj" />

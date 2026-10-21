@@ -79,6 +79,25 @@ internal static class TestImageBuilder
         return file;
     }
 
+    public static byte[] BmpUncompressedBgr(byte red, byte green, byte blue)
+    {
+        var file = new byte[54 + 4];
+        file[0] = (byte)'B';
+        file[1] = (byte)'M';
+        BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(2), (uint)file.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(10), 54);
+        BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(14), 40);
+        BinaryPrimitives.WriteInt32LittleEndian(file.AsSpan(18), 1);
+        BinaryPrimitives.WriteInt32LittleEndian(file.AsSpan(22), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(file.AsSpan(26), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(file.AsSpan(28), 24);
+        BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(34), 4);
+        file[54] = blue;
+        file[55] = green;
+        file[56] = red;
+        return file;
+    }
+
     public static byte[] JpegFixture =>
         File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Assets", "checker.jpg"));
 

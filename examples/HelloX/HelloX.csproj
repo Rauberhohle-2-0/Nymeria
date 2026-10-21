@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/core/Nymeria.Core/Nymeria.Core.csproj" />
+    <ProjectReference Include="../../src/formats/Nymeria.Formats.DirectX/Nymeria.Formats.DirectX.csproj" />
+    <ProjectReference Include="../../src/graphics/Nymeria.Graphics/Nymeria.Graphics.csproj" />
+    <ProjectReference Include="../../src/platform/Nymeria.Platform/Nymeria.Platform.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../Shared/FlyCameraControls.cs" Link="FlyCameraControls.cs" />
+    <Compile Include="../Shared/ModelGpuGeometry.cs" Link="ModelGpuGeometry.cs" />
+    <Compile Include="../Shared/ModelRenderer.cs" Link="ModelRenderer.cs" />
+    <Compile Include="../Shared/ModelViewerApp.cs" Link="ModelViewerApp.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Assets/cube.x" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="../Shared/Shaders/Model.metal"
+                      LogicalName="Nymeria.Examples.Shaders.Model.metal" />
+  </ItemGroup>
+
+</Project>

@@ -33,6 +33,9 @@ extension is a direction, not a current feature.
   `IModelParser` for a documented polygonal subset.
 - `Nymeria.Formats.O3d`, a dependency-free OMSI O3D parser implementing
   `IModelParser` for a documented unscrambled static-mesh subset.
+- `Nymeria.Formats.DirectX`, a dependency-free text DirectX `.x` parser
+  implementing `IModelParser` for a documented static-mesh subset with baked
+  frame transforms, normals, texture coordinates, and material-name subsets.
 - `Nymeria.Formats.Png`, a dependency-free PNG decoder producing validated RGBA
   texture data for a documented, bounded subset.
 - `Nymeria.Formats.Tga`, a dependency-free TGA decoder for documented
@@ -43,8 +46,11 @@ extension is a direction, not a current feature.
 - `Nymeria.Formats.Dds`, a dependency-free DDS header and payload decoder for
   documented BC1–BC5/BC7 and uncompressed subsets, returning compressed or RGBA
   texture data without decompressing blocks.
+- `Nymeria.Formats.Bmp`, a dependency-free BMP decoder for documented
+  uncompressed 24-bit, 32-bit, 8-bit indexed, and standard `BI_BITFIELDS`
+  subsets, returning validated top-down RGBA texture data.
 - `Nymeria.Formats.Textures`, a signature-first `TextureLoader` that dispatches
-  to the PNG, JPEG, TGA, and DDS decoders without touching the GPU.
+  to the PNG, JPEG, TGA, DDS, and BMP decoders without touching the GPU.
 - `Nymeria.Graphics`, a class library that owns the SDL3 GPU device and window
   presentation claim, provides reusable MSL shader, buffer, texture, and sampler
   creation, and contains a reusable, SDL-independent free-fly `Camera`.
@@ -58,11 +64,13 @@ extension is a direction, not a current feature.
   fixture or a user-supplied path and renders it through the existing GPU path.
 - `examples/HelloO3D`, the same interactive viewer for an O3D fixture or a
   user-supplied path, using the shared example renderer.
+- `examples/HelloX`, the same interactive viewer for a text DirectX `.x`
+  fixture or a user-supplied path, using the shared example renderer.
 - `examples/HelloScene`, an interactive example that draws multiple transformed
   instances of one shared mesh through the scene layer, with runtime add/remove.
 - `examples/HelloMaterials`, an interactive example that draws shared, tinted,
   and untextured materials with a generated checkerboard or a user-supplied PNG,
-  JPEG, TGA, or DDS texture. It remains unlit.
+  JPEG, TGA, DDS, or BMP texture. It remains unlit.
 - `examples/HelloLighting`, an interactive example that draws an imported OBJ
   mesh with a textured and a solid material under configurable ambient and
   directional Lambert lighting.
@@ -77,9 +85,13 @@ extension is a direction, not a current feature.
   behavior.
 - `Nymeria.Formats.Png.Tests`, GPU-independent tests for the PNG subset, malformed
   and truncated input, decompression limits, and decoded texture data.
-- `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`, and
-  `Nymeria.Formats.Dds.Tests`, GPU-independent tests for their supported subsets,
-  orientation, channel order, mip layouts, malformed input, and limits.
+- `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
+  `Nymeria.Formats.Dds.Tests`, and `Nymeria.Formats.Bmp.Tests`,
+  GPU-independent tests for their supported subsets, orientation, channel order,
+  mip layouts, malformed input, and limits.
+- `Nymeria.Formats.DirectX.Tests`, GPU-independent tests for the text `.x`
+  header, frames, mesh elements, transforms, materials, conversions, malformed
+  input, and resource limits.
 - `Nymeria.Formats.Textures.Tests`, GPU-independent tests for signature-based
   format detection and loader error behavior.
 - SDL3 windowing and GPU rendering through the pinned `SDL3-CS` and
@@ -130,15 +142,17 @@ would require maintainer approval.
 
 `src/platform/` contains the `Nymeria.Platform` project, `src/graphics/`
 contains `Nymeria.Graphics`, `src/core/` contains `Nymeria.Core`, `src/formats/`
-contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`, `Nymeria.Formats.Png`,
-`Nymeria.Formats.Tga`, `Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`, and
+contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`,
+`Nymeria.Formats.DirectX`, `Nymeria.Formats.Png`, `Nymeria.Formats.Tga`,
+`Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`, `Nymeria.Formats.Bmp`, and
 `Nymeria.Formats.Textures`, `examples/` contains `HelloTriangle`, `HelloCube`,
-`HelloOBJ`, `HelloO3D`, `HelloScene`, `HelloMaterials`, and `HelloLighting`, and
-`tests/` contains `Nymeria.Core.Tests`, `Nymeria.Formats.Obj.Tests`,
-`Nymeria.Formats.O3d.Tests`, `Nymeria.Formats.Png.Tests`,
+`HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`, and
+`HelloLighting`, and `tests/` contains `Nymeria.Core.Tests`,
+`Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
+`Nymeria.Formats.DirectX.Tests`, `Nymeria.Formats.Png.Tests`,
 `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
-`Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Textures.Tests`, and
-`Nymeria.Platform.Tests`.
+`Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Bmp.Tests`,
+`Nymeria.Formats.Textures.Tests`, and `Nymeria.Platform.Tests`.
 
 `Nymeria.Core` owns the format-independent model data and parser contract
 described in [MODEL_DATA.md](MODEL_DATA.md), the minimal scene data described in
@@ -149,11 +163,13 @@ in `Nymeria.Core`: it is reusable 3D rendering math with no SDL, window, or GPU
 dependency, and the model-loading foundation is the first demonstrated need for
 the core project. `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d` reference only
 `Nymeria.Core` and the base class library; their supported subsets are documented
-in [OBJ.md](OBJ.md) and [O3D.md](O3D.md). `Nymeria.Formats.Png`,
-`Nymeria.Formats.Tga`, and `Nymeria.Formats.Dds` also reference only
-`Nymeria.Core` and the base class library. `Nymeria.Formats.Jpeg` references
-`Nymeria.Core` and the pure-managed `StbImageSharp` package.
-`Nymeria.Formats.Textures` references `Nymeria.Core` and the four image decoders.
+in [OBJ.md](OBJ.md) and [O3D.md](O3D.md); the `.x` subset is documented in
+[DIRECTX_X.md](DIRECTX_X.md). `Nymeria.Formats.Png`,
+`Nymeria.Formats.Tga`, `Nymeria.Formats.Dds`, and `Nymeria.Formats.Bmp` also
+reference only `Nymeria.Core` and the base class library.
+`Nymeria.Formats.Jpeg` references `Nymeria.Core` and the pure-managed
+`StbImageSharp` package. `Nymeria.Formats.Textures` references `Nymeria.Core`
+and the five image decoders.
 `Nymeria.Core.Lighting` references `System.Numerics` and the base class library
 only; [LIGHTING.md](LIGHTING.md) documents the equation, conventions, and limits.
 [MATERIALS.md](MATERIALS.md) documents every supported image subset and limit.
@@ -244,6 +260,16 @@ vertices, bones, unknown tags, and unsupported versions or flags with
 offset-based diagnostics. [O3D.md](O3D.md) is the authoritative statement of its
 supported subset and limitations.
 
+`Nymeria.Formats.DirectX.XModelParser` is the text `.x` implementation. It
+validates the `xof` header, skips top-level template declarations, walks nested
+frames, bakes affine `FrameTransformMatrix` transforms into the geometry,
+imports positions, polygon faces, normals, texture coordinates, and material
+names, fan-triangulates faces, and converts Direct3D's left-handed frame and
+winding. It rejects binary, compressed, skinned, animated, and unknown constructs
+with line-based diagnostics. Texture filenames and material colors are validated
+but not represented. [DIRECTX_X.md](DIRECTX_X.md) is the authoritative statement
+of its supported subset and limitations.
+
 The conventions are right-handed with `+Y` up and `-Z` forward, triangle-list
 winding counter-clockwise when viewed from outside, zero-based indices, and
 texture coordinates with a top-left origin and `+V` down. Parsers convert source
@@ -281,14 +307,16 @@ software fallback.
 - claims the window for presentation and reads its swapchain format.
 
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
-`examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloScene`,
-`examples/HelloMaterials`, and `examples/HelloLighting`. Each has its own vertex
+`examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloX`,
+`examples/HelloScene`, `examples/HelloMaterials`, and `examples/HelloLighting`.
+Each has its own vertex
 data and draw calls, and uses `GpuDevice` for the device, window claim, shader
 creation, buffer and texture upload, sampler creation, and swapchain format.
 [examples/README.md](../examples/README.md) documents their run commands and
-rendering conventions. `HelloOBJ` and `HelloO3D` share the renderer, geometry
-builder, shader, model-viewer loop, and camera controls in `examples/Shared`; the
-only difference is the format parser that produces the `ModelData`.
+rendering conventions. `HelloOBJ`, `HelloO3D`, and `HelloX` share the renderer,
+geometry builder, shader, model-viewer loop, and camera controls in
+`examples/Shared`; the only difference is the format parser that produces the
+`ModelData`.
 
 `GpuDevice.CreateShader` accepts optional uniform-buffer and sampler counts. SDL
 needs the uniform count to bind data pushed with `SDL_PushGPUVertexUniformData`
@@ -483,9 +511,15 @@ payload implied by the validated header.
 `Nymeria.Formats.Tga.TgaImageDecoder` handles uncompressed and RLE true-color
 TGA with 24-bit BGR or 32-bit BGRA pixels, both origin flags, and explicit
 rejection of color maps, interlacing, unsupported depths, and malformed RLE
-packets. `Nymeria.Formats.Dds.DdsTextureDecoder` validates DDS headers and the
-DX10 extension, then returns `CompressedTextureData` for BC1–BC5/BC7 (including
-sRGB variants) or RGBA `TextureData` for supported uncompressed layouts. Neither
+packets. `Nymeria.Formats.Bmp.BmpImageDecoder` handles the documented
+uncompressed Windows BMP subset: 24-bit BGR and 32-bit BGRA/BGRX, 8-bit indexed
+palettes, standard 32-bit `BI_BITFIELDS` masks, both row orientations, and the
+channel-mask rule for alpha. It validates the file and DIB headers, strides,
+masks, palette, offsets, and exact payload before decoding.
+`Nymeria.Formats.Dds.DdsTextureDecoder` validates DDS headers and the DX10
+extension, then returns
+`CompressedTextureData` for BC1–BC5/BC7 (including sRGB variants) or RGBA
+`TextureData` for supported uncompressed layouts. None of these decoders
 implements CPU block decompression or mipmap generation.
 
 `Nymeria.Formats.Jpeg.JpegImageDecoder` uses the pure-managed `StbImageSharp`
@@ -495,7 +529,7 @@ JPEG segment chain to reject truncation before decoding, reads dimensions with
 `ImageInfo` before allocating pixels, and forces opaque alpha because JPEG has no
 alpha channel. EXIF orientation is not applied.
 
-`Nymeria.Formats.Textures.TextureLoader` identifies PNG, JPEG, and DDS by
+`Nymeria.Formats.Textures.TextureLoader` identifies PNG, JPEG, DDS, and BMP by
 their signatures and TGA by a `.tga`/`.targa` source name plus header validation.
 It never opens a file, resolves a path, caches data, or makes a GPU call.
 
@@ -513,7 +547,7 @@ checkerboard in code, shares one checkerboard material and one mesh between two
 objects, adds a blue-tinted variant of the same texture, and adds an untextured
 solid material. It leaves `Scene.Lighting` null, so the shared renderer uses a
 white ambient term and no directional term: the output is the same unlit base
-color as before lighting existed. A supplied PNG, JPEG, TGA, or DDS path is
+color as before lighting existed. A supplied PNG, JPEG, TGA, DDS, or BMP path is
 decoded through the loader; a missing, unreadable, malformed, oversized, or
 unsupported file prints a diagnostic and falls back to the generated checkerboard
 while the example keeps running. A compressed DDS format the GPU cannot sample is
@@ -579,8 +613,8 @@ graph. The scene still owns no GPU resources.
   and then rethrow.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
-- `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloScene`, `HelloMaterials`, and
-  `HelloLighting` own their `Camera` instances and share the
+- `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
+  and `HelloLighting` own their `Camera` instances and share the
   `FlyCameraControls` implementation. The camera has no unmanaged resources. The
   input mapping disables relative mouse mode and discards pending mouse motion
   during disposal, before the window is destroyed.
@@ -609,11 +643,13 @@ Limitations in this version:
   reload, mipmap generation, CPU block decompression, or animation. Alpha is
   decoded but not blended. `HelloMaterials` accepts one explicit texture path
   and does not search for textures relative to a model.
-- Texture formats are PNG, JPEG, TGA, and a documented DDS subset. DDS support is
-  not universal: BC6H, ASTC, ETC, cubemaps, volumes, texture arrays, 3D textures,
-  padded row pitches, and uncompressed sRGB DDS layouts are rejected explicitly.
-  Compressed upload requires the backend to support the format, and only a
-  block-aligned prefix of a compressed mip chain is uploaded.
+- Texture formats are PNG, JPEG, TGA, BMP, and a documented DDS subset. DDS
+  support is not universal: BC6H, ASTC, ETC, cubemaps, volumes, texture arrays,
+  3D textures, padded row pitches, and uncompressed sRGB DDS layouts are rejected
+  explicitly. BMP support is a documented subset: RLE, 1/4/16-bit, OS/2 headers,
+  embedded JPEG/PNG streams, and non-standard masks are rejected. Compressed
+  upload requires the backend to support the format, and only a block-aligned
+  prefix of a compressed mip chain is uploaded.
 - The Wavefront OBJ parser handles a documented polygonal subset only. It does
   not load MTL materials or textures, tessellate concave or non-planar polygons,
   or import lines, points, or free-form geometry. `HelloCube` still constructs
@@ -624,6 +660,12 @@ Limitations in this version:
   and it does not apply the pivot matrix. Its tests and fixture are synthetic;
   ordinary stock OMSI content has not been validated. [O3D.md](O3D.md) lists the
   exact matrix and uncertainties.
+- The text DirectX `.x` parser handles a documented static-mesh subset only. It
+  rejects binary and compressed files, skinning, animation, material effects,
+  and unknown objects; it bakes frame transforms, preserves
+  only material names, and fan-triangulates polygons without concavity tests.
+  Its fixture and tests are synthetic, so broad exporter compatibility is not
+  claimed. [DIRECTX_X.md](DIRECTX_X.md) lists the exact matrix and limitations.
 - GPU output and interactive input are not validated by CI.
   [SMOKE_TEST.md](SMOKE_TEST.md) covers them.
 
@@ -636,18 +678,18 @@ and platform projects and the examples exist today.
 examples  -----------------------> engine projects
    |
    v
-Nymeria.Graphics   Nymeria.Platform   Nymeria.Formats.* (Obj, O3d, Png, Tga, Jpeg, Dds)
+Nymeria.Graphics   Nymeria.Platform   Nymeria.Formats.* (Obj, O3d, DirectX, Png, Tga, Jpeg, Dds, Bmp)
         \                /                                |
          v              v                                 v
                             Nymeria.Core
 
-Nymeria.Formats.Textures  ->  Nymeria.Core + Png + Jpeg + Tga + Dds
+Nymeria.Formats.Textures  ->  Nymeria.Core + Png + Jpeg + Tga + Dds + Bmp
 ```
 
 - `Nymeria.Core` must not depend on graphics, platform, or format code.
 - Every `Nymeria.Formats.*` decoder depends on `Nymeria.Core` and must not depend
   on graphics or platform code. `Nymeria.Formats.Textures` additionally depends
-  on the four image decoders.
+  on the five image decoders.
 - `Nymeria.Graphics` and `Nymeria.Platform` may depend on `Nymeria.Core`.
 - `Nymeria.Graphics` and `Nymeria.Platform` must not depend on each other
   directly unless the maintainer approves and this document records the reason.
@@ -657,10 +699,11 @@ Nymeria.Formats.Textures  ->  Nymeria.Core + Png + Jpeg + Tga + Dds
 `Nymeria.Core` has no project references; it uses `System.Numerics` and the base
 class library only. Its scene types reference `MeshData`, `Material`, and
 `Texture` but no GPU, SDL3, or format code. `Nymeria.Formats.Obj`,
-`Nymeria.Formats.O3d`, `Nymeria.Formats.Png`, `Nymeria.Formats.Tga`, and
-`Nymeria.Formats.Dds` reference `Nymeria.Core` only. `Nymeria.Formats.Jpeg`
-references `Nymeria.Core` and `StbImageSharp`; `Nymeria.Formats.Textures`
-references `Nymeria.Core` and the four decoders.
+`Nymeria.Formats.O3d`, `Nymeria.Formats.DirectX`, `Nymeria.Formats.Png`,
+`Nymeria.Formats.Tga`, `Nymeria.Formats.Dds`, and `Nymeria.Formats.Bmp`
+reference `Nymeria.Core` only. `Nymeria.Formats.Jpeg` references
+`Nymeria.Core` and `StbImageSharp`; `Nymeria.Formats.Textures` references
+`Nymeria.Core` and the five decoders.
 `Nymeria.Graphics` and `Nymeria.Platform` have no
 `Nymeria.Core` reference because neither has a demonstrated need for it yet.
 They do not reference each other: each example creates the window and passes
@@ -670,7 +713,9 @@ They do not reference each other: each example creates the window and passes
 `Nymeria.Core` for its cube model data; `HelloOBJ` references `Nymeria.Core`,
 `Nymeria.Formats.Obj`, `Nymeria.Graphics`, and `Nymeria.Platform`; `HelloO3D`
 references `Nymeria.Core`, `Nymeria.Formats.O3d`, `Nymeria.Graphics`, and
-`Nymeria.Platform`; `HelloScene` references `Nymeria.Core` for scene and mesh
+`Nymeria.Platform`; `HelloX` references `Nymeria.Core`,
+`Nymeria.Formats.DirectX`, `Nymeria.Graphics`, and `Nymeria.Platform`;
+`HelloScene` references `Nymeria.Core` for scene and mesh
 data, `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for
 the window; `HelloMaterials` references `Nymeria.Core` for materials and mesh
 data, `Nymeria.Formats.Textures` for texture decoding, `Nymeria.Graphics` for the
@@ -681,8 +726,9 @@ references `Nymeria.Core` for scene, lighting, and material data,
 or formats projects.
 No engine project references an example. `Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
-`Nymeria.Formats.Png.Tests`, `Nymeria.Formats.Tga.Tests`,
-`Nymeria.Formats.Jpeg.Tests`, `Nymeria.Formats.Dds.Tests`,
+`Nymeria.Formats.DirectX.Tests`, `Nymeria.Formats.Png.Tests`,
+`Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
+`Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Bmp.Tests`,
 `Nymeria.Formats.Textures.Tests`, and `Nymeria.Platform.Tests` reference their
 project or projects under test. No interfaces or abstractions are created to enforce the
 future direction. Adding them speculatively would violate YAGNI.
@@ -722,21 +768,23 @@ The following choices are implemented:
   scene references one optional `SceneLighting`; null means unlit. The lighting
   types depend only on `System.Numerics` and contain no SDL3 or GPU state.
   [LIGHTING.md](LIGHTING.md) is the authoritative contract.
-- **Model parsing:** `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d` are
-  dependency-free parsers in isolated format projects. They use the base class
-  library and `Nymeria.Core` only, implement `IModelParser`, and document their
-  supported subsets and limitations in [OBJ.md](OBJ.md) and [O3D.md](O3D.md). No
-  third-party OBJ or O3D loader is used.
+- **Model parsing:** `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`, and
+  `Nymeria.Formats.DirectX` are dependency-free parsers in isolated format
+  projects. They use the base class library and `Nymeria.Core` only, implement
+  `IModelParser`, and document their supported subsets and limitations in
+  [OBJ.md](OBJ.md), [O3D.md](O3D.md), and [DIRECTX_X.md](DIRECTX_X.md). No
+  third-party OBJ, O3D, or `.x` loader is used.
 - **Material data:** `Nymeria.Core.Materials` contains the shared base-color
   tint, optional `Texture` reference, RGBA texture data with mip chains, and
   block-compressed texture data for BC1–BC5/BC7. Materials, textures, and scene
   objects own no GPU handle or SDL3 state.
-- **Texture parsing:** `Nymeria.Formats.Png`, `Nymeria.Formats.Tga`, and
-  `Nymeria.Formats.Dds` are dependency-free decoders that use only the base class
-  library and `Nymeria.Core`; `Nymeria.Formats.Jpeg` adds the pure-managed
-  `StbImageSharp` package; `Nymeria.Formats.Textures` dispatches by signature.
-  Every decoder enforces the input, dimension, mip, and payload limits documented
-  in [MATERIALS.md](MATERIALS.md).
+- **Texture parsing:** `Nymeria.Formats.Png`, `Nymeria.Formats.Tga`,
+  `Nymeria.Formats.Dds`, and `Nymeria.Formats.Bmp` are dependency-free decoders
+  that use only the base class library and `Nymeria.Core`;
+  `Nymeria.Formats.Jpeg` adds the pure-managed `StbImageSharp` package;
+  `Nymeria.Formats.Textures` dispatches by signature. Every decoder enforces the
+  input, dimension, mip, and payload limits documented in
+  [MATERIALS.md](MATERIALS.md).
 - **Texture upload:** `GpuDevice` supports RGBA8 and BC1–BC7 mip chains with a
   capability check, 512-byte level offsets, and one copy pass per texture. The
   shared material renderer owns two samplers so single-level textures never
@@ -752,10 +800,9 @@ The following choices are implemented:
   `xunit.runner.visualstudio` 4.0.1, and `Microsoft.NET.Test.Sdk` 18.11.0. The
   headless tests cover platform-independent `WindowOptions` behavior, model-data
   validation and parser error semantics, transform composition, scene lifecycle
-  and mesh sharing, lighting data and math, material and texture data, the OBJ
-  subset, the O3D subset,
-  and the PNG, JPEG, TGA, DDS, and loader paths; they do not launch a GUI or
-  create a GPU device.
+  and mesh sharing, lighting data and math, material and texture data, the OBJ,
+  O3D, and text `.x` subsets, and the PNG, JPEG, TGA, BMP, DDS, and loader paths;
+  they do not launch a GUI or create a GPU device.
 
 The following choices remain open:
 

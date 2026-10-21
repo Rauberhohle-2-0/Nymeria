@@ -1,4 +1,5 @@
 using Nymeria.Core.Materials;
+using Nymeria.Formats.Bmp;
 using Nymeria.Formats.Dds;
 using Nymeria.Formats.Jpeg;
 using Nymeria.Formats.Png;
@@ -11,8 +12,8 @@ namespace Nymeria.Formats.Textures;
 /// </summary>
 /// <remarks>
 /// <para>
-/// PNG, JPEG, and DDS are recognized by their signatures, so a misleading file
-/// extension cannot select the wrong decoder. TGA has no signature; it is
+/// PNG, JPEG, DDS, and BMP are recognized by their signatures, so a misleading
+/// file extension cannot select the wrong decoder. TGA has no signature; it is
 /// recognized only when the supplied source name ends in <c>.tga</c> or
 /// <c>.targa</c>, and the TGA header and pixel data are still fully validated.
 /// </para>
@@ -53,6 +54,8 @@ public sealed class TextureLoader
     private static ReadOnlySpan<byte> JpegSignature => [0xFF, 0xD8, 0xFF];
 
     private static ReadOnlySpan<byte> DdsSignature => "DDS "u8;
+
+    private static ReadOnlySpan<byte> BmpSignature => "BM"u8;
 
     /// <summary>
     /// Loads one texture from a stream.
@@ -102,6 +105,12 @@ public sealed class TextureLoader
             return new DdsTextureDecoder(name).Decode(memory);
         }
 
+        if (content.StartsWith(BmpSignature))
+        {
+            using var memory = new MemoryStream(input, writable: false);
+            return new BmpImageDecoder(name).Decode(memory);
+        }
+
         if (HasTgaExtension(name))
         {
             using var memory = new MemoryStream(input, writable: false);
@@ -111,10 +120,12 @@ public sealed class TextureLoader
         throw new TextureFormatException(
             name is null
                 ? "The texture format could not be identified. Supported formats are " +
-                  "PNG, JPEG, and DDS by signature, and TGA by a .tga source name."
-                : $"The texture '{name}' is not a recognized PNG, JPEG, DDS, or TGA " +
-                  "image. PNG, JPEG, and DDS are identified by their signatures; TGA " +
-                  "requires a .tga or .targa source name and a valid TGA header.");
+                  "PNG, JPEG, DDS, and BMP by signature, and TGA by a .tga source " +
+                  "name."
+                : $"The texture '{name}' is not a recognized PNG, JPEG, DDS, BMP, or " +
+                  "TGA image. PNG, JPEG, DDS, and BMP are identified by their " +
+                  "signatures; TGA requires a .tga or .targa source name and a " +
+                  "valid TGA header.");
     }
 
     private static bool HasTgaExtension(string? sourceName)

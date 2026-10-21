@@ -15,6 +15,7 @@ dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
 dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
+dotnet run --project examples/HelloX/HelloX.csproj
 dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
@@ -32,7 +33,7 @@ and compiled by SDL's Metal backend at startup, so there is no shader compiler
 step and no external shader file to deploy.
 
 Run each example checklist separately. The failure-path checks at the end apply
-to all seven.
+to all eight.
 
 ## HelloTriangle checks
 
@@ -200,6 +201,51 @@ to all seven.
 14. **No unhandled exceptions.** No exception text appears in the terminal during
     normal launch, movement, mouse look, resize, minimize, restore, or shutdown.
 
+## HelloX checks
+
+1. **Window appears.** With no arguments, a native window opens without a
+   console error. The checked-in `Assets/cube.x` fixture is copied beside the
+   built executable, so this works from any current directory.
+2. **Title is correct.** The title bar reads `Nymeria`.
+3. **Model renders.** A cube is visible against the dark background with six
+   distinct solid face colors and perspective-projected edges. The output is
+   not blank, black, or missing faces.
+4. **Depth occlusion is correct.** Near faces hide the faces behind them. The
+   cube reads as a solid object rather than a flat set of triangles.
+5. **Camera framing is stable.** Without input, the camera does not drift and
+   the model stays visible.
+6. **Movement and mouse look work.** The shared controls behave as in
+   `HelloCube`: `W`/`A`/`S`/`D`, `Space`, `Left Control`, `Shift`, and held right
+   mouse button for look. Releasing the button restores the cursor.
+7. **Source-face order is preserved.** The fixture's source faces are clockwise
+   in Direct3D's left-handed frame. After conversion, no face is inside-out in a
+   way that makes the cube look like a set of disconnected quads. Culling is
+   disabled, so also inspect the silhouette and the consistency of the six face
+   colors while rotating.
+8. **Normals and texture coordinates are accepted.** The fixture imports
+   normals and UVs; the viewer does not require them for its unlit color shader,
+   but loading must not fail. Run the parser-linked tests as the authoritative
+   check for values.
+9. **Resize works.** Drag a corner or edge, including to a very wide and a very
+   tall window. Proportions stay correct and the window remains responsive.
+10. **High-DPI works.** On a Retina display, cube edges are drawn at the display's
+    native pixel density rather than an upscaled low-resolution image.
+11. **Minimize and restore work.** Minimize the window for a few seconds, then
+    restore it. The scene reappears with correct depth and proportions.
+12. **User-supplied path works.** Run with the fixture path passed explicitly,
+    for example
+    `dotnet run --project examples/HelloX/HelloX.csproj -- examples/HelloX/Assets/cube.x`.
+    The same cube renders.
+13. **Close button exits.** Click the red close button. The process ends, the
+    terminal prompt returns, and `echo $?` reports `0`.
+14. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
+    The process ends with status code `0`.
+15. **No busy-spin.** The loop renders continuously at about 60 frames per
+    second, so CPU use is higher than the idle triangle, but it must stay well
+    below one full core. Memory use stays stable over several minutes.
+16. **No unhandled exceptions.** No exception text appears in the terminal during
+    normal launch, movement, mouse look, resize, minimize, restore, or shutdown.
+
 ## HelloScene checks
 
 1. **Window appears.** A native window opens without a console error. The
@@ -301,32 +347,42 @@ to all seven.
     `examples/HelloMaterials/Assets/checker-rle.tga`. It is 24-bit BGR and
     top-down; the four color bands appear in the same orientation and are fully
     opaque.
-18. **Uncompressed DDS works.** Run with
+18. **Uncompressed 24-bit BMP works.** Run with
+    `examples/HelloMaterials/Assets/checker.bmp`. The terminal reports 128 × 128
+    and 65536 RGBA bytes, and the quadrants keep their documented orientation.
+    The file is stored bottom-up with four-byte row padding, so a wrong stride or
+    row order is visible as bands or a vertical flip. Every fragment is opaque.
+19. **32-bit top-down BMP works.** Run with
+    `examples/HelloMaterials/Assets/checker-32.bmp`. The terminal reports
+    128 × 128 and 65536 RGBA bytes. The file uses a negative height, so rows are
+    stored top-down; the result matches the PNG orientation and is fully opaque
+    because no alpha mask is declared.
+20. **Uncompressed DDS works.** Run with
     `examples/HelloMaterials/Assets/checker-rgba.dds`. The terminal reports
     128 × 128 and 65536 RGBA bytes, and the quadrants match the PNG result.
-19. **Compressed DDS works or reports capability.** Run with
+21. **Compressed DDS works or reports capability.** Run with
     `examples/HelloMaterials/Assets/checker-bc1.dds`. The terminal reports BC1 with
     eight mip levels. On a backend that supports BC1, the checker pattern renders
     without a capability warning. If support is missing, the terminal reports the
     format and falls back to the generated checkerboard without crashing. Mip
     levels below 4 × 4 are not uploaded, and the result does not show seams or
     missing mips at a distance.
-20. **Invalid texture falls back.** Run the example with a missing path and then a
-    malformed or oversized PNG, JPEG, TGA, and DDS. The terminal prints a clear
+22. **Invalid texture falls back.** Run the example with a missing path and then a
+    malformed or oversized PNG, JPEG, TGA, DDS, and BMP. The terminal prints a clear
     diagnostic naming the path and reason, uses the generated checkerboard, and
     the window still opens. Close it normally; the process exits with status code
     `0`.
-21. **Close button exits.** Click the red close button. The process ends, the
+23. **Close button exits.** Click the red close button. The process ends, the
     terminal prompt returns, and `echo $?` reports `0`. The cursor is visible.
-22. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
+24. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
     The process ends with status code `0`.
-23. **Repeated cycles work.** Repeat launch and close at least three times, with
+25. **Repeated cycles work.** Repeat launch and close at least three times, with
     and without each texture format. Each launch opens one window; each close
     leaves no orphan process.
-24. **No busy-spin or per-frame uploads.** CPU use stays well below one full core
+26. **No busy-spin or per-frame uploads.** CPU use stays well below one full core
     and memory use stays stable for several minutes. The texture and mesh are
     uploaded once at first use, not every frame, including mip chains.
-25. **No unhandled exceptions.** No exception text appears in the terminal during
+27. **No unhandled exceptions.** No exception text appears in the terminal during
     normal launch, movement, mouse look, resize, minimize, restore, any texture
     load, fallback, or shutdown.
 
@@ -432,6 +488,17 @@ These checks are optional and must not modify tracked files.
   example, a face that references an undefined position. `HelloOBJ` must print
   the source line and offending reference, then exit with status code `1`
   without an unhandled exception.
+- **Missing .x file:** run `HelloX` with a path that does not exist. It must
+  print a clear "not found" message and exit with status code `1` before a
+  window is created.
+- **Malformed .x file:** create a temporary file outside tracked paths with a
+  valid header but a face that references a vertex beyond the mesh. `HelloX`
+  must print the source line and the invalid index, then exit with status code
+  `1` without partial geometry.
+- **Unsupported .x variant:** create text files with `xof 0303bin 0032` and
+  `xof 0303tzip 0032` headers, and a text file containing `AnimationSet` or
+  `SkinWeights`. `HelloX` must reject each with a message naming binary,
+  compressed, animation, or skinning support, and exit with status code `1`.
 - **Missing O3D file:** run `HelloO3D` with a path that does not exist. It must
   print a clear "not found" message and exit with status code `1` before a window
   is created.
@@ -456,7 +523,10 @@ These checks are optional and must not modify tracked files.
 
 Report the macOS version, architecture (`arm64` or `x86_64`), GPU model, date, and
 pass/fail for each check, separately for `HelloTriangle`, `HelloCube`,
-`HelloOBJ`, `HelloO3D`, `HelloScene`, `HelloMaterials`, and `HelloLighting`. Do
+`HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`, and
+`HelloLighting`. Do
 not describe this manual checklist as a CI result.
-State separately that the checked-in `HelloO3D` fixture is synthetic and that
-real OMSI content was not available for validation.
+State separately that the checked-in `HelloO3D` fixture is synthetic, that the
+`HelloX` fixture is original project content rather than an exported game asset,
+that real OMSI content was not available for validation, and that no broad
+third-party `.x` exporter corpus was validated.

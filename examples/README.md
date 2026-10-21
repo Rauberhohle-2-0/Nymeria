@@ -6,13 +6,14 @@ pipelines, input mapping, and frame loop. `Nymeria.Graphics` provides the
 GPU device, the window presentation claim, shader and buffer creation, the
 swapchain format, and the reusable camera math. `Nymeria.Core` provides the
 format-independent model data used by `HelloCube`, `Nymeria.Formats.Obj`
-provides the OBJ parser used by `HelloOBJ`, and `Nymeria.Formats.O3d` provides
-the O3D parser used by `HelloO3D`. `HelloOBJ` and `HelloO3D` share the renderer,
-geometry builder, shader, model-viewer loop, and input mapping in
+provides the OBJ parser used by `HelloOBJ`, `Nymeria.Formats.O3d` provides
+the O3D parser used by `HelloO3D`, and `Nymeria.Formats.DirectX` provides the
+text `.x` parser used by `HelloX`. `HelloOBJ`, `HelloO3D`, and `HelloX` share the
+renderer, geometry builder, shader, model-viewer loop, and input mapping in
 `examples/Shared`. `HelloScene` uses the scene layer in `Nymeria.Core`, the
 shared geometry builder, the shared model shader, and the shared camera controls.
 `HelloMaterials` uses the material and texture data in `Nymeria.Core`, the
-PNG/JPEG/TGA/DDS loader in `Nymeria.Formats.Textures`, and the shared camera
+PNG/JPEG/TGA/DDS/BMP loader in `Nymeria.Formats.Textures`, and the shared camera
 controls. `HelloMaterials` and `HelloLighting` share the material renderer and
 shader in `examples/Shared`; `HelloLighting` adds the lighting data in
 `Nymeria.Core`, the OBJ parser in `Nymeria.Formats.Obj`, and the same texture
@@ -31,6 +32,7 @@ dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
 dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
+dotnet run --project examples/HelloX/HelloX.csproj
 dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
@@ -80,9 +82,9 @@ renders continuously, and targets about 16 ms per frame.
 
 ### Controls
 
-`HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloScene`, `HelloMaterials`, and
-`HelloLighting` share `examples/Shared/FlyCameraControls.cs`, so these controls
-apply to all six examples.
+`HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
+and `HelloLighting` share `examples/Shared/FlyCameraControls.cs`, so these
+controls apply to all seven examples.
 
 | Input | Action |
 | --- | --- |
@@ -244,6 +246,41 @@ dotnet run --project examples/HelloO3D/HelloO3D.csproj -- path/to/model.o3d
 - Scope: no textures, lighting, animation, bones, skinning, scrambling, pivot
   transforms, object hierarchy, or generic asset registry.
 
+## HelloX
+
+`HelloX` loads a text DirectX `.x` file and renders it through the same shared
+renderer, camera, depth test, input mapping, resize handling, and shutdown path as
+`HelloOBJ` and `HelloO3D`. It is the rendering proof for the importer described in
+[../docs/DIRECTX_X.md](../docs/DIRECTX_X.md).
+
+```bash
+dotnet run --project examples/HelloX/HelloX.csproj
+dotnet run --project examples/HelloX/HelloX.csproj -- path/to/model.x
+```
+
+- Fixture: [HelloX/Assets/cube.x](HelloX/Assets/cube.x), an original project
+  asset. It is the `HelloOBJ` cube expressed in DirectX's left-handed frame with
+  clockwise source faces, 24 corners, six quads, normals, texture coordinates,
+  and six material labels. The parser converts it back, so `HelloX` shows the
+  same cube as `HelloOBJ`. Its provenance and layout are documented in
+  [HelloX/Assets/README.md](HelloX/Assets/README.md).
+- Default path: the fixture is copied next to the built executable, so the
+  no-argument command works from any directory. A supplied path is used as given
+  and may be relative to the current directory.
+- Errors: a missing, unreadable, or malformed file prints a message that includes
+  the parser's source-line diagnostic, then exits with status code `1` before a
+  window is created. Binary, compressed, skinned, animated, and unknown
+  constructs fail the same way instead of being guessed.
+- Conversions: the importer bakes frame transforms, converts the left-handed
+  frame and winding, transforms normals with the inverse transpose, and preserves
+  Direct3D's top-left texture coordinates. Fan triangulation keeps source order.
+- Subset colors: the six fixture labels `front`, `back`, `right`, `left`, `top`,
+  and `bottom` map to six solid colors. Unknown labels use one neutral color.
+  This is example presentation, not a material system; material colors and
+  texture filenames are not imported.
+- Scope: no binary or compressed `.x`, animation, skinning, skeleton, effects,
+  textures, lighting, hierarchy in the model, or generic asset registry.
+
 ## HelloScene
 
 `HelloScene` demonstrates `Nymeria.Core.Scenes`: four initial objects reference
@@ -285,6 +322,8 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker.jpg
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker.tga
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-rle.tga
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker.bmp
+dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-32.bmp
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-bc1.dds
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/HelloMaterials/Assets/checker-rgba.dds
 ```
@@ -316,9 +355,13 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/H
   scene sets no `Scene.Lighting`, so this example stays unlit: the renderer
   substitutes a white ambient term and no directional term.
 - Formats: a supplied path is decoded by `Nymeria.Formats.Textures`. PNG, JPEG,
-  and DDS are identified by signature; TGA uses a `.tga`/`.targa` name plus
+  DDS, and BMP are identified by signature; TGA uses a `.tga`/`.targa` name plus
   header validation. The checked-in `Assets` fixtures are original project
   content, and their layout is documented in `Assets/README.md`.
+- BMP: uncompressed 24-bit BGR, 32-bit BGRA/BGRX, 8-bit indexed, and standard
+  32-bit `BI_BITFIELDS` images, bottom-up or top-down. The 24-bit fixture is
+  bottom-up; the 32-bit fixture is top-down and opaque. RLE, 1/4/16-bit, OS/2
+  headers, embedded JPEG/PNG streams, and non-standard masks are rejected.
 - JPEG: decoded through the pure-managed `StbImageSharp` package with Nymeria's
   own input bound, segment-chain validation, and dimension checks. Alpha is
   opaque. EXIF orientation is not applied.
@@ -387,15 +430,16 @@ dotnet run --project examples/HelloLighting/HelloLighting.csproj -- path/to/mode
 
 ## Platform limits
 
-All seven examples are macOS-only for now. They require SDL's Metal backend and
+All eight examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
-formats. `HelloOBJ` and `HelloO3D` use focused format subsets, not general
-material or scene importers. `HelloO3D` accepts only unscrambled static meshes
+formats. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
+general material or scene importers. `HelloO3D` accepts only unscrambled static meshes
 and rejects bones and animation. `HelloCube` still constructs its model data in
 code. `HelloScene` adds flat, transformed instances but no hierarchy.
 `HelloMaterials` adds a tint and an optional base-color texture from PNG, JPEG,
-TGA, or a documented DDS subset, not a material pipeline. DDS support is not
-universal, and compressed formats depend on backend capability. `HelloLighting`
+TGA, BMP, or a documented DDS subset, not a material pipeline. DDS and BMP
+support are not universal, and compressed DDS formats depend on backend
+capability. `HelloLighting`
 adds one ambient term and one directional Lambert term, not a general light
 system. No example has shadows, specular or PBR shading, an object hierarchy, or
 collisions. GPU output, texture sampling, compressed-format capability, lighting,
