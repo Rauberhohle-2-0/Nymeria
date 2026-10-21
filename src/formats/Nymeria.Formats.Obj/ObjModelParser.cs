@@ -25,7 +25,26 @@ namespace Nymeria.Formats.Obj;
 /// </remarks>
 public sealed class ObjModelParser : IModelParser
 {
+    /// <summary>The largest accepted OBJ input, in bytes.</summary>
+    public const int MaxInputBytes = 64 * 1024 * 1024;
+
+    /// <summary>
+    /// The largest accepted count for each position, texture-coordinate, and
+    /// normal stream, and for the deduplicated mesh vertices.
+    /// </summary>
+    public const int MaxVertexCount = 2_000_000;
+
+    /// <summary>The largest accepted triangle count.</summary>
+    public const int MaxTriangleCount = 4_000_000;
+
+    /// <summary>The largest accepted number of material subsets.</summary>
+    public const int MaxSubsetCount = 65_536;
+
+    /// <summary>The largest accepted source line, in characters.</summary>
+    public const int MaxLineLength = 1024 * 1024;
+
     private readonly string? _sourceName;
+    private readonly ObjImportLimits _limits;
 
     /// <summary>
     /// Creates a Wavefront OBJ parser.
@@ -35,8 +54,16 @@ public sealed class ObjModelParser : IModelParser
     /// affect parsing or open any file.
     /// </param>
     public ObjModelParser(string? sourceName = null)
+        : this(sourceName, ObjImportLimits.Default)
     {
+    }
+
+    internal ObjModelParser(string? sourceName, ObjImportLimits limits)
+    {
+        ArgumentNullException.ThrowIfNull(limits);
+
         _sourceName = string.IsNullOrWhiteSpace(sourceName) ? null : sourceName;
+        _limits = limits;
     }
 
     /// <summary>
@@ -59,30 +86,238 @@ public sealed class ObjModelParser : IModelParser
             throw new ArgumentException("The stream must be readable.", nameof(stream));
         }
 
+        RejectOversizedSeekableInput(stream);
+
         // The caller owns the stream. Leave it open even when parsing fails.
-        using var reader = new StreamReader(
+        using var boundedStream = new BoundedReadStream(
             stream,
-            Encoding.UTF8,
+            _limits.MaxInputBytes,
+            () => Error(
+                "the input is larger than the supported limit of " +
+                $"{_limits.MaxInputBytes} bytes."));
+        using var reader = new StreamReader(
+            boundedStream,
+            new UTF8Encoding(
+                encoderShouldEmitUTF8Identifier: false,
+                throwOnInvalidBytes: true),
             detectEncodingFromByteOrderMarks: true,
             bufferSize: 4096,
             leaveOpen: true);
-
-        var state = new ParseState(_sourceName);
+        var lineReader = new BoundedLineReader(reader, _limits.MaxLineLength);
+        var state = new ParseState(_sourceName, _limits);
         int lineNumber = 0;
         string? line;
 
-        while ((line = reader.ReadLine()) is not null)
+        try
         {
-            lineNumber++;
-            state.ParseLine(line, lineNumber);
+            while ((line = lineReader.ReadLine(lineNumber + 1, Error)) is not null)
+            {
+                lineNumber++;
+                state.ParseLine(line, lineNumber);
+            }
+        }
+        catch (DecoderFallbackException exception)
+        {
+            throw Error($"the input is not valid UTF-8 text: {exception.Message}");
         }
 
         return state.Build();
     }
 
+    private void RejectOversizedSeekableInput(Stream stream)
+    {
+        if (!stream.CanSeek)
+        {
+            return;
+        }
+
+        long remaining;
+
+        try
+        {
+            remaining = stream.Length - stream.Position;
+        }
+        catch (NotSupportedException)
+        {
+            // The bounded wrapper still enforces the limit while reading.
+            return;
+        }
+
+        if (remaining > _limits.MaxInputBytes)
+        {
+            throw Error(
+                "the input is larger than the supported limit of " +
+                $"{_limits.MaxInputBytes} bytes.");
+        }
+    }
+
+    private ModelFormatException Error(string message)
+    {
+        return new ModelFormatException(
+            _sourceName is null ? message : $"{_sourceName}: {message}");
+    }
+
+    private ModelFormatException Error(int lineNumber, string message)
+    {
+        string location = _sourceName is null
+            ? $"line {lineNumber}"
+            : $"{_sourceName}: line {lineNumber}";
+
+        return new ModelFormatException($"{location}: {message}");
+    }
+
+    private sealed class BoundedReadStream(
+        Stream inner,
+        int maxBytes,
+        Func<ModelFormatException> error) : Stream
+    {
+        private int _bytesRead;
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            return ReadCore(buffer.AsSpan(offset, count));
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            return ReadCore(buffer);
+        }
+
+        public override int ReadByte()
+        {
+            Span<byte> buffer = stackalloc byte[1];
+            return ReadCore(buffer) == 0 ? -1 : buffer[0];
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
+        }
+
+        private int ReadCore(Span<byte> buffer)
+        {
+            if (buffer.IsEmpty)
+            {
+                return 0;
+            }
+
+            int remaining = maxBytes - _bytesRead;
+
+            if (remaining <= 0)
+            {
+                // Probe one byte so a file that ends exactly at the limit is
+                // accepted, while any additional byte fails predictably.
+                Span<byte> probe = stackalloc byte[1];
+                return inner.Read(probe) == 0 ? 0 : throw error();
+            }
+
+            int read = inner.Read(buffer[..Math.Min(buffer.Length, remaining)]);
+            _bytesRead += read;
+            return read;
+        }
+    }
+
+    private sealed class BoundedLineReader(TextReader reader, int maxLineLength)
+    {
+        private readonly char[] _buffer = new char[4096];
+        private int _offset;
+        private int _count;
+
+        public string? ReadLine(
+            int lineNumber,
+            Func<int, string, ModelFormatException> error)
+        {
+            StringBuilder? builder = null;
+
+            while (true)
+            {
+                int value = Peek();
+
+                if (value < 0)
+                {
+                    return builder?.ToString();
+                }
+
+                _offset++;
+
+                if (value == '\n')
+                {
+                    return builder?.ToString() ?? string.Empty;
+                }
+
+                if (value == '\r')
+                {
+                    if (Peek() == '\n')
+                    {
+                        _offset++;
+                    }
+
+                    return builder?.ToString() ?? string.Empty;
+                }
+
+                builder ??= new StringBuilder();
+
+                if (builder.Length >= maxLineLength)
+                {
+                    throw error(
+                        lineNumber,
+                        $"the line is longer than the supported limit of " +
+                        $"{maxLineLength} characters.");
+                }
+
+                builder.Append((char)value);
+            }
+        }
+
+        private int Peek()
+        {
+            if (_offset >= _count)
+            {
+                _count = reader.Read(_buffer, 0, _buffer.Length);
+                _offset = 0;
+
+                if (_count <= 0)
+                {
+                    return -1;
+                }
+            }
+
+            return _buffer[_offset];
+        }
+    }
+
     private sealed class ParseState
     {
         private readonly string? _sourceName;
+        private readonly ObjImportLimits _limits;
         private readonly List<Vector3> _positions = [];
         private readonly List<Vector2> _textureCoordinates = [];
         private readonly List<Vector3> _normals = [];
@@ -98,9 +333,10 @@ public sealed class ObjModelParser : IModelParser
         private bool _usesTextureCoordinates;
         private bool _usesNormals;
 
-        public ParseState(string? sourceName)
+        public ParseState(string? sourceName, ObjImportLimits limits)
         {
             _sourceName = sourceName;
+            _limits = limits;
         }
 
         public void ParseLine(string line, int lineNumber)
@@ -255,6 +491,7 @@ public sealed class ObjModelParser : IModelParser
                 ParseFloat(parts[3], lineNumber, "position weight");
             }
 
+            EnsureAttributeCapacity(_positions.Count, "position", lineNumber);
             _positions.Add(new Vector3(x, y, z));
         }
 
@@ -282,6 +519,10 @@ public sealed class ObjModelParser : IModelParser
 
             // OBJ uses a bottom-left UV origin. Nymeria's model data uses a
             // top-left origin with +V down.
+            EnsureAttributeCapacity(
+                _textureCoordinates.Count,
+                "texture coordinate",
+                lineNumber);
             _textureCoordinates.Add(new Vector2(u, 1.0f - v));
         }
 
@@ -297,10 +538,25 @@ public sealed class ObjModelParser : IModelParser
                     "were found.");
             }
 
+            EnsureAttributeCapacity(_normals.Count, "normal", lineNumber);
             _normals.Add(new Vector3(
                 ParseFloat(parts[0], lineNumber, "normal x"),
                 ParseFloat(parts[1], lineNumber, "normal y"),
                 ParseFloat(parts[2], lineNumber, "normal z")));
+        }
+
+        private void EnsureAttributeCapacity(
+            int count,
+            string kind,
+            int lineNumber)
+        {
+            if (count >= _limits.MaxVertexCount)
+            {
+                throw Error(
+                    lineNumber,
+                    $"the input defines more than {_limits.MaxVertexCount} {kind} " +
+                    "values, which exceeds the supported limit.");
+            }
         }
 
         private void ParseFace(string arguments, int lineNumber)
@@ -313,6 +569,24 @@ public sealed class ObjModelParser : IModelParser
                     lineNumber,
                     $"a face requires at least three vertices, but {tokens.Length} " +
                     "value(s) were found.");
+            }
+
+            if ((long)_cornerOrder.Count + tokens.Length > _limits.MaxVertexCount)
+            {
+                throw Error(
+                    lineNumber,
+                    $"the input would exceed the supported limit of " +
+                    $"{_limits.MaxVertexCount} mesh vertices.");
+            }
+
+            long triangleCount = ((long)_indices.Count / 3) + (tokens.Length - 2);
+
+            if (triangleCount > _limits.MaxTriangleCount)
+            {
+                throw Error(
+                    lineNumber,
+                    $"the input would exceed the supported limit of " +
+                    $"{_limits.MaxTriangleCount} triangles.");
             }
 
             var corners = new CornerKey[tokens.Length];
@@ -492,6 +766,13 @@ public sealed class ObjModelParser : IModelParser
 
             if (count > 0)
             {
+                if (_subsets.Count >= _limits.MaxSubsetCount)
+                {
+                    throw Error(
+                        $"the input creates more than {_limits.MaxSubsetCount} material " +
+                        "subsets, which exceeds the supported limit.");
+                }
+
                 _subsets.Add((_openSubsetStart, count, _openSubsetMaterial));
             }
 
@@ -557,4 +838,44 @@ public sealed class ObjModelParser : IModelParser
             int TextureCoordinate,
             int Normal);
     }
+}
+
+internal sealed class ObjImportLimits
+{
+    public static ObjImportLimits Default { get; } = new(
+        ObjModelParser.MaxInputBytes,
+        ObjModelParser.MaxVertexCount,
+        ObjModelParser.MaxTriangleCount,
+        ObjModelParser.MaxSubsetCount,
+        ObjModelParser.MaxLineLength);
+
+    public ObjImportLimits(
+        int maxInputBytes,
+        int maxVertexCount,
+        int maxTriangleCount,
+        int maxSubsetCount,
+        int maxLineLength)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxInputBytes);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxVertexCount);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxTriangleCount);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxSubsetCount);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxLineLength);
+
+        MaxInputBytes = maxInputBytes;
+        MaxVertexCount = maxVertexCount;
+        MaxTriangleCount = maxTriangleCount;
+        MaxSubsetCount = maxSubsetCount;
+        MaxLineLength = maxLineLength;
+    }
+
+    public int MaxInputBytes { get; }
+
+    public int MaxVertexCount { get; }
+
+    public int MaxTriangleCount { get; }
+
+    public int MaxSubsetCount { get; }
+
+    public int MaxLineLength { get; }
 }

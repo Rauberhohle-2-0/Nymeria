@@ -9,4 +9,8 @@
     <ProjectReference Include="../../core/Nymeria.Core/Nymeria.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nymeria.Formats.Obj.Tests" />
+  </ItemGroup>
+
 </Project>

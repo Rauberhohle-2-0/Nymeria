@@ -50,6 +50,9 @@ public sealed class O3dModelParser : IModelParser
     /// <summary>The largest accepted triangle count.</summary>
     public const int MaxTriangleCount = 4_000_000;
 
+    /// <summary>The largest accepted number of material subsets.</summary>
+    public const int MaxSubsetCount = 65_536;
+
     private readonly string? _sourceName;
 
     /// <summary>
@@ -292,7 +295,7 @@ public sealed class O3dModelParser : IModelParser
         ValidateTriangleIndices(reader, indexBuffer, positions.Length);
         ValidateMaterialIndices(reader, triangleMaterials, materialNames);
         IReadOnlyList<MeshSubset> subsets =
-            BuildSubsets(triangleMaterials, materialNames);
+            BuildSubsets(reader, triangleMaterials, materialNames);
 
         var mesh = new MeshData(
             positions,
@@ -548,6 +551,7 @@ public sealed class O3dModelParser : IModelParser
     }
 
     private static IReadOnlyList<MeshSubset> BuildSubsets(
+        Reader reader,
         ReadOnlySpan<ushort> triangleMaterials,
         string[]? materialNames)
     {
@@ -560,6 +564,14 @@ public sealed class O3dModelParser : IModelParser
                 triangleMaterials[i] == triangleMaterials[groupStart])
             {
                 continue;
+            }
+
+            if (subsets.Count >= MaxSubsetCount)
+            {
+                throw reader.Error(
+                    reader.Position,
+                    $"the file contains more than {MaxSubsetCount} material subsets, " +
+                    "which exceeds the supported limit.");
             }
 
             int triangleCount = i - groupStart;

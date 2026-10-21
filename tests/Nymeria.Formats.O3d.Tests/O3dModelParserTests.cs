@@ -561,6 +561,41 @@ public sealed class O3dModelParserTests
     }
 
     [Fact]
+    public void RejectsInputLargerThanTheSupportedLimit()
+    {
+        using var stream = new OversizedLengthStream(O3dModelParser.MaxInputBytes + 1L);
+
+        ModelFormatException exception = Assert.Throws<ModelFormatException>(
+            () => new O3dModelParser().Parse(stream));
+
+        Assert.Contains("larger than the supported limit", exception.Message);
+        Assert.Contains($"{O3dModelParser.MaxInputBytes} bytes", exception.Message);
+    }
+
+    [Fact]
+    public void RejectsMoreThanTheSupportedNumberOfSubsets()
+    {
+        int triangleCount = O3dModelParser.MaxSubsetCount + 1;
+        var triangles = new TestTriangle[triangleCount];
+
+        for (int i = 0; i < triangles.Length; i++)
+        {
+            triangles[i] = new TestTriangle(0, 1, 2, (ushort)(i % 2));
+        }
+
+        byte[] data = new O3dTestFileBuilder(3, 0)
+            .Vertices(TriangleVertices)
+            .Triangles(triangles)
+            .Materials("first", "second")
+            .Build();
+
+        ModelFormatException exception = ParseError(data);
+
+        Assert.Contains("material subsets", exception.Message);
+        Assert.Contains($"{O3dModelParser.MaxSubsetCount}", exception.Message);
+    }
+
+    [Fact]
     public void RejectsOutOfRangeTriangleIndices()
     {
         byte[] data = new O3dTestFileBuilder(3, 0)
@@ -892,6 +927,51 @@ public sealed class O3dModelParserTests
         using var stream = new MemoryStream(data);
         return Assert.Throws<ModelFormatException>(
             () => new O3dModelParser(sourceName).Parse(stream));
+    }
+
+    private sealed class OversizedLengthStream(long length) : Stream
+    {
+        public override bool CanRead => true;
+
+        public override bool CanSeek => true;
+
+        public override bool CanWrite => false;
+
+        public override long Length => length;
+
+        public override long Position { get; set; }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            return 0;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            Position = origin switch
+            {
+                SeekOrigin.Begin => offset,
+                SeekOrigin.Current => Position + offset,
+                SeekOrigin.End => Length + offset,
+                _ => throw new ArgumentOutOfRangeException(nameof(origin)),
+            };
+
+            return Position;
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     private sealed class NonSeekableReadStream(Stream inner) : Stream

@@ -38,7 +38,9 @@ optional parser source name appears in diagnostics and does not open a file.
 
 Comments start with `#` and run to the end of the line. Blank lines, leading and
 trailing whitespace, tabs, and `\n`, `\r\n`, and `\r` line endings are accepted.
-Numbers are parsed with the invariant culture.
+Numbers are parsed with the invariant culture. Input must be valid UTF-8; a UTF-8
+byte-order mark is accepted, but invalid byte sequences are rejected with
+`ModelFormatException` instead of being replaced.
 
 ### Face references
 
@@ -139,6 +141,25 @@ Checked conditions include malformed directives and face tokens, missing or
 invalid values, non-finite or non-invariant numbers, zero indices, out-of-range
 indices, and faces with fewer than three vertices. Ordinary I/O errors propagate
 from the caller's stream; the parser does not swallow them.
+
+## Limits
+
+The parser enforces these bounds before growing its collections:
+
+| Limit | Value |
+| --- | --- |
+| Input size | 64 MiB |
+| Each position, texture-coordinate, and normal stream | 2,000,000 values |
+| Deduplicated mesh vertices | 2,000,000 |
+| Triangles | 4,000,000 |
+| Material subsets | 65,536 |
+| Source line length | 1,048,576 characters |
+
+The input limit is checked up front for seekable streams and while reading for
+non-seekable streams. A line that exceeds the length limit fails before it is
+parsed. The constants are exposed on `ObjModelParser`; the default parser
+constructor always uses them. Files larger than these practical viewer limits
+are rejected rather than partially loaded.
 
 ## Known limitations
 

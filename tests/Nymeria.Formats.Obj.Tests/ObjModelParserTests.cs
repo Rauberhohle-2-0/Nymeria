@@ -582,16 +582,226 @@ public sealed class ObjModelParserTests
         });
     }
 
-    private static ModelData Parse(string obj, string? sourceName = null)
+    [Fact]
+    public void RejectsInputLargerThanTheConfiguredLimit()
     {
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(obj));
-        return new ObjModelParser(sourceName).Parse(stream);
+        var limits = new ObjImportLimits(
+            maxInputBytes: 24,
+            maxVertexCount: 100,
+            maxTriangleCount: 100,
+            maxSubsetCount: 10,
+            maxLineLength: 100);
+
+        ModelFormatException exception = ParseError(
+            """
+            v 0 0 0
+            v 1 0 0
+            v 0 1 0
+            f 1 2 3
+            """,
+            limits: limits);
+
+        Assert.Contains("larger than the supported limit", exception.Message);
+        Assert.Contains("24 bytes", exception.Message);
     }
 
-    private static ModelFormatException ParseError(string obj, string? sourceName = null)
+    [Fact]
+    public void AcceptsInputThatEndsExactlyAtTheConfiguredLimit()
     {
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(obj));
+        const string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+        int length = Encoding.UTF8.GetByteCount(obj);
+        var limits = new ObjImportLimits(length, 100, 100, 10, 100);
+
+        ModelData model = Parse(obj, limits: limits);
+
+        Assert.Equal(3, Assert.Single(model.Meshes).Positions.Length);
+    }
+
+    [Fact]
+    public void RejectsLinesLongerThanTheConfiguredLimit()
+    {
+        var limits = new ObjImportLimits(1024, 100, 100, 10, maxLineLength: 8);
+
+        ModelFormatException exception = ParseError(
+            "v 0 0 0 0 0\n",
+            limits: limits);
+
+        Assert.Contains("line is longer", exception.Message);
+        Assert.Contains("8 characters", exception.Message);
+    }
+
+    [Fact]
+    public void RejectsAttributeStreamsLargerThanTheConfiguredLimit()
+    {
+        var limits = new ObjImportLimits(1024, maxVertexCount: 3, 100, 10, 100);
+
+        ModelFormatException exception = ParseError(
+            """
+            v 0 0 0
+            v 1 0 0
+            v 0 1 0
+            v 1 1 0
+            f 1 2 3
+            """,
+            limits: limits);
+
+        Assert.Contains("more than 3 position", exception.Message);
+    }
+
+    [Fact]
+    public void RejectsMeshVerticesLargerThanTheConfiguredLimit()
+    {
+        var limits = new ObjImportLimits(1024, maxVertexCount: 4, 100, 10, 100);
+
+        ModelFormatException exception = ParseError(
+            """
+            v 0 0 0
+            v 1 0 0
+            v 0 1 0
+            vt 0 0
+            vt 1 0
+            f 1/1 2/1 3/1
+            f 1/2 2/2 3/2
+            """,
+            limits: limits);
+
+        Assert.Contains("mesh vertices", exception.Message);
+        Assert.Contains("limit of 4", exception.Message);
+    }
+
+    [Fact]
+    public void RejectsTrianglesLargerThanTheConfiguredLimit()
+    {
+        var limits = new ObjImportLimits(1024, 100, maxTriangleCount: 1, 10, 100);
+
+        ModelFormatException exception = ParseError(
+            """
+            v 0 0 0
+            v 1 0 0
+            v 1 1 0
+            v 0 1 0
+            f 1 2 3 4
+            """,
+            limits: limits);
+
+        Assert.Contains("limit of 1 triangles", exception.Message);
+    }
+
+    [Fact]
+    public void RejectsSubsetsLargerThanTheConfiguredLimit()
+    {
+        var limits = new ObjImportLimits(1024, 100, 100, maxSubsetCount: 1, 100);
+
+        ModelFormatException exception = ParseError(
+            """
+            v 0 0 0
+            v 1 0 0
+            v 0 1 0
+            f 1 2 3
+            usemtl red
+            f 1 2 3
+            """,
+            limits: limits);
+
+        Assert.Contains("more than 1 material subsets", exception.Message);
+    }
+
+    [Fact]
+    public void RejectsInvalidUtf8InsteadOfReplacingBytes()
+    {
+        byte[] valid = Encoding.ASCII.GetBytes("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+        byte[] invalid = valid.Concat(new byte[] { 0xFF }).ToArray();
+
+        ModelFormatException exception = ParseError(invalid);
+
+        Assert.Contains("not valid UTF-8", exception.Message);
+    }
+
+    [Fact]
+    public void TruncatedInputFailsPredictably()
+    {
+        byte[] data = Encoding.UTF8.GetBytes(
+            "v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nf 1/1 2/1 3/1\n");
+
+        for (int length = 0; length < data.Length; length++)
+        {
+            byte[] truncated = data.AsSpan(0, length).ToArray();
+
+            try
+            {
+                ParseBytes(truncated);
+            }
+            catch (ModelFormatException)
+            {
+                // Expected for at least the prefixes that cut a token or face.
+            }
+        }
+    }
+
+    [Fact]
+    public void RandomByteMutationsFailPredictably()
+    {
+        byte[] seed = Encoding.UTF8.GetBytes(
+            "o mutated\nv 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvn 0 0 1\n" +
+            "usemtl paint\nf 1/1/1 2/1/1 3/1/1\n");
+        var random = new Random(0x4E594D);
+
+        for (int iteration = 0; iteration < 200; iteration++)
+        {
+            byte[] mutated = (byte[])seed.Clone();
+            int changes = random.Next(1, 4);
+
+            for (int change = 0; change < changes; change++)
+            {
+                mutated[random.Next(mutated.Length)] = (byte)random.Next(256);
+            }
+
+            try
+            {
+                ParseBytes(mutated);
+            }
+            catch (ModelFormatException)
+            {
+                // Malformed mutations are expected to fail through the parser's
+                // documented exception rather than an implementation exception.
+            }
+        }
+    }
+
+    private static ModelData Parse(
+        string obj,
+        string? sourceName = null,
+        ObjImportLimits? limits = null)
+    {
+        return ParseBytes(Encoding.UTF8.GetBytes(obj), sourceName, limits);
+    }
+
+    private static ModelData ParseBytes(
+        byte[] data,
+        string? sourceName = null,
+        ObjImportLimits? limits = null)
+    {
+        using var stream = new MemoryStream(data);
+        return new ObjModelParser(sourceName, limits ?? ObjImportLimits.Default)
+            .Parse(stream);
+    }
+
+    private static ModelFormatException ParseError(
+        string obj,
+        string? sourceName = null,
+        ObjImportLimits? limits = null)
+    {
+        return ParseError(Encoding.UTF8.GetBytes(obj), sourceName, limits);
+    }
+
+    private static ModelFormatException ParseError(
+        byte[] data,
+        string? sourceName = null,
+        ObjImportLimits? limits = null)
+    {
+        using var stream = new MemoryStream(data);
         return Assert.Throws<ModelFormatException>(
-            () => new ObjModelParser(sourceName).Parse(stream));
+            () => new ObjModelParser(sourceName, limits ?? ObjImportLimits.Default)
+                .Parse(stream));
     }
 }

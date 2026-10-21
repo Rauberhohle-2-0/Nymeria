@@ -157,14 +157,15 @@ The parser enforces these limits before allocating large buffers:
 | Input size | 64 MiB |
 | Vertices | 2,000,000 |
 | Triangles | 4,000,000 |
+| Material subsets | 65,536 |
 | Materials | `u16` count, as stored by the format |
 | Material name length | `u8`, as stored by the format |
 
 Checked conditions include a wrong signature, unsupported versions, unknown flag
 bits, scrambled keys, unknown or duplicate sections, empty required sections,
 counts beyond the file, counts beyond the configured limits, non-finite vertex or
-matrix values, out-of-range triangle indices, and material indices without a
-matching material.
+matrix values, out-of-range triangle indices, material indices without a
+matching material, and more material subsets than the limit.
 
 Ordinary I/O errors propagate from the caller's stream.
 
