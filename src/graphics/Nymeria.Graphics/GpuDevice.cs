@@ -14,6 +14,21 @@ namespace Nymeria.Graphics;
 /// </remarks>
 public sealed class GpuDevice : IDisposable
 {
+    /// <summary>
+    /// The largest accepted texture width or height for <see cref="CreateTexture"/>.
+    /// </summary>
+    /// <remarks>
+    /// This is a defensive GPU-side bound. CPU texture data is normally validated
+    /// earlier and has a smaller documented limit in <c>Nymeria.Core</c>.
+    /// </remarks>
+    public const int MaxTextureDimension = 16384;
+
+    /// <summary>
+    /// The largest accepted tightly packed RGBA payload for
+    /// <see cref="CreateTexture"/>, in bytes.
+    /// </summary>
+    public const int MaxTextureBytes = 256 * 1024 * 1024;
+
     private readonly IntPtr _window;
     private readonly IntPtr _handle;
     private bool _disposed;
@@ -122,6 +137,10 @@ public sealed class GpuDevice : IDisposable
     /// The number of uniform buffers declared by the shader. SDL uses this
     /// count to bind data pushed with <c>SDL_PushGPU*UniformData</c>.
     /// </param>
+    /// <param name="samplerCount">
+    /// The number of texture samplers declared by the shader. SDL uses this
+    /// count for fragment or vertex sampler bindings.
+    /// </param>
     /// <returns>The native <c>SDL_GPUShader*</c> handle.</returns>
     /// <exception cref="InvalidOperationException">Shader creation fails.</exception>
     /// <remarks>
@@ -132,7 +151,8 @@ public sealed class GpuDevice : IDisposable
         byte[] shaderCode,
         SDL.GPUShaderStage stage,
         string entryPoint,
-        uint uniformBufferCount = 0)
+        uint uniformBufferCount = 0,
+        uint samplerCount = 0)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(shaderCode);
@@ -145,6 +165,7 @@ public sealed class GpuDevice : IDisposable
                 Format = SDL.GPUShaderFormat.MSL,
                 Stage = stage,
                 NumUniformBuffers = uniformBufferCount,
+                NumSamplers = samplerCount,
             },
             shaderCode,
             entryPoint);
@@ -272,6 +293,201 @@ public sealed class GpuDevice : IDisposable
         catch
         {
             SDL.ReleaseGPUBuffer(_handle, buffer);
+            throw;
+        }
+        finally
+        {
+            if (transferBuffer != IntPtr.Zero)
+            {
+                SDL.ReleaseGPUTransferBuffer(_handle, transferBuffer);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Creates a 2D RGBA texture, uploads tightly packed pixels through a
+    /// transfer buffer, and returns the texture.
+    /// </summary>
+    /// <param name="rgbaPixels">
+    /// Exactly <c>width * height * 4</c> bytes of row-major RGBA pixels, with
+    /// the first row at texture coordinate <c>v = 0</c> (the top row).
+    /// </param>
+    /// <param name="width">The texture width in pixels.</param>
+    /// <param name="height">The texture height in pixels.</param>
+    /// <returns>The native <c>SDL_GPUTexture*</c> handle.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// A dimension is zero or beyond <see cref="MaxTextureDimension"/>, or the
+    /// payload exceeds <see cref="MaxTextureBytes"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The payload length does not match the dimensions.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Texture creation, transfer, or submission fails.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// The texture uses <c>R8G8B8A8Unorm</c>, one mip level, and the
+    /// <c>Sampler</c> usage flag. No color-space conversion or mip generation is
+    /// performed. The caller owns the returned texture and must release it with
+    /// <c>SDL_ReleaseGPUTexture</c> after pending GPU work has completed and
+    /// before disposing this device.
+    /// </para>
+    /// <para>
+    /// The upload submits its own command buffer once. Callers should upload
+    /// each distinct texture once and reuse the handle, not upload per frame.
+    /// </para>
+    /// </remarks>
+    public IntPtr CreateTexture(
+        ReadOnlySpan<byte> rgbaPixels,
+        uint width,
+        uint height)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (width == 0 || height == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(width),
+                width,
+                "Texture dimensions must be at least one pixel.");
+        }
+
+        if (width > MaxTextureDimension || height > MaxTextureDimension)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(width),
+                width,
+                $"Texture dimensions must not exceed {MaxTextureDimension} pixels.");
+        }
+
+        ulong expectedBytes = (ulong)width * height * 4;
+
+        if (expectedBytes > MaxTextureBytes)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(rgbaPixels),
+                expectedBytes,
+                $"The texture requires {expectedBytes} bytes, which exceeds the " +
+                $"{MaxTextureBytes}-byte texture limit.");
+        }
+
+        if ((ulong)rgbaPixels.Length != expectedBytes)
+        {
+            throw new ArgumentException(
+                $"A {width} x {height} RGBA texture requires {expectedBytes} bytes, " +
+                $"but the supplied payload has {rgbaPixels.Length} bytes.",
+                nameof(rgbaPixels));
+        }
+
+        IntPtr texture = SDL.CreateGPUTexture(
+            _handle,
+            new SDL.GPUTextureCreateInfo
+            {
+                Type = SDL.GPUTextureType.TextureType2D,
+                Format = SDL.GPUTextureFormat.R8G8B8A8Unorm,
+                Usage = SDL.GPUTextureUsageFlags.Sampler,
+                Width = width,
+                Height = height,
+                LayerCountOrDepth = 1,
+                NumLevels = 1,
+                SampleCount = SDL.GPUSampleCount.SampleCount1,
+            });
+
+        if (texture == IntPtr.Zero)
+        {
+            throw new InvalidOperationException(
+                $"SDL could not create the GPU texture: {SDL.GetError()}");
+        }
+
+        IntPtr transferBuffer = IntPtr.Zero;
+
+        try
+        {
+            transferBuffer = SDL.CreateGPUTransferBuffer(
+                _handle,
+                new SDL.GPUTransferBufferCreateInfo
+                {
+                    Usage = SDL.GPUTransferBufferUsage.Upload,
+                    Size = (uint)rgbaPixels.Length,
+                });
+
+            if (transferBuffer == IntPtr.Zero)
+            {
+                throw new InvalidOperationException(
+                    $"SDL could not create the texture transfer buffer: {SDL.GetError()}");
+            }
+
+            IntPtr mapped = SDL.MapGPUTransferBuffer(_handle, transferBuffer, false);
+
+            if (mapped == IntPtr.Zero)
+            {
+                throw new InvalidOperationException(
+                    $"SDL could not map the texture transfer buffer: {SDL.GetError()}");
+            }
+
+            try
+            {
+                Marshal.Copy(rgbaPixels.ToArray(), 0, mapped, rgbaPixels.Length);
+            }
+            finally
+            {
+                SDL.UnmapGPUTransferBuffer(_handle, transferBuffer);
+            }
+
+            IntPtr commandBuffer = SDL.AcquireGPUCommandBuffer(_handle);
+
+            if (commandBuffer == IntPtr.Zero)
+            {
+                throw new InvalidOperationException(
+                    $"SDL could not acquire a GPU command buffer for the texture upload: " +
+                    $"{SDL.GetError()}");
+            }
+
+            IntPtr copyPass = SDL.BeginGPUCopyPass(commandBuffer);
+
+            if (copyPass == IntPtr.Zero)
+            {
+                SDL.CancelGPUCommandBuffer(commandBuffer);
+                throw new InvalidOperationException(
+                    $"SDL could not begin a GPU copy pass for the texture upload: " +
+                    $"{SDL.GetError()}");
+            }
+
+            var source = new SDL.GPUTextureTransferInfo
+            {
+                TransferBuffer = transferBuffer,
+                Offset = 0,
+                PixelsPerRow = width,
+                RowsPerLayer = height,
+            };
+            var destination = new SDL.GPUTextureRegion
+            {
+                Texture = texture,
+                MipLevel = 0,
+                Layer = 0,
+                X = 0,
+                Y = 0,
+                Z = 0,
+                W = width,
+                H = height,
+                D = 1,
+            };
+
+            SDL.UploadToGPUTexture(copyPass, in source, in destination, false);
+            SDL.EndGPUCopyPass(copyPass);
+
+            if (!SDL.SubmitGPUCommandBuffer(commandBuffer))
+            {
+                throw new InvalidOperationException(
+                    $"SDL could not submit the GPU texture upload: {SDL.GetError()}");
+            }
+
+            return texture;
+        }
+        catch
+        {
+            SDL.ReleaseGPUTexture(_handle, texture);
             throw;
         }
         finally
