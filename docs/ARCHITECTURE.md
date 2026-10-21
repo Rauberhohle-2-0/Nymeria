@@ -27,8 +27,9 @@ extension is a direction, not a current feature.
 - `Nymeria.Core`, a dependency-free class library containing validated,
   format-independent model data, the `IModelParser` contract, minimal scene data
   (`Scene`, `SceneObject`, and `Transform`), optional ambient and directional
-  lighting data, and format-independent material and texture data with RGBA and
-  block-compressed mip chains.
+  lighting data, conservative bounds and frustum-culling helpers, and
+  format-independent material and texture data with RGBA and block-compressed
+  mip chains.
 - `Nymeria.Formats.Obj`, a dependency-free Wavefront OBJ parser implementing
   `IModelParser` for a documented polygonal subset.
 - `Nymeria.Formats.O3d`, a dependency-free OMSI O3D parser implementing
@@ -74,10 +75,17 @@ extension is a direction, not a current feature.
 - `examples/HelloLighting`, an interactive example that draws an imported OBJ
   mesh with a textured and a solid material under configurable ambient and
   directional Lambert lighting.
+- `examples/HelloCulling`, an interactive example that draws many instances of
+  one shared mesh with optional conservative camera-frustum culling, a runtime
+  toggle, and per-frame visibility statistics.
+- `MeshData.Bounds` plus `Nymeria.Core.Culling` bounds, frustum, and per-frame
+  visibility helpers. They are headless, use `System.Numerics` only, and contain
+  no SDL3, GPU, window, or format dependency.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - `Nymeria.Core.Tests`, GPU-independent tests for model-data validation,
   parser-contract error behavior, transform composition, scene lifecycle,
-  lighting data and math, materials, and texture-data validation.
+  lighting data and math, materials, texture-data validation, mesh bounds,
+  frustum-plane intersection, and visibility counters.
 - `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
   conversions, and diagnostics.
 - `Nymeria.Formats.O3d.Tests`, GPU-independent tests for the O3D header,
@@ -146,8 +154,8 @@ contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`,
 `Nymeria.Formats.DirectX`, `Nymeria.Formats.Png`, `Nymeria.Formats.Tga`,
 `Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`, `Nymeria.Formats.Bmp`, and
 `Nymeria.Formats.Textures`, `examples/` contains `HelloTriangle`, `HelloCube`,
-`HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`, and
-`HelloLighting`, and `tests/` contains `Nymeria.Core.Tests`,
+`HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
+`HelloLighting`, and `HelloCulling`, and `tests/` contains `Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
 `Nymeria.Formats.DirectX.Tests`, `Nymeria.Formats.Png.Tests`,
 `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
@@ -287,7 +295,9 @@ scale, normalizes rotation, and composes `scale * rotation * translation` for
 renderer owns one upload per distinct mesh and releases it; removing an object
 does not dispose or invalidate the shared CPU mesh. [SCENE.md](SCENE.md) is the
 authoritative contract. There is no ECS, hierarchy, serialization, editor,
-physics, animation, or culling.
+physics, or animation. Culling is a separate headless helper in
+`Nymeria.Core.Culling`, not a scene-layer responsibility; it reads scene data and
+never mutates it. [CULLING.md](CULLING.md) is the authoritative culling contract.
 
 ## GPU rendering
 
@@ -308,8 +318,8 @@ software fallback.
 
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
 `examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloX`,
-`examples/HelloScene`, `examples/HelloMaterials`, and `examples/HelloLighting`.
-Each has its own vertex
+`examples/HelloScene`, `examples/HelloMaterials`, `examples/HelloLighting`, and
+`examples/HelloCulling`. Each has its own vertex
 data and draw calls, and uses `GpuDevice` for the device, window claim, shader
 creation, buffer and texture upload, sampler creation, and swapchain format.
 [examples/README.md](../examples/README.md) documents their run commands and
@@ -589,6 +599,27 @@ There is no specular term, PBR, shadow, point or spot light, multiple-light
 collection, normal map, gamma-management change, deferred renderer, or shader
 graph. The scene still owns no GPU resources.
 
+### Culling
+
+`MeshData.Bounds` is a model-space `BoundingBox` computed once during mesh
+validation. `BoundingBox.Transform` produces world bounds from all eight
+transformed corners, so rotation and non-uniform or negative scale are handled
+correctly. `Frustum.Create` derives six normalized planes from the combined
+view-projection matrix using the same right-handed, row-vector, `[0, 1]` depth
+conventions as the shaders. The positive-vertex plane test culls an instance only
+when it is fully outside one plane; intersecting, touching, and uncertain cases
+remain visible. Degenerate or non-finite matrices produce an unbounded frustum,
+and invalid bounds are treated as visible, rather than risking a false cull.
+
+`SceneVisibilityCounter` performs the per-frame test and counts total, visible,
+and culled instances. The shared material renderer exposes
+`FrustumCullingEnabled` (default `false`) and `LastFrameStatistics` (instance
+counts plus actual indexed draw calls). Culling only skips draw submission: scene
+objects, shared meshes, materials, textures, and GPU uploads are unchanged.
+There is no occlusion culling, distance culling, LOD, spatial index, hierarchy,
+GPU-driven culling, or cached world-bounds invalidation. [CULLING.md](CULLING.md)
+documents the contract, fallbacks, statistics, and limits.
+
 ### Ownership and lifetime
 
 - `GpuDevice` owns the GPU device and window claim. Each renderer owns its
@@ -614,7 +645,7 @@ graph. The scene still owns no GPU resources.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
 - `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-  and `HelloLighting` own their `Camera` instances and share the
+  `HelloLighting`, and `HelloCulling` own their `Camera` instances and share the
   `FlyCameraControls` implementation. The camera has no unmanaged resources. The
   input mapping disables relative mouse mode and discards pending mouse motion
   during disposal, before the window is destroyed.
@@ -633,6 +664,10 @@ Limitations in this version:
   system, and no engine-level input system. The scene layer holds flat objects
   only. `Camera` is reusable math, but input mapping and timing stay in the
   examples; the triangle remains static clip-space geometry.
+- Culling is one conservative axis-aligned test per instance against six frustum
+  planes. There is no per-subset, occlusion, distance, or LOD culling, no spatial
+  index, no cached world-bounds invalidation, and no GPU timing. A degenerate
+  projection disables culling for that frame instead of risking a false cull.
 - Lighting is one ambient term plus at most one directional Lambert term. There
   is no specular or PBR shading, multiple-light collection, point or spot light,
   shadow, normal mapping, deferred rendering, global illumination, or shader
@@ -705,11 +740,13 @@ reference `Nymeria.Core` only. `Nymeria.Formats.Jpeg` references
 `Nymeria.Core` and `StbImageSharp`; `Nymeria.Formats.Textures` references
 `Nymeria.Core` and the five decoders.
 `Nymeria.Graphics` and `Nymeria.Platform` have no
-`Nymeria.Core` reference because neither has a demonstrated need for it yet.
-They do not reference each other: each example creates the window and passes
-`Window.Handle` to its renderer, which creates a `GpuDevice` in
-`Nymeria.Graphics`; the dependency remains in the example. `Camera` sits in
-`Nymeria.Graphics` and references only `System.Numerics`. `HelloCube` references
+`Nymeria.Core` reference; culling math lives in `Nymeria.Core.Culling`, so the
+renderer in the example composes the dependency instead of adding a
+`Nymeria.Graphics` reference. They do not reference each other: each example
+creates the window and passes `Window.Handle` to its renderer, which creates a
+`GpuDevice` in `Nymeria.Graphics`; the dependency remains in the example.
+`Camera` sits in `Nymeria.Graphics` and references only `System.Numerics`.
+`HelloCube` references
 `Nymeria.Core` for its cube model data; `HelloOBJ` references `Nymeria.Core`,
 `Nymeria.Formats.Obj`, `Nymeria.Graphics`, and `Nymeria.Platform`; `HelloO3D`
 references `Nymeria.Core`, `Nymeria.Formats.O3d`, `Nymeria.Graphics`, and
@@ -722,7 +759,10 @@ data, `Nymeria.Formats.Textures` for texture decoding, `Nymeria.Graphics` for th
 device and camera, and `Nymeria.Platform` for the window; `HelloLighting`
 references `Nymeria.Core` for scene, lighting, and material data,
 `Nymeria.Formats.Obj` for its mesh, `Nymeria.Formats.Textures` for its texture,
-`Nymeria.Graphics`, and `Nymeria.Platform`; `HelloTriangle` does not need the core
+`Nymeria.Graphics`, and `Nymeria.Platform`; `HelloCulling` references
+`Nymeria.Core` for scene, mesh, material, and culling data,
+`Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for the
+window; `HelloTriangle` does not need the core
 or formats projects.
 No engine project references an example. `Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
@@ -768,6 +808,12 @@ The following choices are implemented:
   scene references one optional `SceneLighting`; null means unlit. The lighting
   types depend only on `System.Numerics` and contain no SDL3 or GPU state.
   [LIGHTING.md](LIGHTING.md) is the authoritative contract.
+- **Culling:** `MeshData.Bounds` is a validated model-space AABB. `Nymeria.Core.Culling`
+  derives six normalized planes from the view-projection matrix, tests them
+  conservatively against transformed AABBs, and counts per-frame visibility. The
+  shared material renderer opts in with `FrustumCullingEnabled` and exposes
+  instance and draw-call statistics. Invalid data fails open rather than
+  discarding geometry. [CULLING.md](CULLING.md) is the authoritative contract.
 - **Model parsing:** `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`, and
   `Nymeria.Formats.DirectX` are dependency-free parsers in isolated format
   projects. They use the base class library and `Nymeria.Core` only, implement
@@ -800,7 +846,8 @@ The following choices are implemented:
   `xunit.runner.visualstudio` 4.0.1, and `Microsoft.NET.Test.Sdk` 18.11.0. The
   headless tests cover platform-independent `WindowOptions` behavior, model-data
   validation and parser error semantics, transform composition, scene lifecycle
-  and mesh sharing, lighting data and math, material and texture data, the OBJ,
+  and mesh sharing, lighting data and math, mesh bounds and frustum culling,
+  visibility counts, material and texture data, the OBJ,
   O3D, and text `.x` subsets, and the PNG, JPEG, TGA, BMP, DDS, and loader paths;
   they do not launch a GUI or create a GPU device.
 

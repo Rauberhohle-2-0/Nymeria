@@ -17,12 +17,16 @@ format-independent, and uses only `System.Numerics` and the base class library.
 There is no `Nymeria.Scene` project.
 
 The scene layer contains no ECS, parent-child hierarchy, physics, collision
-detection, animation, serialization, editor, culling, material parser, GPU
-handle, SDL3, Metal, window, or file-format logic. Materials and lighting are
-references to format-independent CPU data, not a rendering pipeline. The scene
-layer carries one optional ambient-plus-directional lighting configuration; it
-does not calculate shading. [LIGHTING.md](LIGHTING.md) is the authoritative
-lighting contract.
+detection, animation, serialization, editor, material parser, GPU handle, SDL3,
+Metal, window, or file-format logic. Materials and lighting are references to
+format-independent CPU data, not a rendering pipeline. The scene layer carries
+one optional ambient-plus-directional lighting configuration; it does not
+calculate shading. [LIGHTING.md](LIGHTING.md) is the authoritative lighting
+contract.
+
+Visibility culling is not part of the scene layer: it is a separate headless
+helper in `Nymeria.Core.Culling` that reads scene data and never mutates it.
+[CULLING.md](CULLING.md) is the authoritative culling contract.
 
 ## Public types
 
@@ -169,16 +173,24 @@ The scene layer does not render. `HelloScene` owns a `SceneRenderer` that:
    binds the cached vertex/index buffers for `object.Mesh`, and draws its indices;
 5. ends and submits the command buffer.
 
-`HelloScene` draws one opaque color per vertex. `HelloMaterials` and
-`HelloLighting` use the same traversal shape with a shared material-aware
-renderer: it uploads one mesh per distinct `MeshData` and one texture per
-distinct `Texture` before the frame command buffer is acquired, pushes the model
-matrix, normal matrix, material tint, and optional lighting uniforms, binds the
-material's texture or a white fallback, and draws the cached geometry. A material
-without a texture and a mesh without UVs both use the fallback, so the tint is
-always well-defined. `Scene.Lighting == null` makes the renderer unlit;
-`HelloLighting` supplies ambient and directional light, while `HelloMaterials`
-stays unlit.
+`HelloScene` draws one opaque color per vertex. `HelloMaterials`,
+`HelloLighting`, and `HelloCulling` use the same traversal shape with a shared
+material-aware renderer: it uploads one mesh per distinct `MeshData` and one
+texture per distinct `Texture` before the frame command buffer is acquired,
+pushes the model matrix, normal matrix, material tint, and optional lighting
+uniforms, binds the material's texture or a white fallback, and draws the cached
+geometry. A material without a texture and a mesh without UVs both use the
+fallback, so the tint is always well-defined. `Scene.Lighting == null` makes the
+renderer unlit; `HelloLighting` supplies ambient and directional light, while
+`HelloMaterials` and `HelloCulling` stay unlit.
+
+`MaterialRenderer.FrustumCullingEnabled` is optional and defaults to `false`.
+When enabled, an instance whose world axis-aligned bounds are fully outside the
+camera frustum skips draw submission. The test is conservative, and
+`LastFrameStatistics` reports tested, visible, culled, and submitted draw-call
+counts. Culling never removes an object, releases a resource, or changes a
+transform. [CULLING.md](CULLING.md) documents the bounds, planes, fallbacks, and
+statistics.
 
 An empty scene still clears the color and depth targets. Removed objects are
 simply absent from the traversal. Minimized windows skip the frame, zero-sized
@@ -249,6 +261,27 @@ an imported OBJ mesh. It links the same shared material renderer and shader as
 [LIGHTING.md](LIGHTING.md) documents the equation, coordinate space, normal
 matrix, defaults, and controls.
 
+## `HelloCulling`
+
+`examples/HelloCulling` demonstrates conservative instance culling through the
+shared material renderer and scene layer. It needs no asset file.
+
+- 551 deterministic instances reference one procedural cube mesh and four shared
+  untextured materials, so the renderer uploads the geometry once.
+- The arrangement includes a dense grid, instances behind the initial camera,
+  instances beyond the far plane, instances far outside the horizontal view, and
+  rotated, non-uniformly scaled, and negatively scaled objects. Some bounds cross
+  frustum planes instead of being fully inside or outside.
+- `C` toggles culling at runtime. `--no-culling` starts disabled for comparison.
+- Once per second the example prints FPS, instances tested, submitted instances,
+  culled instances, and actual indexed draw calls. The first line is printed
+  before the first frame and contains zeros.
+- Camera controls are the shared `FlyCameraControls`; resize, minimize, high-DPI,
+  frame-budget, and shutdown behavior follow the other interactive examples.
+
+[CULLING.md](CULLING.md) documents the measured comparison, fallbacks, and
+limits.
+
 ## Tests
 
 `tests/Nymeria.Core.Tests` covers the scene layer without SDL3 or a GPU:
@@ -264,15 +297,18 @@ matrix, defaults, and controls.
 - ambient and directional light validation, Lambert terms, normal matrices,
   combined lighting, and `Scene.Lighting` default/replacement semantics.
 
-GPU rendering, window behavior, and input are validated manually with
-[SMOKE_TEST.md](SMOKE_TEST.md), not by headless CI.
+Bounds, frustum intersection, and visibility counters have headless tests in
+`tests/Nymeria.Core.Tests`; see [CULLING.md](CULLING.md). GPU rendering, window
+behavior, and input are validated manually with [SMOKE_TEST.md](SMOKE_TEST.md),
+not by headless CI.
 
 ## Intentionally unsupported
 
 The following are out of scope for this milestone: parent-child transforms,
 scene graphs, ECS, instanced draw APIs beyond per-object uniform uploads,
-serialization, editors, culling, physics, collision, animation, multiple lights,
-point or spot lights, shadows, specular or PBR shading, transparency sorting,
-texture streaming or hot reload, MTL or OMSI material parsing, and automatic
-unloading of a cached GPU mesh or texture when the last referencing object is
-removed.
+serialization, editors, occlusion or distance culling, LOD, spatial indexes,
+physics, collision, animation, multiple lights, point or spot lights, shadows,
+specular or PBR shading, transparency sorting, texture streaming or hot reload,
+MTL or OMSI material parsing, and automatic unloading of a cached GPU mesh or
+texture when the last referencing object is removed. Frustum culling is
+supported separately and documented in [CULLING.md](CULLING.md).

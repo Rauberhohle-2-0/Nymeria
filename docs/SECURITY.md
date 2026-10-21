@@ -158,6 +158,20 @@ unreadable, oversized, or malformed file prints a diagnostic and uses a generate
 checkerboard instead of exiting. That fallback is example presentation, not a
 parser result.
 
+## Mesh bounds and visibility culling
+
+`MeshData.Bounds` is derived from the same positions that `MeshData` already
+validates as finite. `BoundingBox` rejects non-finite or inverted corners, and
+`BoundingBox.Transform` performs its eight-corner arithmetic in double precision
+and saturates results to finite extremes. `Frustum.Create` and
+`Frustum.Intersects` fail open on a non-finite or singular matrix, a degenerate
+plane, invalid bounds, or a non-finite distance, so malformed visibility data
+cannot discard potentially visible geometry. Culling reads scene data only: it
+does not remove objects, release resources, or modify transforms. The per-frame
+cost is bounded by the scene object limit (`Scene.MaxObjectCount`, 100,000), uses
+fixed-size counters, and creates no per-object allocation or vertex traversal.
+It adds no native handle, GPU resource, or third-party dependency.
+
 ## Native and GPU ownership
 
 - Native handles are owned by the managed wrapper that created them. Do not

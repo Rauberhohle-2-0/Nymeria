@@ -468,6 +468,65 @@ echo $?
 
 Expected: `0`.
 
+## HelloCulling checks
+
+1. **Window appears.** With no arguments, a native window opens and the terminal
+   prints the control summary. The first statistics line is a startup sample and
+   contains zeros; later lines update once per second.
+2. **Many instances render.** The scene contains 551 cubes sharing one mesh and
+   four tinted materials. Cubes fill the grid in front of the camera, extend
+   beyond the far plane, sit behind the initial view, and sit far to the sides.
+   Confirm visually that visible cubes appear normally: no missing faces, no
+   white or black artifacts, and no duplicated geometry.
+3. **Initial counts are consistent.** With culling enabled (the default), the
+   statistics show 551 tested instances, 413 submitted, 138 culled, and 413 draw
+   calls for the initial camera. The value 413 may vary slightly after a manual
+   window resize because the drawable aspect ratio changes the frustum; the key
+   invariant is submitted + culled = tested and draw calls = submitted.
+4. **Toggle works.** Press `C`. The terminal reports that culling is disabled and
+   the next sample shows all 551 instances submitted with 0 culled and 551 draw
+   calls. The visible image must look the same apart from any cubes that were
+   previously culled but were in fact visible at the screen edge; there must be
+   no pop, no object loss, and no error. Press `C` again to restore the initial
+   counts.
+5. **Disabled start works.** Close the window and run with `--no-culling`. The
+   first non-zero sample must show 551 submitted and 0 culled. Press `C` to
+   enable culling; the submitted and culled counts must change while the scene
+   remains stable.
+6. **No false culling at boundaries.** Fly forward and sideways with the shared
+   camera controls. Cubes must not disappear while any part of them is still on
+   screen. Cubes crossing a side, top, bottom, near, or far plane may flicker
+   only as their whole bounds leave the view, never while visible geometry
+   remains.
+7. **Camera rotation is correct.** Hold the right mouse button and turn a full
+   circle. Cubes behind the camera must be culled, cubes ahead must appear, and
+   the counts must change smoothly without inverted or stale visibility.
+8. **Transformed bounds are correct.** Some cubes use rotation, non-uniform
+   scale, and negative scale. They must remain visible when their transformed
+   corners are in view, and must not be culled early because a scale is negative.
+9. **Resize works.** Drag the window through a very wide and a very tall shape.
+   Proportions stay correct, statistics update for the new aspect ratio, and the
+   window remains responsive. No crash or stale depth texture occurs.
+10. **High-DPI works.** On a Retina display, cube edges are drawn at native pixel
+    density rather than an upscaled low-resolution image.
+11. **Minimize and restore work.** Minimize for a few seconds, then restore. The
+    process does not crash or freeze. While minimized, rendering is skipped and
+    statistics samples report zeros; after restore, non-zero counts return.
+12. **No unhandled exceptions.** No exception text appears during launch, camera
+    movement, culling toggles, resize, minimize, restore, or shutdown.
+13. **Close button exits.** Click the red close button. The process ends with
+    status code `0` and the cursor is visible.
+14. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
+    The process ends with status code `0`.
+
+Check the exit code after a normal close:
+
+```bash
+echo $?
+```
+
+Expected: `0`.
+
 ## Failure-path checks (optional)
 
 These checks are optional and must not modify tracked files.
@@ -523,8 +582,8 @@ These checks are optional and must not modify tracked files.
 
 Report the macOS version, architecture (`arm64` or `x86_64`), GPU model, date, and
 pass/fail for each check, separately for `HelloTriangle`, `HelloCube`,
-`HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`, and
-`HelloLighting`. Do
+`HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
+`HelloLighting`, and `HelloCulling`. Do
 not describe this manual checklist as a CI result.
 State separately that the checked-in `HelloO3D` fixture is synthetic, that the
 `HelloX` fixture is original project content rather than an exported game asset,

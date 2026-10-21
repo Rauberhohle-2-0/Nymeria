@@ -14,10 +14,11 @@ renderer, geometry builder, shader, model-viewer loop, and input mapping in
 shared geometry builder, the shared model shader, and the shared camera controls.
 `HelloMaterials` uses the material and texture data in `Nymeria.Core`, the
 PNG/JPEG/TGA/DDS/BMP loader in `Nymeria.Formats.Textures`, and the shared camera
-controls. `HelloMaterials` and `HelloLighting` share the material renderer and
-shader in `examples/Shared`; `HelloLighting` adds the lighting data in
-`Nymeria.Core`, the OBJ parser in `Nymeria.Formats.Obj`, and the same texture
-loader.
+controls. `HelloMaterials`, `HelloLighting`, and `HelloCulling` share the
+material renderer and shader in `examples/Shared`; `HelloLighting` adds the
+lighting data in `Nymeria.Core`, the OBJ parser in `Nymeria.Formats.Obj`, and the
+same texture loader, while `HelloCulling` adds the headless bounds and frustum
+helpers in `Nymeria.Core.Culling`.
 
 All examples use SDL3's GPU API with the Metal backend and Metal Shading
 Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
@@ -36,6 +37,7 @@ dotnet run --project examples/HelloX/HelloX.csproj
 dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
+dotnet run --project examples/HelloCulling/HelloCulling.csproj
 ```
 
 ## HelloTriangle
@@ -83,8 +85,8 @@ renders continuously, and targets about 16 ms per frame.
 ### Controls
 
 `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-and `HelloLighting` share `examples/Shared/FlyCameraControls.cs`, so these
-controls apply to all seven examples.
+`HelloLighting`, and `HelloCulling` share `examples/Shared/FlyCameraControls.cs`,
+so these controls apply to all eight examples.
 
 | Input | Action |
 | --- | --- |
@@ -102,6 +104,9 @@ are edge-triggered, so holding a key adds or removes only one object per press.
 move the directional light, `[` and `]` lower and raise its intensity, and `R`
 resets the light. These are edge-triggered except for the arrow keys, which
 rotate continuously.
+
+`HelloCulling` adds `C`, which toggles frustum culling. The example also accepts
+`--no-culling` to start with culling disabled for a comparison session.
 
 Mouse look rotates only while the right button is held. Releasing the button,
 losing input focus, minimizing the window, or exiting disables relative mouse
@@ -308,8 +313,9 @@ dotnet run --project examples/HelloScene/HelloScene.csproj
   empty scene that still clears the color and depth targets.
 - Lifetime: the scene owns no GPU resources. The renderer releases its cached
   uploads, depth target, pipeline, shaders, and device on shutdown.
-- Scope: no hierarchy, ECS, serialization, editor, physics, animation, culling,
-  textures, lighting, or material system.
+- Scope: no hierarchy, ECS, serialization, editor, physics, animation,
+  occlusion or distance culling, textures, lighting, or material system.
+  `HelloCulling` demonstrates whole-instance frustum culling separately.
 
 ## HelloMaterials
 
@@ -428,9 +434,42 @@ dotnet run --project examples/HelloLighting/HelloLighting.csproj -- path/to/mode
 - Scope: no shadows, point or spot lights, specular highlights, PBR, deferred
   rendering, global illumination, gamma-management redesign, or shader graphs.
 
+## HelloCulling
+
+`HelloCulling` demonstrates conservative CPU-side camera-frustum culling through
+the existing scene and shared material renderer. It needs no asset file.
+
+```bash
+dotnet run --project examples/HelloCulling/HelloCulling.csproj
+dotnet run --project examples/HelloCulling/HelloCulling.csproj -- --no-culling
+```
+
+- Scene: 551 deterministic instances reference one procedural cube mesh and four
+  shared untextured materials, so the renderer uploads the geometry once. Some
+  instances use rotation, non-uniform scale, and negative scale.
+- Arrangement: a dense grid in front of the camera, instances crossing its side
+  planes, instances behind the initial camera, instances beyond the far plane,
+  and instances far outside the horizontal view.
+- Bounds: `MeshData.Bounds` is computed once from the local positions;
+  `BoundingBox.Transform` produces world bounds from all eight corners. The test
+  is conservative, so intersecting or uncertain instances are still submitted.
+- Frustum: `Frustum.Create` derives and normalizes six planes from
+  `view * projection`. Degenerate or non-finite matrices produce an unbounded
+  frustum that accepts everything instead of risking a false cull. See
+  [../docs/CULLING.md](../docs/CULLING.md).
+- Toggle: `C` switches culling at runtime; `--no-culling` starts it disabled.
+- Diagnostics: once per second the example prints FPS, instances tested,
+  submitted instances, culled instances, and actual indexed draw calls. Instance
+  counts are not GPU draw-call counts, and the statistics are CPU-side counts,
+  not GPU timings.
+- Scope: whole-instance frustum culling only. There is no occlusion culling,
+  distance culling, LOD, spatial index, hierarchy, GPU-driven culling, or cached
+  world-bounds invalidation. Existing meshes, materials, textures, lighting,
+  scene objects, and transforms are never changed by a cull decision.
+
 ## Platform limits
 
-All eight examples are macOS-only for now. They require SDL's Metal backend and
+All nine examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
 formats. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
 general material or scene importers. `HelloO3D` accepts only unscrambled static meshes
@@ -441,7 +480,9 @@ TGA, BMP, or a documented DDS subset, not a material pipeline. DDS and BMP
 support are not universal, and compressed DDS formats depend on backend
 capability. `HelloLighting`
 adds one ambient term and one directional Lambert term, not a general light
-system. No example has shadows, specular or PBR shading, an object hierarchy, or
-collisions. GPU output, texture sampling, compressed-format capability, lighting,
-and input behavior are validated manually with
-[../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.
+system. `HelloCulling` adds a conservative whole-instance frustum test, not an
+occlusion, distance, or LOD system. No example has shadows, specular or PBR
+shading, an object hierarchy, or collisions. GPU output, texture sampling,
+compressed-format capability, lighting, culling, and input behavior are
+validated manually with [../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in
+CI.
