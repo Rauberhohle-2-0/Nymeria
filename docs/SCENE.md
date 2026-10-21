@@ -3,10 +3,10 @@
 This document is the authoritative description of Nymeria's minimal,
 format-independent scene layer. It covers transforms, scene objects, shared mesh
 and material references, optional scene lighting, resource ownership, and the
-`HelloScene`, `HelloMaterials`, `HelloLighting`, and `HelloLOD` examples. Related
-contracts
-are [MODEL_DATA.md](MODEL_DATA.md), [MATERIALS.md](MATERIALS.md),
-[LIGHTING.md](LIGHTING.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
+`HelloScene`, `HelloMaterials`, `HelloLighting`, `HelloLOD`, and
+`HelloStreaming` examples. Related contracts are [MODEL_DATA.md](MODEL_DATA.md),
+[MATERIALS.md](MATERIALS.md), [LIGHTING.md](LIGHTING.md),
+[STREAMING.md](STREAMING.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
 [MODEL_DATA.md's coordinate conventions](MODEL_DATA.md#coordinate-and-index-conventions).
 
 ## Purpose and non-goals
@@ -29,7 +29,10 @@ contract. It also carries an optional explicit mesh level-of-detail reference;
 Visibility culling and LOD selection are not part of the scene layer: they are
 headless helpers in `Nymeria.Core.Culling` and `Nymeria.Core.Lod` that read scene
 data and keep their per-frame selection state on each object. [CULLING.md](CULLING.md)
-and [LOD.md](LOD.md) are the authoritative contracts.
+and [LOD.md](LOD.md) are the authoritative contracts. Chunk membership is also
+separate: `Nymeria.Core.Streaming` adds and removes ordinary scene objects around
+a focus point and does not change the scene data model. [STREAMING.md](STREAMING.md)
+is its authoritative contract.
 
 ## Public types
 
@@ -167,7 +170,10 @@ The `HelloScene` renderer caches uploads by `MeshData` reference for its own
 lifetime. The shared material renderer also caches one GPU texture per `Texture`
 reference. Removing objects therefore does not leak per-instance data; each cache
 holds at most one upload per distinct reference it has drawn and is cleared when
-the renderer is disposed.
+the renderer is disposed. A long-running application with streamed content can
+call `PruneUnusedResources` after removals to release caches earlier. An active
+chunk is not proof of reclamation: CPU assets remain application-owned and the
+renderer owns GPU caches until that explicit prune or disposal.
 
 ## Rendering integration
 
@@ -210,6 +216,15 @@ without a configuration keep the single-mesh path exactly. Each distinct variant
 is uploaded once and shared by reference. [LOD.md](LOD.md) documents the distance
 semantics, hysteresis, validation, counters, and example.
 
+`MaterialRenderer.PruneUnusedResources(scene)` is an explicit unload-path
+operation. It waits for the GPU to become idle and releases cached meshes and
+textures that the current scene no longer references, including LOD variants.
+Shared entries remain cached while any object references them, and a released
+entry is uploaded again if it is needed later. The method never disposes the
+managed `MeshData`, `Material`, or `Texture`; it releases only the renderer's own
+GPU handles. `HelloStreaming` calls it after a chunk unload so chunk-exclusive
+geometry is reclaimed without making the per-frame draw path wait for the GPU.
+
 An empty scene still clears the color and depth targets. Removed objects are
 simply absent from the traversal. Minimized windows skip the frame, zero-sized
 drawables submit an empty command buffer, and resize recreates the depth texture
@@ -218,6 +233,29 @@ once per distinct mesh, not once per instance or frame.
 
 The scene traversal and GPU command submission both live in the example
 renderer. The scene itself contains no render loop and no second shader pipeline.
+
+## `HelloStreaming`
+
+`examples/HelloStreaming` demonstrates streamed chunk membership over the same
+scene, material, culling, and renderer paths. It does not use a second renderer or
+a separate scene representation.
+
+- A deterministic five-by-five world defines 25 `SceneChunkDefinition` instances
+  with 40-unit bounds.
+- All chunks share one cube mesh and six materials. Each loaded chunk also creates
+  a unique tapered marker mesh, so unload plus `PruneUnusedResources` releases
+  chunk-exclusive GPU buffers while the shared cube remains cached.
+- `SceneStreamer.Update` runs before rendering, removes chunks beyond the unload
+  distance, then loads at most four demanded chunks nearest first.
+- `S` freezes or resumes automatic streaming, `T` cycles teleport positions, `C`
+  toggles frustum culling, and `R` resets the camera. `--no-streaming` loads the
+  initial set and freezes it for a comparison session.
+- Once per second the example prints chunk states, active objects, cumulative
+  loads/unloads/failures, last-update work, streaming and render-time p95, GPU
+  entries pruned, and renderer draw counts.
+
+See [STREAMING.md](STREAMING.md) for the lifecycle, ownership, retry policy, and
+measured observations.
 
 ## `HelloScene`
 
@@ -336,10 +374,11 @@ limits.
 - ambient and directional light validation, Lambert terms, normal matrices,
   combined lighting, and `Scene.Lighting` default/replacement semantics.
 
-Bounds, frustum intersection, visibility counters, and LOD selection have
-headless tests in `tests/Nymeria.Core.Tests`; see [CULLING.md](CULLING.md) and
-[LOD.md](LOD.md). GPU rendering, window behavior, and input are validated
-manually with [SMOKE_TEST.md](SMOKE_TEST.md), not by headless CI.
+Bounds, frustum intersection, visibility counters, LOD selection, and chunk
+streaming have headless tests in `tests/Nymeria.Core.Tests`; see
+[CULLING.md](CULLING.md), [LOD.md](LOD.md), and [STREAMING.md](STREAMING.md).
+GPU rendering, window behavior, and input are validated manually with
+[SMOKE_TEST.md](SMOKE_TEST.md), not by headless CI.
 
 ## Intentionally unsupported
 
@@ -349,7 +388,9 @@ serialization, editors, occlusion culling, spatial indexes, physics, collision,
 animation, multiple lights, point or spot lights, shadows, specular or PBR
 shading, transparency sorting, texture streaming or hot reload, MTL or OMSI
 material parsing, automatic mesh simplification or LOD generation, and automatic
-unloading of a cached GPU mesh or texture when the last referencing object is
-removed. Frustum culling, explicit LOD selection, and optional distance culling
-are supported separately and documented in [CULLING.md](CULLING.md) and
-[LOD.md](LOD.md).
+background unloading of CPU assets. Frustum culling, explicit LOD selection,
+optional distance culling, and synchronous chunk membership are supported
+separately and documented in [CULLING.md](CULLING.md), [LOD.md](LOD.md), and
+[STREAMING.md](STREAMING.md). GPU caches can be reclaimed explicitly with
+`MaterialRenderer.PruneUnusedResources`; the scene layer itself never owns or
+disposes a GPU resource.

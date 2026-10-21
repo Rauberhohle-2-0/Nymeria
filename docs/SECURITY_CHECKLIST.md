@@ -18,6 +18,10 @@ not a guarantee.
 - [ ] New public API or architecture was approved by the maintainer.
 - [ ] No speculative scaffolding, placeholder sources, or unrequested features
       were added.
+- [ ] Scene-chunk content and release callbacks are treated as application code;
+      identifiers, bounds, distances, focus, elapsed time, content counts, nulls,
+      and duplicate scene objects are validated, and loader paths remain the
+      application's responsibility.
 
 ## Binary format parsing
 
@@ -115,6 +119,9 @@ not a guarantee.
 - [ ] A shared mesh, material, or texture reference is not released by a renderer
       that did not create the corresponding GPU resource, and a GPU handle release
       does not dispose shared managed data.
+- [ ] Streaming unload removes only the streamer's scene objects; renderer cache
+      pruning waits for GPU idle, keeps resources referenced by the current
+      scene, and is not called in the per-frame path.
 - [ ] `unsafe`, custom P/Invoke, and new native dependencies were explicitly
       approved and reviewed.
 

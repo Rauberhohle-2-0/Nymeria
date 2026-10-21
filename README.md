@@ -28,8 +28,9 @@ interactive, depth-tested cube scene.
   the scene-instancing `examples/HelloScene`, the textured and solid-material
   `examples/HelloMaterials`, the lit `examples/HelloLighting`, the conservative
   frustum-culling `examples/HelloCulling`, the explicit-LOD and distance-culling
-  `examples/HelloLOD`, the CPU-profiling `examples/HelloBenchmark`, bounded
-  frame-timing diagnostics, headless mesh-bounds, visibility, and LOD helpers,
+  `examples/HelloLOD`, the chunk-streaming `examples/HelloStreaming`, the
+  CPU-profiling `examples/HelloBenchmark`, bounded frame-timing diagnostics,
+  headless mesh-bounds, visibility, LOD, and streaming helpers,
   platform-independent unit tests, CI
   restore/build/test on macOS, Windows, and
   Linux, repository checks, an audited dependency restore, a documented security
@@ -78,6 +79,8 @@ dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj -- --no-culling
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
+dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
+dotnet run --project examples/HelloStreaming/HelloStreaming.csproj -- --no-streaming
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj --configuration Release -- --instances 2048
 ```
 
@@ -103,7 +106,11 @@ or start with `--no-culling` for comparison. `HelloLOD` switches each instance
 among three explicit sphere-detail meshes at configurable distances and can skip
 objects beyond a maximum distance; `L` toggles LOD, `X` toggles distance
 culling, `F` toggles frustum culling, `[`/`]` change the thresholds, and `R`
-resets them. `HelloBenchmark` is an auto-exiting Release CPU benchmark with a
+resets them. `HelloStreaming` loads and unloads 25 deterministic chunks around a
+free camera, reuses one cube mesh and six materials across chunks, and releases
+chunk-exclusive GPU buffers after unload; `S` toggles streaming, `T` teleports,
+`C` toggles culling, and `R` resets the camera. `HelloBenchmark` is an
+auto-exiting Release CPU benchmark with a
 fixed camera, deterministic 512/2048/8192-instance scenes, culling and LOD
 modes, and 16 ms pacing control; it prints bounded phase timings, instance,
 draw-call, triangle, and per-level counts, and managed allocation, then exits.
@@ -261,7 +268,7 @@ frustum-culled, distance-culled, drawn, draw-call, submitted-triangle, and
 per-level counts plus render-time average and p95; see
 [docs/LOD.md](docs/LOD.md) for the contract, benchmark method, and limits.
 
-All nine interactive examples skip rendering while minimized and recover when a
+All ten interactive examples skip rendering while minimized and recover when a
 drawable is available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
@@ -312,7 +319,8 @@ src/formats/    Nymeria.Formats.Obj, O3d, DirectX, Png, Tga, Jpeg, Dds, Bmp,
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
 examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloX, HelloScene,
-                HelloMaterials, HelloLighting, HelloCulling, and HelloBenchmark
+                HelloMaterials, HelloLighting, HelloCulling, HelloLOD,
+                HelloStreaming, and HelloBenchmark
 tests/          Headless unit tests for core, formats, and platform projects
 ```
 
@@ -324,6 +332,8 @@ tests/          Headless unit tests for core, formats, and platform projects
 - [Materials and base-color textures](docs/MATERIALS.md)
 - [Ambient and directional lighting](docs/LIGHTING.md)
 - [Mesh bounds and frustum culling](docs/CULLING.md)
+- [Explicit mesh LOD](docs/LOD.md)
+- [Scene chunk streaming](docs/STREAMING.md)
 - [Performance measurement](docs/PERFORMANCE.md)
 - [Performance baseline 01](docs/PERFORMANCE_BASELINE_01.md)
 - [Wavefront OBJ import](docs/OBJ.md)

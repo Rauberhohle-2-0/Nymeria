@@ -5,7 +5,8 @@ level-of-detail (LOD) selection and optional per-object distance culling. It
 covers the public data types, distance semantics, hysteresis, renderer
 integration, statistics, the `HelloLOD` example, benchmark method, and limits.
 Related contracts are [SCENE.md](SCENE.md), [CULLING.md](CULLING.md),
-[PERFORMANCE.md](PERFORMANCE.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
+[STREAMING.md](STREAMING.md), [PERFORMANCE.md](PERFORMANCE.md),
+[ARCHITECTURE.md](ARCHITECTURE.md), and
 [examples/README.md](../examples/README.md).
 
 ## Scope
@@ -153,6 +154,12 @@ Without a configuration, the original behavior is preserved exactly: the
 renderer transforms `SceneObject.Mesh.Bounds`, optionally frustum-tests it, and
 never applies a distance limit. The old `SceneVisibilityCounter.Test` overload
 also keeps the single-mesh behavior and does not consult `SceneObject.Lod`.
+
+Streamed chunks contain ordinary `SceneObject` instances. `SceneStreamer` only
+adds and removes those objects; the same frustum and LOD paths run for them with
+no special case. A streamer unload removes objects from the scene but does not
+dispose their meshes, materials, textures, or renderer caches. See
+[STREAMING.md](STREAMING.md).
 
 ## Statistics
 

@@ -4,8 +4,9 @@ This document describes Nymeria's CPU-side mesh bounds and conservative camera
 frustum culling. It covers the geometry contract, the runtime integration, the
 statistics, the `HelloCulling` example, and the limits of the current
 implementation. Related contracts are [SCENE.md](SCENE.md),
-[MODEL_DATA.md](MODEL_DATA.md), [ARCHITECTURE.md](ARCHITECTURE.md),
-[PERFORMANCE.md](PERFORMANCE.md), and [examples/README.md](../examples/README.md).
+[MODEL_DATA.md](MODEL_DATA.md), [STREAMING.md](STREAMING.md),
+[ARCHITECTURE.md](ARCHITECTURE.md), [PERFORMANCE.md](PERFORMANCE.md), and
+[examples/README.md](../examples/README.md).
 
 ## Scope
 
@@ -19,7 +20,9 @@ The implementation is a whole-instance axis-aligned-bounds test against six
 frustum planes. It is not an ECS, spatial index, BVH, octree, or occlusion query,
 and it does not use GPU timing or GPU-side culling. Distance culling and explicit
 mesh LOD selection are separate, optional parts of the same per-frame test; see
-[LOD.md](LOD.md).
+[LOD.md](LOD.md). Streamed chunks only add and remove ordinary scene objects, so
+culling reads the active set unchanged and never unloads a chunk or resource; see
+[STREAMING.md](STREAMING.md).
 
 ## Coordinate and matrix conventions
 

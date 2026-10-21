@@ -14,14 +14,15 @@ renderer, geometry builder, shader, model-viewer loop, and input mapping in
 shared geometry builder, the shared model shader, and the shared camera controls.
 `HelloMaterials` uses the material and texture data in `Nymeria.Core`, the
 PNG/JPEG/TGA/DDS/BMP loader in `Nymeria.Formats.Textures`, and the shared camera
-controls. `HelloMaterials`, `HelloLighting`, `HelloCulling`, and `HelloLOD` share the
-material renderer and shader in `examples/Shared`; `HelloLighting` adds the
-lighting data in `Nymeria.Core`, the OBJ parser in `Nymeria.Formats.Obj`, and the
-same texture loader, while `HelloCulling` adds the headless bounds and frustum
-helpers in `Nymeria.Core.Culling`, and `HelloLOD` adds the explicit mesh-variant
-and distance-selection data in `Nymeria.Core.Lod`. `HelloBenchmark` reuses the
-shared material renderer with a fixed camera and the bounded timing helpers in
-`Nymeria.Core.Diagnostics`.
+controls. `HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloLOD`, and
+`HelloStreaming` share the material renderer and shader in `examples/Shared`;
+`HelloLighting` adds the lighting data in `Nymeria.Core`, the OBJ parser in
+`Nymeria.Formats.Obj`, and the same texture loader, while `HelloCulling` adds the
+headless bounds and frustum helpers in `Nymeria.Core.Culling`, `HelloLOD` adds
+the explicit mesh-variant and distance-selection data in `Nymeria.Core.Lod`, and
+`HelloStreaming` adds the spatial chunk layer in `Nymeria.Core.Streaming`.
+`HelloBenchmark` reuses the shared material renderer with a fixed camera and the
+bounded timing helpers in `Nymeria.Core.Diagnostics`.
 
 All examples use SDL3's GPU API with the Metal backend and Metal Shading
 Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
@@ -42,6 +43,8 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
+dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
+dotnet run --project examples/HelloStreaming/HelloStreaming.csproj -- --no-streaming
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj -- --instances 2048
 ```
 
@@ -90,8 +93,8 @@ renders continuously, and targets about 16 ms per frame.
 ### Controls
 
 `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, and `HelloLOD` share
-`examples/Shared/FlyCameraControls.cs`, so these controls apply to all nine
+`HelloLighting`, `HelloCulling`, `HelloLOD`, and `HelloStreaming` share
+`examples/Shared/FlyCameraControls.cs`, so these controls apply to all ten
 interactive examples.
 
 | Input | Action |
@@ -118,6 +121,11 @@ rotate continuously.
 frustum culling, `[` and `]` to change both thresholds and the maximum distance,
 and `R` to reset them. It also accepts `--no-lod`, `--no-distance-culling`, and
 `--no-culling` for comparison sessions.
+
+`HelloStreaming` adds `S` to toggle automatic streaming, `T` to cycle teleport
+positions, `C` to toggle frustum culling, and `R` to reset the camera. It also
+accepts `--no-streaming`, `--no-culling`, `--load-distance`, and
+`--unload-distance` for baseline sessions.
 
 Mouse look rotates only while the right button is held. Releasing the button,
 losing input focus, minimizing the window, or exiting disables relative mouse
@@ -515,6 +523,37 @@ dotnet run --project examples/HelloLOD/HelloLOD.csproj -- --no-lod
   per-subset, occlusion, spatial-index, or GPU-driven LOD. See
   [../docs/LOD.md](../docs/LOD.md).
 
+## HelloStreaming
+
+`HelloStreaming` demonstrates synchronous scene-chunk streaming through the
+shared material renderer and the same scene, culling, and LOD paths as the other
+examples.
+
+```bash
+dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
+dotnet run --project examples/HelloStreaming/HelloStreaming.csproj -- --no-streaming
+```
+
+- World: a deterministic five-by-five grid of 40-unit chunks with conservative
+  bounds. The starting focus loads 9 chunks instead of all 25.
+- Sharing: every chunk shares one cube mesh and six materials. The marker mesh is
+  unique per load, so unloading one chunk and calling
+  `PruneUnusedResources` releases only that chunk's GPU buffers while shared
+  geometry stays cached.
+- Selection: the load distance is inclusive, the unload distance is strictly
+  greater and creates hysteresis, and distances are measured to chunk bounds.
+  Four synchronous loads per update bound the work; nearest chunks load first.
+- Diagnostics: known/loaded/unloaded/failed chunks, active streamed objects,
+  cumulative and last-update loads/unloads/failures, streaming update time, GPU
+  entries pruned, FPS, and renderer draw counts.
+- Controls: `S` toggles streaming, `T` cycles teleport positions, `C` toggles
+  frustum culling, and `R` resets the camera. `--no-streaming` loads the initial
+  demand set and then freezes it; `--load-distance` and `--unload-distance` change
+  the thresholds.
+
+See [../docs/STREAMING.md](../docs/STREAMING.md) for lifecycle, ownership,
+retry semantics, measured observations, and limits.
+
 ## HelloBenchmark
 
 `HelloBenchmark` is a deterministic, auto-exiting CPU benchmark for the scene and
@@ -558,7 +597,7 @@ dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
 
 ## Platform limits
 
-All eleven examples are macOS-only for now. They require SDL's Metal backend and
+All twelve examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
 formats. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
 general material or scene importers. `HelloO3D` accepts only unscrambled static meshes
@@ -571,8 +610,10 @@ capability. `HelloLighting`
 adds one ambient term and one directional Lambert term, not a general light
 system. `HelloCulling` adds a conservative whole-instance frustum test. `HelloLOD` adds
 explicit application-supplied mesh variants, distance culling, and hysteresis;
-it does not simplify or generate geometry. No example has shadows, specular or
-PBR shading, an object hierarchy, or collisions. GPU output, texture sampling,
+it does not simplify or generate geometry. `HelloStreaming` adds synchronous
+chunk membership with bounded loads per update; it does not stream files in the
+background, reclaim CPU assets automatically, or generate terrain. No example has
+shadows, specular or PBR shading, an object hierarchy, or collisions. GPU output, texture sampling,
 compressed-format capability, lighting, frustum culling, LOD selection, distance
 culling, and input behavior are validated manually with
 [../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.

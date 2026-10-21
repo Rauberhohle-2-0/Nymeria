@@ -7,9 +7,9 @@ recorded baseline and its findings are in
 
 The scope is deliberately narrow. There is no engine-wide profiler, frame
 capture integration, GPU timer, telemetry, or background collection. The only
-reusable instrumentation is a bounded frame-timing window in `Nymeria.Core`. The
-`HelloBenchmark` example is the reproducible workload; `HelloLOD` also uses the
-window for its once-per-second render-time average and p95.
+reusable instrumentation is a bounded frame-timing window in `Nymeria.Core`.The `HelloBenchmark` example is the reproducible workload; `HelloLOD` also uses the
+window for its once-per-second render-time average and p95, and `HelloStreaming`
+uses separate windows for its streaming-update and render intervals.
 
 ## Instrumentation
 
@@ -138,6 +138,16 @@ measurement exits with status `2`; invalid arguments, a missing native library,
 or an initialization failure exits with status `1`. No report file is written;
 capture standard output if a record is needed.
 
+`HelloStreaming` is a diagnostic demo, not an auto-exiting benchmark. It times
+`SceneStreamer.Update`, including synchronous chunk callbacks and scene
+mutation, as a CPU wall-clock interval. GPU cache pruning is timed separately and
+includes waiting for `SDL_WaitForGPUIdle`; do not fold that wait into steady-state
+streaming cost. Its render interval uses the same definition as the benchmark.
+Compare `HelloStreaming` with streaming enabled and `--no-streaming` at the same
+camera path only as a behavior demonstration. It does not establish that
+streaming improves FPS, and a frozen baseline may draw a different amount of
+geometry after a teleport by design.
+
 For a comparable result, use the same machine, display scaling, resolution,
 power state, and build configuration. Close GPU-heavy applications. Run each
 configuration three times as separate processes and report the range, not only
@@ -204,7 +214,9 @@ counts, and scene size alongside the numbers.
   window or GPU device, so these numbers are manual and machine-specific.
 - The benchmark's fixed camera and scene layout are intentionally simple. They
   are not a game workload and do not cover texture upload, shader compilation,
-  file parsing, audio, physics, or input latency.
+  file parsing, streaming IO, streaming content callbacks, audio, physics, or
+  input latency. `HelloStreaming` reports streaming update and prune time but has
+  no automated benchmark or recorded throughput baseline.
 - The culling comparison changes only the renderer's optional frustum-culling
   flag. The LOD comparison changes only `LodEnabled`. Neither changes the scene,
   materials, transforms, or uploads; all three variants are uploaded during
@@ -220,5 +232,7 @@ counts, and scene size alongside the numbers.
   findings, and the one implemented optimization.
 - [CULLING.md](CULLING.md) — bounds, frustum, statistics, and culling limits.
 - [LOD.md](LOD.md) — LOD contract, counters, and the recorded LOD comparison.
+- [STREAMING.md](STREAMING.md) — chunk streaming diagnostics, ownership, and
+  the observed streaming/prune costs.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — project scope and dependency direction.
 - [SMOKE_TEST.md](SMOKE_TEST.md) — manual GUI checks, including the benchmark.

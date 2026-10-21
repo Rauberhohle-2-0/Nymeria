@@ -193,6 +193,39 @@ configuration. Assigning a configuration or disabling LOD resets that state.
 Selection reads transforms, distance, and frustum results only; it does not
 modify scene geometry or resource ownership.
 
+## Scene chunk streaming
+
+Chunk definitions and their content callbacks are application-supplied code and
+data, not a sandboxed plugin system. `SceneChunkDefinition` validates its
+identifier length, whitespace, and control characters, and `BoundingBox`
+validates finite ordered bounds. `SceneStreamingConfiguration` rejects
+non-finite or negative distances, an unload distance that is not greater than
+the load distance, a load budget below one, and a non-finite or negative retry
+delay. `SceneStreamer.Update` rejects a non-finite focus and a negative,
+non-finite, or overflowing elapsed time before mutating the scene.
+
+A content callback is isolated to its chunk. The streamer caps the known chunk
+count at 10,000 and rejects null content, null objects, duplicate object
+references, objects already present in the scene, and content above
+`Scene.MaxObjectCount` before committing the chunk. If adding
+objects fails part-way through, it removes everything it added. Ordinary
+callback exceptions are caught and converted to a bounded diagnostic; a failed
+chunk is not retried until the configured delay has elapsed. `OutOfMemoryException`
+is not swallowed. Release
+callbacks run only after removal, and their ordinary exceptions are counted and
+reported. The streamer does not open files, resolve paths, discover assemblies,
+use reflection, or execute descriptor strings as code. A callback that reads
+assets must apply the path, format, size, and failure checks documented in this
+baseline; the streamer cannot enforce them for arbitrary application code.
+
+The streamer mutates one `Scene` on the calling thread. It must not run
+concurrently with rendering, culling, or another scene mutation. It owns scene
+membership only; CPU assets remain application-owned and GPU resources remain
+renderer-owned. `MaterialRenderer.PruneUnusedResources` waits for
+`SDL_WaitForGPUIdle` before releasing an unreferenced cache entry and releases
+nothing when the wait fails. Unloading a chunk alone is not evidence that CPU or
+GPU memory was reclaimed.
+
 ## Native and GPU ownership
 
 - Native handles are owned by the managed wrapper that created them. Do not

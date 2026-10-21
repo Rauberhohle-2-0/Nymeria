@@ -21,6 +21,7 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
+dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
   -- --instances 128 --warmup 10 --frames 60
 ```
@@ -31,13 +32,13 @@ The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/Shared/Shaders/Material.metal`. The model shader is embedded in
 `HelloOBJ`, `HelloO3D`, and `HelloScene` as
 `Nymeria.Examples.Shaders.Model.metal`; the material shader is embedded in
-`HelloMaterials`, `HelloLighting`, `HelloCulling`, and `HelloLOD` as
-`Nymeria.Examples.Shaders.Material.metal`. Shaders are embedded in their examples
-and compiled by SDL's Metal backend at startup, so there is no shader compiler
-step and no external shader file to deploy.
+`HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloLOD`, and
+`HelloStreaming` as `Nymeria.Examples.Shaders.Material.metal`. Shaders are
+embedded in their examples and compiled by SDL's Metal backend at startup, so
+there is no shader compiler step and no external shader file to deploy.
 
 Run each interactive example checklist separately. The failure-path checks at
-the end apply to all nine interactive examples; `HelloBenchmark` has its own
+the end apply to all ten interactive examples; `HelloBenchmark` has its own
 automated checks below.
 
 ## HelloTriangle checks
@@ -592,6 +593,55 @@ Expected: `0`.
     `--no-culling` separately. The first statistics line and subsequent samples
     must reflect each starting state, and the runtime keys must still toggle it.
 
+## HelloStreaming checks
+
+1. **Window appears.** With no arguments, a native window opens and the terminal
+   prints the world description and controls. The first statistics line may show
+   only the initial four-chunk budget; subsequent lines fill the starting demand
+   set to roughly nine of 25 chunks and report no failures.
+2. **Chunks activate.** The starting view shows several raised floor tiles with
+   colored cubes and tapered markers; chunks beyond the load distance are absent.
+   The printed active count equals the number of visible chunk groups, and
+   `known = active + unloaded + failed`.
+3. **Boundary hysteresis is stable.** Move slowly across a load distance and back.
+   Chunks must not repeatedly load and unload while the camera remains inside the
+   gap between load and unload distances. Counts should hold steady apart from
+   deliberate crossings.
+4. **Loads are bounded.** On startup, the active count rises by at most four per
+   update until the demand set is filled. The last-update load count must never
+   exceed the configured maximum.
+5. **Teleport works.** Press `T` to jump to the opposite corner. The terminal
+   reports one or more unloads and loads; the previous distant chunks disappear,
+   new nearby chunks appear, and each remaining chunk has exactly one copy of its
+   floor, cubes, and marker. No duplicate objects or draw-call doubling is visible.
+6. **GPU cache pruning works.** After a teleport unload, the terminal reports
+   pruned GPU entries. The image must not flicker, lose shared floor or cube
+   geometry, or show released buffers. Press `T` repeatedly for several
+   round-trips and confirm no crash or use-after-dispose error.
+7. **Shared resources remain valid.** The floor and cube geometry and the six
+   material tints continue to render across every chunk. Only the unique marker
+   geometry is released on unload; no active chunk loses its shared cube.
+8. **Streaming toggle works.** Press `S`; the terminal reports streaming disabled.
+   Move or teleport: the active set, object count, and draw count stay frozen, and
+   no new load, unload, or prune occurs. Press `S` again and confirm the active
+   set updates on the next frame.
+9. **Frustum culling still works.** Press `C` to disable and re-enable frustum
+   culling. The candidate count remains the active object count; culled instances
+   and draw calls change without changing chunk membership.
+10. **Invalid configuration is rejected.** Run with a load distance greater than
+    or equal to the unload distance, or with a non-finite value. The process prints
+    an actionable error and exits with status `1` before opening a window.
+11. **Resize, high-DPI, minimize, and restore work.** Drag through wide and tall
+    shapes. Retina output stays sharp. Minimize for a few seconds: rendering is
+    skipped and statistics report zero renderer counts, while the next update
+    still has a finite cost. Restore and confirm drawing resumes with valid
+    chunk and draw counts.
+12. **No leaks over repeated navigation.** Watch process memory and CPU while
+    teleporting across the grid for several minutes. Memory must stabilize rather
+    than grow with every unload, and GPU entries pruned should roughly match the
+    unique markers from unloaded chunks. Close with the button and `Cmd+Q`; both
+    exit with status `0` and restore the cursor.
+
 ## HelloBenchmark checks
 
 `HelloBenchmark` is a CPU benchmark, not a visual or GPU-timing test. It opens a
@@ -705,8 +755,8 @@ These checks are optional and must not modify tracked files.
 Report the macOS version, architecture (`arm64` or `x86_64`), GPU model, date, and
 pass/fail for each check, separately for `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, and `HelloLOD`, plus the separate
-`HelloBenchmark` checks.
+`HelloLighting`, `HelloCulling`, `HelloLOD`, and `HelloStreaming`, plus the
+separate `HelloBenchmark` checks.
 Do not describe this manual checklist as a CI result.
 State separately that the checked-in `HelloO3D` fixture is synthetic, that the
 `HelloX` fixture is original project content rather than an exported game asset,

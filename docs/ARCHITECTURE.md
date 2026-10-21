@@ -83,21 +83,30 @@ extension is a direction, not a current feature.
   three explicit sphere-detail meshes at configurable camera distances, with
   optional distance culling, a free camera, and runtime LOD, distance, and
   frustum toggles.
+- `examples/HelloStreaming`, an interactive five-by-five chunk world that loads
+  and unloads deterministic chunks around the camera, reuses shared meshes and
+  materials, prunes unused GPU caches after unload, and prints streaming, GPU
+  cache, and renderer diagnostics. It includes teleport, streaming, and culling
+  controls and a frozen-streaming baseline option.
 - `examples/HelloBenchmark`, an auto-exiting Release benchmark with a fixed
   camera, deterministic 512/2048/8192-instance scenes, culling, LOD, and pacing
   modes, bounded CPU phase timings, and allocation/GC counters.
 - `MeshData.Bounds` plus `Nymeria.Core.Culling` bounds, frustum, and per-frame
-  visibility helpers, and `Nymeria.Core.Lod` explicit mesh variants, validated
+  visibility helpers, `Nymeria.Core.Lod` explicit mesh variants, validated
   activation distances, conservative union bounds, and hysteresis-aware
-  selection. They are headless, use `System.Numerics` only, and contain no SDL3,
-  GPU, window, or format dependency.
+  selection, and `Nymeria.Core.Streaming` validated scene-chunk definitions,
+  bounded synchronous load/unload updates, failure retry, and diagnostics. They
+  are headless, use `System.Numerics` only, and contain no SDL3, GPU, window, or
+  format dependency.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - `Nymeria.Core.Tests`, GPU-independent tests for model-data validation,
   parser-contract error behavior, transform composition, scene lifecycle,
   lighting data and math, materials, texture-data validation, mesh bounds,
   frustum-plane intersection, visibility counters, LOD validation, distance and
-  hysteresis selection, conservative LOD bounds, and bounded frame-timing
-  aggregation with warm-up exclusion and invalid samples.
+  hysteresis selection, conservative LOD bounds, streaming selection and
+  hysteresis, load budgets, teleports, failure retry, content rollback, shared
+  references, chunk identifiers, counters, and bounded frame-timing aggregation
+  with warm-up exclusion and invalid samples.
 - `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
   conversions, and diagnostics.
 - `Nymeria.Formats.O3d.Tests`, GPU-independent tests for the O3D header,
@@ -167,8 +176,8 @@ contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`,
 `Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`, `Nymeria.Formats.Bmp`, and
 `Nymeria.Formats.Textures`, `examples/` contains `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, `HelloLOD`, and `HelloBenchmark`, and `tests/`
-contains `Nymeria.Core.Tests`,
+`HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, and
+`HelloBenchmark`, and `tests/` contains `Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
 `Nymeria.Formats.DirectX.Tests`, `Nymeria.Formats.Png.Tests`,
 `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
@@ -178,7 +187,8 @@ contains `Nymeria.Core.Tests`,
 `Nymeria.Core` owns the format-independent model data and parser contract
 described in [MODEL_DATA.md](MODEL_DATA.md), the minimal scene data described in
 [SCENE.md](SCENE.md), the explicit mesh level-of-detail data described in
-[LOD.md](LOD.md), and the material and texture data described in
+[LOD.md](LOD.md), the spatially bounded scene-chunk streaming layer described in
+[STREAMING.md](STREAMING.md), and the material and texture data described in
 [MATERIALS.md](MATERIALS.md). It references `System.Numerics` and the base class
 library only. The camera lives in `Nymeria.Graphics` rather than
 in `Nymeria.Core`: it is reusable 3D rendering math with no SDL, window, or GPU
@@ -333,7 +343,8 @@ software fallback.
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
 `examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloX`,
 `examples/HelloScene`, `examples/HelloMaterials`, `examples/HelloLighting`,
-`examples/HelloCulling`, `examples/HelloLOD`, and `examples/HelloBenchmark`.
+`examples/HelloCulling`, `examples/HelloLOD`, `examples/HelloStreaming`, and
+`examples/HelloBenchmark`.
 Each has its own vertex data and draw calls, and uses `GpuDevice` for the device, window claim, shader
 creation, buffer and texture upload, sampler creation, and swapchain format.
 [examples/README.md](../examples/README.md) documents their run commands and
@@ -557,16 +568,18 @@ alpha channel. EXIF orientation is not applied.
 their signatures and TGA by a `.tga`/`.targa` source name plus header validation.
 It never opens a file, resolves a path, caches data, or makes a GPU call.
 
-`HelloMaterials`, `HelloLighting`, `HelloCulling`, and `HelloLOD` share
-`examples/Shared/MaterialRenderer.cs` and
+`HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloLOD`, and
+`HelloStreaming` share `examples/Shared/MaterialRenderer.cs` and
 `examples/Shared/Shaders/Material.metal`. The renderer caches one GPU upload per
 distinct `MeshData` and one GPU texture per distinct `Texture`, both by reference,
 uploads mip chains once, selects a mipped sampler for chains, and binds a
 generated white texture for materials without a texture or meshes without UVs.
 It also caches each distinct LOD variant once and may draw any one of them per
-instance. The shared vertex layout is position, normal, and UV; the fragment
-shader multiplies sampled RGB by the material tint and an optional lighting term;
-alpha is not blended.
+instance. On an explicit unload path, `PruneUnusedResources` waits for the GPU to
+become idle and releases cached meshes and textures that the current scene no
+longer references, keeping anything shared with a remaining object. The shared
+vertex layout is position, normal, and UV; the fragment shader multiplies sampled
+RGB by the material tint and an optional lighting term; alpha is not blended.
 
 `HelloMaterials` builds a UV-mapped cube and a generated four-quadrant
 checkerboard in code, shares one checkerboard material and one mesh between two
@@ -647,6 +660,43 @@ hierarchy, GPU-driven culling, automatic mesh simplification, or cached
 world-bounds invalidation. [CULLING.md](CULLING.md) and [LOD.md](LOD.md) document
 the contracts, fallbacks, statistics, and limits.
 
+### Streaming
+
+`Nymeria.Core.Streaming` adds a small, headless synchronous chunk layer. A
+`SceneChunkDefinition` has an ordinal-unique identifier, conservative
+world-space bounds, a content callback that returns scene objects, and an
+optional release callback for application-owned chunk-exclusive resources.
+`SceneStreamer` owns the loaded/unloaded membership of those objects in one
+`Scene`; it never owns the meshes, materials, textures, or GPU uploads.
+
+`SceneStreamingConfiguration` requires a nonnegative inclusive load distance and
+a greater finite unload distance. The gap is hysteresis: a loaded chunk is
+unloaded only when its bounds are strictly beyond the unload distance. Both
+distances are measured to chunk bounds, so a large chunk remains resident while
+the focus is inside it. `Update` evicts first, then loads demanded chunks nearest
+first, sorting equal distances by identifier. It completes at most
+`MaxLoadsPerUpdate` synchronous load callbacks per update, so a teleport is
+bounded in work but can still take several updates to fill the destination.
+
+Chunk states are `Unloaded`, `Loaded`, and `Failed`; loading and unloading are
+synchronous and have no observable intermediate state. A failed load removes any
+partially added objects, records a bounded diagnostic, and is not retried until
+the configured delay has elapsed. Once eligible, it retries when next demanded.
+Release failures are recorded without retaining scene objects. Duplicate object references, null content,
+content above the scene limit, duplicate chunk identifiers, non-finite focus or
+bounds, negative distances, and invalid configurations are rejected.
+
+`SceneStreamer` mutates the scene on the calling thread and must not run
+concurrently with rendering, culling, or another scene mutation. Streamed
+objects are ordinary `SceneObject` instances, so the existing frustum-culling and
+LOD renderer paths continue to apply unchanged. Unloading removes objects but
+does not reclaim managed CPU assets or GPU caches by itself. CPU assets remain
+application-owned; the release callback handles chunk-exclusive disposal. GPU
+caches are renderer-owned, and `MaterialRenderer.PruneUnusedResources` releases
+unreferenced uploads after waiting for the GPU to become idle. [STREAMING.md](STREAMING.md)
+is the authoritative contract, including the active-set versus reclaimed-memory
+distinction, retry policy, diagnostics, measurements, and limits.
+
 ### Ownership and lifetime
 
 - `GpuDevice` owns the GPU device and window claim. Each renderer owns its
@@ -673,15 +723,23 @@ the contracts, fallbacks, statistics, and limits.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
 - `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-  `HelloLighting`, `HelloCulling`, and `HelloLOD` own their `Camera` instances
-  and share the `FlyCameraControls` implementation. `HelloBenchmark` owns a fixed
-  `Camera` and
-  does not use input controls. The camera has no unmanaged resources. The
-  input mapping disables relative mouse mode and discards pending mouse motion
-  during disposal, before the window is destroyed.
+  `HelloLighting`, `HelloCulling`, `HelloLOD`, and `HelloStreaming` own their
+  `Camera` instances and share the `FlyCameraControls` implementation.
+  `HelloBenchmark` owns a fixed `Camera` and does not use input controls. The
+  camera has no unmanaged resources. The input mapping disables relative mouse
+  mode and discards pending mouse motion during disposal, before the window is
+  destroyed.
+- A `SceneStreamer` owns only the scene membership of loaded chunks. It removes
+  those objects on unload and drops its content references; it never disposes a
+  shared mesh, material, or texture. The optional release callback runs after
+  removal for chunk-exclusive application resources. GPU cache entries are
+  released by the renderer, either on disposal or through
+  `PruneUnusedResources`, which waits for GPU idle and keeps any resource still
+  referenced by the scene.
 - No renderer creates per-frame GPU resources. The scene and material renderers
-  upload newly referenced meshes and textures once and reuse them; command buffers
-  and swapchain textures are owned and recycled by SDL.
+  upload newly referenced meshes and textures once and reuse them; command
+  buffers and swapchain textures are owned and recycled by SDL. Pruning is an
+  occasional unload-path operation, not part of the per-frame draw loop.
 
 Limitations in this version:
 
@@ -699,9 +757,19 @@ Limitations in this version:
   per object from a conservative union of its variants. There is no per-subset
   or occlusion culling, no spatial index, no cached world-bounds invalidation,
   and no GPU timing. A degenerate projection disables frustum culling for that
-  frame instead of risking a false cull. Nymeria does not generate, simplify,
-  stream, morph, or cross-fade meshes; distance culling is optional and applies
-  only to objects with a configured maximum.
+  frame instead of risking a false cull. Nymeria does not generate, simplify, or
+  cross-fade meshes; distance culling is optional and applies only to objects
+  with a configured maximum.
+- Streaming is a synchronous, single-threaded chunk membership baseline. Chunk
+  content callbacks run on the update thread, so a large or slow loader can stall
+  that frame; `MaxLoadsPerUpdate` bounds the number of callbacks but not their
+  individual cost. There is no background loading, asynchronous upload, file
+  watcher, streaming service, terrain system, or automatic asset dependency
+  discovery. Active chunks are not proof that CPU or GPU memory was reclaimed:
+  CPU assets are application-owned and GPU caches are released only by an
+  explicit renderer prune or renderer disposal. The streamer does not resolve
+  paths or parse formats; its content callback is application code and owns those
+  trust boundaries.
 - Lighting is one ambient term plus at most one directional Lambert term. There
   is no specular or PBR shading, multiple-light collection, point or spot light,
   shadow, normal mapping, deferred rendering, global illumination, or shader
@@ -796,12 +864,14 @@ references `Nymeria.Core` for scene, lighting, and material data,
 `Nymeria.Graphics`, and `Nymeria.Platform`; `HelloCulling` references
 `Nymeria.Core` for scene, mesh, material, and culling data,
 `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for the
-window; `HelloLOD` references `Nymeria.Core` for scene, LOD, mesh, and material
-data, `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for
-the window; `HelloBenchmark` references `Nymeria.Core` for scene, LOD, mesh,
-material, and timing data, `Nymeria.Graphics` for the device and camera, and
-`Nymeria.Platform` for the window; `HelloTriangle` does not need the core
-or formats projects.
+window; `HelloLOD` references `Nymeria.Core` for scene, LOD, mesh, and
+material data, `Nymeria.Graphics` for the device and camera, and
+`Nymeria.Platform` for the window; `HelloStreaming` references `Nymeria.Core`
+for scene, streaming, mesh, and material data, `Nymeria.Graphics` for the device
+and camera, and `Nymeria.Platform` for the window; `HelloBenchmark` references
+`Nymeria.Core` for scene, LOD, mesh, material, and timing data,
+`Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for the
+window; `HelloTriangle` does not need the core or formats projects.
 No engine project references an example. `Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
 `Nymeria.Formats.DirectX.Tests`, `Nymeria.Formats.Png.Tests`,
@@ -860,15 +930,22 @@ The following choices are implemented:
   the renderer uploads each distinct variant once and shares it by reference.
   Nymeria does not simplify meshes. [LOD.md](LOD.md) is the authoritative
   contract.
+- **Streaming:** `Nymeria.Core.Streaming` validates chunk identifiers and bounds,
+  selects demanded chunks by point-to-bounds distance, enforces a greater unload
+  distance as hysteresis, bounds loads per update, retries failures after a
+  delay, rolls back partial content, and counts state and work. It is
+  synchronous and headless; scene mutation stays on the caller's thread. It
+  owns scene membership only, not CPU assets or GPU resources.
+  [STREAMING.md](STREAMING.md) is the authoritative contract.
 - **Performance diagnostics:** `Nymeria.Core.Diagnostics.FrameTimingWindow` is a
   bounded, warm-up-aware rolling window for CPU frame durations. It rejects
   invalid samples, reports average, nearest-rank p95, maximum, and FPS from the
   average, and its `AddSample` path does not allocate; `GetSummary` allocates a
   copy for sorting and is intended for reporting intervals only. It does not
   collect GPU timings or run in the background. `examples/HelloBenchmark` is the
-  reproducible workload; `HelloLOD` also reports a rolling render-time average
-  and p95. [PERFORMANCE.md](PERFORMANCE.md) defines the phases, method, and
-  limits.
+  reproducible workload; `HelloLOD` and `HelloStreaming` also report rolling
+  render and streaming-time averages and p95. [PERFORMANCE.md](PERFORMANCE.md)
+  defines the phases, method, and limits.
 - **Model parsing:** `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`, and
   `Nymeria.Formats.DirectX` are dependency-free parsers in isolated format
   projects. They use the base class library and `Nymeria.Core` only, implement
