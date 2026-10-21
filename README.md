@@ -274,6 +274,7 @@ tests/          Headless unit tests for core, formats, and platform projects
 - [Security baseline](docs/SECURITY.md)
 - [Security checklist](docs/SECURITY_CHECKLIST.md)
 - [Security audit 01](docs/SECURITY_AUDIT_01.md)
+- [Security audit 02](docs/SECURITY_AUDIT_02.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)
 - [Agent instructions](AGENTS.md)

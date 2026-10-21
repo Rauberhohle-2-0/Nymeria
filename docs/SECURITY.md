@@ -2,8 +2,9 @@
 
 This document records the security expectations that currently apply to
 Nymeria. It is a baseline for contributors, not a claim that the project is
-secure or fully audited. The first repository-wide review and its findings are
-in [SECURITY_AUDIT_01.md](SECURITY_AUDIT_01.md).
+secure or fully audited. The repository-wide reviews and their findings are in
+[SECURITY_AUDIT_01.md](SECURITY_AUDIT_01.md) and
+[SECURITY_AUDIT_02.md](SECURITY_AUDIT_02.md).
 
 ## Trust model
 
@@ -118,9 +119,12 @@ not apply EXIF orientation or resolve any embedded path.
 
 The TGA decoder must accept only image types 2 and 10, 24-bit and 32-bit pixels,
 no color map, and no interleaving. It must validate the header before reading
-pixels, honor both origin flags, validate every RLE packet against the remaining
-pixel count before writing, reject truncated run and raw packets, and reject
-unexpected trailing data while allowing only the documented TGA 2.0 footer.
+pixels, honor both origin flags, interpret RLE packet header bit 7 per the format
+(set means a repeated run, clear means a raw packet), validate every RLE packet
+against the remaining pixel count before writing, reject truncated run and raw
+packets, and reject unexpected trailing data while allowing only the documented
+TGA 2.0 footer. The checked-in RLE fixture and its tests must use that standard
+encoding so the tests cannot validate a private, inverted convention.
 
 The BMP decoder must verify the `BM` signature, the declared file size when
 non-zero, the supported DIB header size, dimensions, plane count, bit depth,

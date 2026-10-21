@@ -3,8 +3,8 @@
 Use this checklist when reviewing a change that handles untrusted input, touches
 native or GPU resources, changes dependencies, or modifies repository automation.
 It complements [SECURITY.md](SECURITY.md) and the
-[first audit](SECURITY_AUDIT_01.md). A checked list is evidence of review, not a
-guarantee.
+[security audits](SECURITY_AUDIT_02.md). A checked list is evidence of review,
+not a guarantee.
 
 ## Scope and trust boundaries
 
@@ -65,7 +65,9 @@ guarantee.
       limits before allocation.
 - [ ] Encoded input is bounded for both seekable and non-seekable streams.
 - [ ] Unsupported color types, bit depths, interlacing, filters, palette indices,
-      and unknown critical chunks are rejected.
+      and unknown critical chunks are rejected. Ancillary chunks that affect
+      pixels or alpha, such as PNG `tRNS`, are applied or rejected explicitly,
+      not silently ignored.
 - [ ] Decompression is limited to the exact scanline payload implied by the
       validated header; short and extra output both fail.
 - [ ] Decoding returns validated texture data or throws; it never returns partial
@@ -77,8 +79,9 @@ guarantee.
       validated.
 - [ ] JPEG segment lengths and the end-of-image marker are validated before
       decoding, so a truncated file cannot be accepted as a complete image.
-- [ ] TGA RLE packets are checked against the remaining pixel count and the input
-      length before any pixel is written.
+- [ ] TGA RLE packets use the standard header bit (bit 7 set means a repeated
+      run, clear means a raw packet) and are checked against the remaining pixel
+      count and the input length before any pixel is written.
 - [ ] BMP signature, declared file size, DIB header size and position, dimensions,
       plane count, bit depth, compression, channel/alpha masks, palette placement,
       row stride, image size, pixel offset, exact payload length, and decoded RGBA
