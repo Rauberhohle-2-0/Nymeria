@@ -93,7 +93,8 @@ internal static class TgaTestFileBuilder
             throw new ArgumentOutOfRangeException(nameof(count));
         }
 
-        var packet = new List<byte> { (byte)(count - 1) };
+        // TGA uses bit 7 of the packet header to mark a run-length packet.
+        var packet = new List<byte> { (byte)(0x80 | (count - 1)) };
 
         if (pixelDepth == 32)
         {
@@ -114,7 +115,7 @@ internal static class TgaTestFileBuilder
             throw new ArgumentOutOfRangeException(nameof(pixels));
         }
 
-        var packet = new List<byte> { (byte)(0x80 | (pixels.Length - 1)) };
+        var packet = new List<byte> { (byte)(pixels.Length - 1) };
 
         foreach ((byte r, byte g, byte b, byte a) in pixels)
         {

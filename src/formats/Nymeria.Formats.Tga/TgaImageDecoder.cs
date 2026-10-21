@@ -273,21 +273,9 @@ public sealed class TgaImageDecoder
                     $"but only {pixelCount - written} remain.");
             }
 
+            // The TGA packet header uses bit 7 to distinguish a run-length
+            // packet (one pixel repeated) from a raw packet (runLength pixels).
             if ((header & 0x80) != 0)
-            {
-                int packetBytes = runLength * bytesPerPixel;
-
-                if (packetBytes > input.Length - source)
-                {
-                    throw Error(
-                        $"the raw RLE packet at byte {source - 1} is truncated.");
-                }
-
-                input.Slice(source, packetBytes).CopyTo(
-                    output.AsSpan(written * bytesPerPixel, packetBytes));
-                source += packetBytes;
-            }
-            else
             {
                 if (bytesPerPixel > input.Length - source)
                 {
@@ -302,6 +290,20 @@ public sealed class TgaImageDecoder
                 {
                     pixel.CopyTo(output.AsSpan(written + i * bytesPerPixel, bytesPerPixel));
                 }
+            }
+            else
+            {
+                int packetBytes = runLength * bytesPerPixel;
+
+                if (packetBytes > input.Length - source)
+                {
+                    throw Error(
+                        $"the raw RLE packet at byte {source - 1} is truncated.");
+                }
+
+                input.Slice(source, packetBytes).CopyTo(
+                    output.AsSpan(written * bytesPerPixel, packetBytes));
+                source += packetBytes;
             }
 
             written += runLength;

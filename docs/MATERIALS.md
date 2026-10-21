@@ -228,7 +228,9 @@ Rejected explicitly: color maps, color-mapped or grayscale image types,
 15/16-bit pixels, interleaving, 24-bit pixels that declare alpha, and any other
 alpha-bit count. RLE packets are validated before pixels are written: a packet
 may not exceed the remaining pixel count, and a truncated run or raw packet
-fails. An optional TGA 2.0 footer (`TRUEVISION-XFILE.`) is accepted; any other
+fails. As the TGA format specifies, bit 7 of the packet header selects a run
+packet (one pixel repeated) when set and a raw packet (one entry per pixel) when
+clear. An optional TGA 2.0 footer (`TRUEVISION-XFILE.`) is accepted; any other
 trailing data is rejected.
 
 ### BMP

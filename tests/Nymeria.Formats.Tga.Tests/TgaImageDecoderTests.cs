@@ -82,6 +82,25 @@ public sealed class TgaImageDecoderTests
     }
 
     [Fact]
+    public void Decode_UsesTheStandardRlePacketHeaderBits()
+    {
+        // Bit 7 set is a run packet: one BGRA pixel repeated twice. Bit 7
+        // clear is a raw packet: one distinct BGRA pixel follows.
+        byte[] packets =
+        [
+            0x81, 0, 0, 255, 255,
+            0x00, 0, 255, 0, 255,
+        ];
+        byte[] file = TgaTestFileBuilder.Rle(3, 1, 32, packets, descriptor: 0x28);
+
+        TextureData texture = Decoder.Decode(new MemoryStream(file));
+
+        Assert.Equal(
+            new byte[] { 255, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255 },
+            texture.Pixels.ToArray());
+    }
+
+    [Fact]
     public void Decode_RejectsRlePacketBeyondPixelCount()
     {
         byte[] packets = TgaTestFileBuilder.RleRun(3, 1, 2, 3);
@@ -96,7 +115,19 @@ public sealed class TgaImageDecoderTests
     [Fact]
     public void Decode_RejectsTruncatedRleRawPacket()
     {
-        var packets = new List<byte> { 0x81, 1, 2, 3, 4 }; // two raw pixels, one present
+        var packets = new List<byte> { 0x01, 1, 2, 3, 4 }; // two raw pixels, one present
+        byte[] file = TgaTestFileBuilder.Rle(2, 1, 32, packets.ToArray(), descriptor: 0x28);
+
+        TgaFormatException exception = Assert.Throws<TgaFormatException>(
+            () => Decoder.Decode(new MemoryStream(file)));
+
+        Assert.Contains("truncated", exception.Message);
+    }
+
+    [Fact]
+    public void Decode_RejectsTruncatedRleRunPacket()
+    {
+        var packets = new List<byte> { 0x81 }; // two-pixel run, no pixel payload
         byte[] file = TgaTestFileBuilder.Rle(2, 1, 32, packets.ToArray(), descriptor: 0x28);
 
         TgaFormatException exception = Assert.Throws<TgaFormatException>(
