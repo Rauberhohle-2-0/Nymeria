@@ -722,7 +722,9 @@ public sealed class XModelParserTests
     [InlineData("FVFData")]
     public void RejectsUnsupportedMeshElements(string element)
     {
-        string body = TriMesh.Replace(
+        // Raw string literals keep the checkout's line endings, so normalize
+        // before matching a pattern that uses '\n' on every platform.
+        string body = TriMesh.ReplaceLineEndings("\n").Replace(
             "  1;\n  3;0,1,2;;\n}",
             $"  1;\n  3;0,1,2;;\n  {element} {{ }}\n}}");
 
@@ -735,7 +737,7 @@ public sealed class XModelParserTests
     [Fact]
     public void RejectsDuplicateMeshElements()
     {
-        string body = TriMesh.Replace(
+        string body = TriMesh.ReplaceLineEndings("\n").Replace(
             "  3;0,1,2;;\n}",
             """
               3;0,1,2;;
