@@ -7,7 +7,10 @@ namespace Nymeria.Formats.DirectX.Tests;
 
 public sealed class XModelParserTests
 {
-    private const string TriMesh = """
+    // Raw string literals keep the checkout's line endings, so the fixtures
+    // are normalized once. Every malformed-input test then matches LF patterns
+    // on Windows, macOS, and Linux alike.
+    private static readonly string TriMesh = NormalizeFixture("""
         Mesh Tri {
           3;
           0;0;0;,
@@ -16,9 +19,9 @@ public sealed class XModelParserTests
           1;
           3;0,1,2;;
         }
-        """;
+        """);
 
-    private const string QuadMesh = """
+    private static readonly string QuadMesh = NormalizeFixture("""
         Mesh Quad {
           4;
           0;0;0;,
@@ -28,7 +31,7 @@ public sealed class XModelParserTests
           1;
           4;0,1,2,3;;
         }
-        """;
+        """);
 
     [Fact]
     public void ParsesTrianglePositionsAndWinding()
@@ -648,7 +651,7 @@ public sealed class XModelParserTests
     [InlineData("nope")]
     public void RejectsNonFiniteOrMalformedNumbers(string value)
     {
-        string body = TriMesh.Replace("0;0;0;", value + ";0;0;");
+        string body = ReplaceRequired(TriMesh, "0;0;0;", value + ";0;0;");
 
         ModelFormatException exception = ParseError(Doc(body));
 
@@ -722,9 +725,8 @@ public sealed class XModelParserTests
     [InlineData("FVFData")]
     public void RejectsUnsupportedMeshElements(string element)
     {
-        // Raw string literals keep the checkout's line endings, so normalize
-        // before matching a pattern that uses '\n' on every platform.
-        string body = TriMesh.ReplaceLineEndings("\n").Replace(
+        string body = ReplaceRequired(
+            TriMesh,
             "  1;\n  3;0,1,2;;\n}",
             $"  1;\n  3;0,1,2;;\n  {element} {{ }}\n}}");
 
@@ -737,7 +739,8 @@ public sealed class XModelParserTests
     [Fact]
     public void RejectsDuplicateMeshElements()
     {
-        string body = TriMesh.ReplaceLineEndings("\n").Replace(
+        string body = ReplaceRequired(
+            TriMesh,
             "  3;0,1,2;;\n}",
             """
               3;0,1,2;;
@@ -1153,7 +1156,7 @@ public sealed class XModelParserTests
     public void RejectsLongTokens()
     {
         ModelFormatException exception = ParseError(
-            Doc(TriMesh.Replace("Mesh Tri", "Mesh AReallyLongMeshName")),
+            Doc(ReplaceRequired(TriMesh, "Mesh Tri", "Mesh AReallyLongMeshName")),
             limits: Limits(tokenLength: 8));
 
         Assert.Contains("longer than the supported limit", exception.Message);
@@ -1333,6 +1336,27 @@ public sealed class XModelParserTests
     private static string Doc(string body)
     {
         return "xof 0303txt 0032\n" + body;
+    }
+
+    private static string NormalizeFixture(string text)
+    {
+        return text.ReplaceLineEndings("\n");
+    }
+
+    // string.Replace returns the input unchanged when the pattern is absent.
+    // That would silently turn a malformed-input test into a valid-input test.
+    private static string ReplaceRequired(string text, string oldValue, string newValue)
+    {
+        string replaced = text.Replace(oldValue, newValue, StringComparison.Ordinal);
+
+        if (string.Equals(replaced, text, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"The fixture does not contain the text to replace: '{oldValue}'. " +
+                "Fix the fixture before trusting this malformed-input test.");
+        }
+
+        return replaced;
     }
 
     private static ModelData Parse(
