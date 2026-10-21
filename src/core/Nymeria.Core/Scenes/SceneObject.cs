@@ -1,3 +1,4 @@
+using Nymeria.Core.Lod;
 using Nymeria.Core.Materials;
 using Nymeria.Core.Models;
 
@@ -23,10 +24,19 @@ namespace Nymeria.Core.Scenes;
 /// accidentally share mutable state. Mutate <see cref="Transform"/> on this
 /// object instead. Materials are immutable and may be shared by reference.
 /// </para>
+/// <para>
+/// An optional <see cref="Lod"/> configuration supplies explicit mesh variants
+/// at increasing camera distances. It is a shared reference and is not owned.
+/// The configuration's highest-detail level must be this object's
+/// <see cref="Mesh"/>. Selection state is kept per object, so sharing one
+/// configuration between objects does not share their current level.
+/// </para>
 /// </remarks>
 public sealed class SceneObject
 {
     private Material _material;
+    private MeshLod? _lod;
+    private int _currentLodLevel = -1;
 
     /// <summary>
     /// Creates a scene object for the supplied mesh.
@@ -40,17 +50,28 @@ public sealed class SceneObject
     /// The initial material, or null for <see cref="Material.Default"/>. The
     /// material is referenced, not copied.
     /// </param>
+    /// <param name="lod">
+    /// The optional level-of-detail configuration, or null for none. It is
+    /// referenced, not copied. Its highest-detail mesh must be
+    /// <paramref name="mesh"/>.
+    /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="mesh"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="lod"/> is not null and its highest-detail mesh is not
+    /// <paramref name="mesh"/>.
+    /// </exception>
     public SceneObject(
         MeshData mesh,
         Transform? transform = null,
-        Material? material = null)
+        Material? material = null,
+        MeshLod? lod = null)
     {
         Mesh = mesh ?? throw new ArgumentNullException(nameof(mesh));
         Transform = transform is null
             ? new Transform()
             : new Transform(transform.Position, transform.Rotation, transform.Scale);
         _material = material ?? Material.Default;
+        Lod = lod;
     }
 
     /// <summary>
@@ -64,6 +85,46 @@ public sealed class SceneObject
     public Transform Transform { get; }
 
     /// <summary>
+    /// Gets or sets the optional level-of-detail configuration for this object.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The default is <see langword="null"/>, which means the object always
+    /// draws <see cref="Mesh"/> and is never distance-culled. Assigning a
+    /// configuration opts this object into LOD selection and its optional
+    /// maximum render distance. The configuration is shared by reference and is
+    /// not copied; it is also not owned or disposed by the object.
+    /// </para>
+    /// <para>
+    /// The configuration's <c>Levels[0]</c> mesh must be the same reference as
+    /// <see cref="Mesh"/>, so a renderer can always fall back to the object's
+    /// primary mesh. Assigning a configuration resets this object's current
+    /// level, including when it is the same configuration instance again.
+    /// Assigning null disables LOD and resets the selection state.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// The value is not null and its highest-detail mesh is not <see cref="Mesh"/>.
+    /// </exception>
+    public MeshLod? Lod
+    {
+        get => _lod;
+        set
+        {
+            if (value is not null &&
+                !ReferenceEquals(value.Levels[0].Mesh, Mesh))
+            {
+                throw new ArgumentException(
+                    "The highest-detail LOD mesh must be the scene object's Mesh.",
+                    nameof(value));
+            }
+
+            _lod = value;
+            _currentLodLevel = -1;
+        }
+    }
+
+    /// <summary>
     /// Gets or sets the material assigned to this object.
     /// </summary>
     /// <remarks>
@@ -75,5 +136,21 @@ public sealed class SceneObject
     {
         get => _material;
         set => _material = value ?? throw new ArgumentNullException(nameof(value));
+    }
+
+    /// <summary>
+    /// Gets the level selected by the most recent LOD-aware visibility test, or
+    /// a negative value when no level has been selected yet.
+    /// </summary>
+    internal int CurrentLodLevel => _currentLodLevel;
+
+    internal void SetCurrentLodLevel(int level)
+    {
+        _currentLodLevel = level;
+    }
+
+    internal void ResetLodLevel()
+    {
+        _currentLodLevel = -1;
     }
 }
