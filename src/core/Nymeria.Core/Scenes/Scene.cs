@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Nymeria.Core.Lighting;
 
 namespace Nymeria.Core.Scenes;
 
@@ -75,6 +76,19 @@ public sealed class Scene
     /// Gets the objects in insertion order. The view is read-only and live.
     /// </summary>
     public IReadOnlyList<SceneObject> Objects => _readOnlyObjects;
+
+    /// <summary>
+    /// Gets or sets the optional lighting configuration for this scene.
+    /// </summary>
+    /// <remarks>
+    /// The default is <see langword="null"/>, which means unlit. Renderers that
+    /// support lighting treat a null value as an unlit surface and preserve the
+    /// behavior of examples that predate lighting. Assigning a
+    /// <see cref="SceneLighting"/> opts the scene into ambient and directional
+    /// lighting. The lighting object is immutable; replace it to change a light
+    /// at runtime. The scene only references it and owns no GPU resources.
+    /// </remarks>
+    public SceneLighting? Lighting { get; set; }
 
     /// <summary>
     /// Adds an object at the end of the scene.
