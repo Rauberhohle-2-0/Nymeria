@@ -364,9 +364,23 @@ public sealed class MaterialRenderer : IDisposable
 
             if (!LightingMath.TryCreateNormalMatrix(model, out Matrix4x4 normalMatrix))
             {
-                throw new InvalidOperationException(
+                // A swapchain texture and render pass are already acquired, so
+                // the command buffer must be submitted before propagating the
+                // error; SDL no longer permits cancelling it at this point.
+                string message =
                     $"The model transform for scene object {objectIndex} is singular " +
-                    "or non-finite, so a normal matrix cannot be computed for lighting.");
+                    "or non-finite, so a normal matrix cannot be computed for lighting.";
+
+                SDL.EndGPURenderPass(renderPass);
+
+                if (!SDL.SubmitGPUCommandBuffer(commandBuffer))
+                {
+                    throw new InvalidOperationException(
+                        $"{message} SDL also could not submit the GPU command buffer: " +
+                        $"{SDL.GetError()}");
+                }
+
+                throw new InvalidOperationException(message);
             }
 
             vertexUniforms[0] = new VertexUniforms
