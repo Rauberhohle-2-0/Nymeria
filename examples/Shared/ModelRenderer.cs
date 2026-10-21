@@ -4,10 +4,10 @@ using Nymeria.Core.Models;
 using Nymeria.Graphics;
 using SDL3;
 
-namespace HelloOBJ;
+namespace Nymeria.Examples;
 
 /// <summary>
-/// Draws one parsed OBJ model into a native window using SDL3's GPU API.
+/// Draws one parsed, format-independent model into a native window using SDL3's GPU API.
 /// </summary>
 /// <remarks>
 /// This example uses SDL's Metal backend and Metal Shading Language (MSL)
@@ -15,9 +15,9 @@ namespace HelloOBJ;
 /// used, and disposed on the process main thread. The window must outlive the
 /// renderer.
 /// </remarks>
-public sealed class ObjRenderer : IDisposable
+public sealed class ModelRenderer : IDisposable
 {
-    private const string ShaderResourceName = "HelloOBJ.Shaders.Model.metal";
+    private const string ShaderResourceName = "Nymeria.Examples.Shaders.Model.metal";
     private const string VertexEntryPoint = "vertex_main";
     private const string FragmentEntryPoint = "fragment_main";
     private const int VertexStride = 6 * sizeof(float);
@@ -36,7 +36,7 @@ public sealed class ObjRenderer : IDisposable
     private uint _depthHeight;
     private bool _disposed;
 
-    private ObjRenderer(
+    private ModelRenderer(
         IntPtr window,
         GpuDevice device,
         IntPtr vertexShader,
@@ -70,7 +70,7 @@ public sealed class ObjRenderer : IDisposable
     /// The call is not on the main thread, the Metal backend is unavailable, or
     /// GPU resource creation fails.
     /// </exception>
-    public static ObjRenderer Create(IntPtr window, ModelData model)
+    public static ModelRenderer Create(IntPtr window, ModelData model)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -79,7 +79,7 @@ public sealed class ObjRenderer : IDisposable
             throw new ArgumentException("A native window handle is required.", nameof(window));
         }
 
-        ObjGpuGeometry geometry = ObjGpuGeometryBuilder.Build(model);
+        ModelGpuGeometry geometry = ModelGpuGeometryBuilder.Build(model);
         GpuDevice device = GpuDevice.Create(window);
         IntPtr vertexShader = IntPtr.Zero;
         IntPtr fragmentShader = IntPtr.Zero;
@@ -113,7 +113,7 @@ public sealed class ObjRenderer : IDisposable
                 device.SwapchainFormat,
                 depthFormat);
 
-            return new ObjRenderer(
+            return new ModelRenderer(
                 window,
                 device,
                 vertexShader,
@@ -328,14 +328,14 @@ public sealed class ObjRenderer : IDisposable
 
     private static byte[] ReadShaderSource()
     {
-        using Stream? stream = typeof(ObjRenderer).Assembly
+        using Stream? stream = typeof(ModelRenderer).Assembly
             .GetManifestResourceStream(ShaderResourceName);
 
         if (stream is null)
         {
             throw new InvalidOperationException(
                 $"The embedded shader '{ShaderResourceName}' is missing. " +
-                "Rebuild HelloOBJ so Shaders/Model.metal is embedded.");
+                "Rebuild the example so Shared/Shaders/Model.metal is embedded.");
         }
 
         using var memory = new MemoryStream();

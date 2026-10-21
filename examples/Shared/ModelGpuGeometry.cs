@@ -1,19 +1,19 @@
 using System.Numerics;
 using Nymeria.Core.Models;
 
-namespace HelloOBJ;
+namespace Nymeria.Examples;
 
 /// <summary>
 /// Converts a parsed model to the interleaved position/color vertex layout used
 /// by this example's existing GPU pipeline.
 /// </summary>
 /// <remarks>
-/// The parser preserves OBJ <c>usemtl</c> names as opaque subset labels but
-/// loads no material library. This example maps its fixture's six labels to
-/// solid colors and uses one neutral color for every other label. It is not a
-/// material system.
+/// Format parsers preserve opaque subset labels such as OBJ <c>usemtl</c>
+/// names or O3D material names, but load no material library. This shared
+/// builder maps the cube fixture's six labels to solid colors and uses one
+/// neutral color for every other label. It is not a material system.
 /// </remarks>
-internal static class ObjGpuGeometryBuilder
+internal static class ModelGpuGeometryBuilder
 {
     private const int FloatsPerVertex = 6;
 
@@ -30,7 +30,7 @@ internal static class ObjGpuGeometryBuilder
             ["bottom"] = new Vector3(0.20f, 0.80f, 0.85f),
         };
 
-    public static ObjGpuGeometry Build(ModelData model)
+    public static ModelGpuGeometry Build(ModelData model)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -74,7 +74,7 @@ internal static class ObjGpuGeometryBuilder
             }
         }
 
-        return new ObjGpuGeometry(vertices.ToArray(), indices.ToArray());
+        return new ModelGpuGeometry(vertices.ToArray(), indices.ToArray());
     }
 
     private static Vector3 ResolveColor(string? materialName)
@@ -86,4 +86,4 @@ internal static class ObjGpuGeometryBuilder
     }
 }
 
-internal readonly record struct ObjGpuGeometry(float[] Vertices, uint[] Indices);
+internal readonly record struct ModelGpuGeometry(float[] Vertices, uint[] Indices);

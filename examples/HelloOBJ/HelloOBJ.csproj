@@ -14,12 +14,15 @@
 
   <ItemGroup>
     <Compile Include="../Shared/FlyCameraControls.cs" Link="FlyCameraControls.cs" />
+    <Compile Include="../Shared/ModelGpuGeometry.cs" Link="ModelGpuGeometry.cs" />
+    <Compile Include="../Shared/ModelRenderer.cs" Link="ModelRenderer.cs" />
+    <Compile Include="../Shared/ModelViewerApp.cs" Link="ModelViewerApp.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <None Update="Assets/cube.obj" CopyToOutputDirectory="PreserveNewest" />
-    <EmbeddedResource Include="Shaders/Model.metal"
-                      LogicalName="HelloOBJ.Shaders.Model.metal" />
+    <EmbeddedResource Include="../Shared/Shaders/Model.metal"
+                      LogicalName="Nymeria.Examples.Shaders.Model.metal" />
   </ItemGroup>
 
 </Project>
