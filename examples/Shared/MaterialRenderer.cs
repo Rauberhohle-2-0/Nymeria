@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Nymeria.Core.Culling;
 using Nymeria.Core.Lighting;
 using Nymeria.Core.Materials;
 using Nymeria.Core.Models;
@@ -66,6 +67,7 @@ public sealed class MaterialRenderer : IDisposable
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Texture, GpuTexture> _textures =
         new(ReferenceEqualityComparer.Instance);
+    private readonly SceneVisibilityCounter _visibility = new();
     private IntPtr _depthTexture;
     private uint _depthWidth;
     private uint _depthHeight;
@@ -201,6 +203,33 @@ public sealed class MaterialRenderer : IDisposable
     }
 
     /// <summary>
+    /// Gets or sets whether fully out-of-view scene instances are skipped before
+    /// draw submission.
+    /// </summary>
+    /// <remarks>
+    /// Culling is disabled by default so existing examples keep their previous
+    /// behavior. It only skips draw submission for an instance; scene objects,
+    /// meshes, materials, and textures remain loaded. The test is conservative:
+    /// intersecting or uncertain instances are still drawn. See
+    /// <c>docs/CULLING.md</c>.
+    /// </remarks>
+    public bool FrustumCullingEnabled { get; set; }
+
+    /// <summary>
+    /// Gets instance and draw-call counts for the most recent frame that reached
+    /// command submission.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="VisibilityStatistics.TotalInstances"/>,
+    /// <see cref="VisibilityStatistics.VisibleInstances"/>, and
+    /// <see cref="VisibilityStatistics.CulledInstances"/> count scene instances,
+    /// not GPU work. <see cref="VisibilityStatistics.DrawCalls"/> counts the
+    /// indexed draw calls this renderer actually submitted. A frame skipped for a
+    /// minimized window or an unusable drawable leaves this value at zero.
+    /// </remarks>
+    public VisibilityStatistics LastFrameStatistics { get; private set; }
+
+    /// <summary>
     /// Acquires a swapchain texture and draws the current scene contents. An
     /// empty scene still clears the color and depth targets. Frames without a
     /// drawable texture, such as while the window is minimized, are skipped.
@@ -212,6 +241,10 @@ public sealed class MaterialRenderer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(camera);
+
+        // Counters describe one frame only. A skipped frame reports no work.
+        _visibility.Reset();
+        LastFrameStatistics = default;
 
         if ((SDL.GetWindowFlags(_window) & SDL.WindowFlags.Minimized) != 0)
         {
@@ -262,12 +295,16 @@ public sealed class MaterialRenderer : IDisposable
 
         Matrix4x4 view;
         Matrix4x4 projection;
+        Frustum? frustum;
 
         try
         {
             EnsureDepthTexture(width, height);
             view = camera.ViewMatrix;
             projection = camera.CreateProjectionMatrix((float)width / height);
+            frustum = FrustumCullingEnabled
+                ? Frustum.Create(view * projection)
+                : null;
         }
         catch
         {
@@ -355,12 +392,19 @@ public sealed class MaterialRenderer : IDisposable
         Span<SDL.GPUTextureSamplerBinding> samplerBindings =
             stackalloc SDL.GPUTextureSamplerBinding[1];
 
+        int drawCalls = 0;
+
         for (int objectIndex = 0; objectIndex < scene.Objects.Count; objectIndex++)
         {
             SceneObject sceneObject = scene.Objects[objectIndex];
+
+            if (!_visibility.Test(sceneObject, frustum, out Matrix4x4 model))
+            {
+                continue;
+            }
+
             GpuMesh mesh = _meshes[sceneObject.Mesh];
             Material material = sceneObject.Material;
-            Matrix4x4 model = sceneObject.Transform.CreateModelMatrix();
 
             if (!LightingMath.TryCreateNormalMatrix(model, out Matrix4x4 normalMatrix))
             {
@@ -443,6 +487,7 @@ public sealed class MaterialRenderer : IDisposable
                 0,
                 0,
                 0);
+            drawCalls++;
         }
 
         SDL.EndGPURenderPass(renderPass);
@@ -452,6 +497,12 @@ public sealed class MaterialRenderer : IDisposable
             throw new InvalidOperationException(
                 $"SDL could not submit the GPU command buffer: {SDL.GetError()}");
         }
+
+        LastFrameStatistics = new VisibilityStatistics(
+            _visibility.TotalInstances,
+            _visibility.VisibleInstances,
+            _visibility.CulledInstances,
+            drawCalls);
     }
 
     public void Dispose()
@@ -991,6 +1042,21 @@ public sealed class MaterialRenderer : IDisposable
 
         return pipeline;
     }
+
+    /// <summary>
+    /// Instance and draw-call counts for one submitted frame.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="VisibleInstances"/> counts scene instances that passed the
+    /// visibility test, independent of how many primitives or GPU commands they
+    /// produce. <see cref="DrawCalls"/> counts submitted indexed draw calls; this
+    /// renderer issues one per visible instance. Neither value is a GPU timing.
+    /// </remarks>
+    public readonly record struct VisibilityStatistics(
+        int TotalInstances,
+        int VisibleInstances,
+        int CulledInstances,
+        int DrawCalls);
 
     private readonly record struct GpuMesh(
         IntPtr VertexBuffer,
