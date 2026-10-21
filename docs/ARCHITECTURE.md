@@ -25,7 +25,8 @@ extension is a direction, not a current feature.
 - `Nymeria.slnx`, containing the C# projects that exist today.
 - `Nymeria.Platform`, a class library exposing a minimal native window API.
 - `Nymeria.Core`, a dependency-free class library containing validated,
-  format-independent model data and the `IModelParser` contract.
+  format-independent model data, the `IModelParser` contract, and minimal scene
+  data (`Scene`, `SceneObject`, and `Transform`).
 - `Nymeria.Formats.Obj`, a dependency-free Wavefront OBJ parser implementing
   `IModelParser` for a documented polygonal subset.
 - `Nymeria.Formats.O3d`, a dependency-free OMSI O3D parser implementing
@@ -43,9 +44,11 @@ extension is a direction, not a current feature.
   fixture or a user-supplied path and renders it through the existing GPU path.
 - `examples/HelloO3D`, the same interactive viewer for an O3D fixture or a
   user-supplied path, using the shared example renderer.
+- `examples/HelloScene`, an interactive example that draws multiple transformed
+  instances of one shared mesh through the scene layer, with runtime add/remove.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
-- `Nymeria.Core.Tests`, GPU-independent tests for model-data validation and
-  parser-contract error behavior.
+- `Nymeria.Core.Tests`, GPU-independent tests for model-data validation,
+  parser-contract error behavior, transform composition, and scene lifecycle.
 - `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
   conversions, and diagnostics.
 - `Nymeria.Formats.O3d.Tests`, GPU-independent tests for the O3D header,
@@ -100,13 +103,14 @@ would require maintainer approval.
 `src/platform/` contains the `Nymeria.Platform` project, `src/graphics/`
 contains `Nymeria.Graphics`, `src/core/` contains `Nymeria.Core`, `src/formats/`
 contains `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d`, `examples/` contains
-`HelloTriangle`, `HelloCube`, `HelloOBJ`, and `HelloO3D`, and `tests/` contains
-`Nymeria.Core.Tests`, `Nymeria.Formats.Obj.Tests`,
+`HelloTriangle`, `HelloCube`, `HelloOBJ`, `HelloO3D`, and `HelloScene`, and
+`tests/` contains `Nymeria.Core.Tests`, `Nymeria.Formats.Obj.Tests`,
 `Nymeria.Formats.O3d.Tests`, and `Nymeria.Platform.Tests`.
 
 `Nymeria.Core` owns the format-independent model data and parser contract
-described in [MODEL_DATA.md](MODEL_DATA.md). It references `System.Numerics` and
-the base class library only. The camera lives in `Nymeria.Graphics` rather than
+described in [MODEL_DATA.md](MODEL_DATA.md), plus the minimal scene data
+described in [SCENE.md](SCENE.md). It references `System.Numerics` and the base
+class library only. The camera lives in `Nymeria.Graphics` rather than
 in `Nymeria.Core`: it is reusable 3D rendering math with no SDL, window, or GPU
 dependency, and the model-loading foundation is the first demonstrated need for
 the core project. `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d` reference only
@@ -208,6 +212,16 @@ format parsers. The cube example builds its geometry as model data and converts
 it to the existing shader layout; `Nymeria.Core` itself never creates GPU
 resources.
 
+`Nymeria.Core.Scenes` adds the smallest layer above model data: a `Scene`
+holding deterministic `SceneObject` instances, each with its own `Transform` and
+a shared reference to a `MeshData`. `Transform` validates finite position and
+scale, normalizes rotation, and composes `scale * rotation * translation` for
+`System.Numerics` row vectors. Scenes and objects own no GPU resources. A
+renderer owns one upload per distinct mesh and releases it; removing an object
+does not dispose or invalidate the shared CPU mesh. [SCENE.md](SCENE.md) is the
+authoritative contract. There is no ECS, hierarchy, serialization, editor,
+physics, animation, or culling.
+
 ## GPU rendering
 
 `Nymeria.Graphics` contains reusable graphics infrastructure. `GpuDevice`
@@ -225,9 +239,9 @@ Metal interop, native wrapper, second binding, or software fallback.
 - claims the window for presentation and reads its swapchain format.
 
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
-`examples/HelloOBJ`, and `examples/HelloO3D`. Each has its own vertex data and
-draw calls, and uses `GpuDevice` for the device, window claim, shader creation,
-buffer upload, and swapchain format.
+`examples/HelloOBJ`, `examples/HelloO3D`, and `examples/HelloScene`. Each has its
+own vertex data and draw calls, and uses `GpuDevice` for the device, window
+claim, shader creation, buffer upload, and swapchain format.
 [examples/README.md](../examples/README.md) documents their run commands and
 rendering conventions. `HelloOBJ` and `HelloO3D` share the renderer, geometry
 builder, shader, model-viewer loop, and camera controls in `examples/Shared`; the
@@ -367,25 +381,49 @@ frame the camera from the parsed model's bounds so a user-supplied model of any
 origin is visible, render continuously with the same 16 ms budget, and apply the
 same depth, resize, minimize, zero-sized-drawable, and shutdown behavior as
 `HelloCube`. They have no textures, lighting, animation, material properties, or
-scene graph.
+object hierarchy.
+
+### HelloScene
+
+`HelloScene` renders a `Nymeria.Core.Scenes.Scene` through the existing
+position/color model shader and depth-tested pipeline. Its `SceneRenderer` owns
+the device, shaders, pipeline, depth target, and a cache of one GPU mesh upload
+per distinct `MeshData` reference. Mesh data is uploaded before the frame command
+buffer is acquired, and each object supplies only its model matrix; repeated
+instances therefore reuse the same vertex and index buffers.
+
+The example builds a deterministic six-color cube as `MeshData` in code, so it
+requires no OBJ, O3D, or OMSI asset. Four initial objects reference that one mesh
+with different positions, quaternions, and non-uniform scales. `E` adds another
+instance, `Q` removes the last object, and `R` restores the initial scene.
+Removing every object leaves an empty scene, which still clears both targets.
+Camera input remains the shared `FlyCameraControls`. The loop, frame budget,
+minimize, resize, zero-sized-drawable, and shutdown paths follow the other
+interactive examples. [SCENE.md](SCENE.md) documents the data contract and
+ownership rules.
 
 ### Ownership and lifetime
 
 - `GpuDevice` owns the GPU device and window claim. Each renderer owns its
-  shaders, geometry buffers, pipeline, and, for the cube and model scenes, the
-  depth texture. A renderer must be created after the window and disposed before
-  it.
+  shaders, geometry buffers, pipeline, and, for the cube, model, and scene
+  examples, the depth texture. A renderer must be created after the window and
+  disposed before it.
+- `Scene` and `SceneObject` own no GPU resources. `SceneObject.Mesh` is a shared
+  reference to managed `MeshData`; `SceneRenderer` owns one upload per distinct
+  mesh and releases every cached upload once. Removing an object never disposes
+  a mesh that other objects may still reference.
 - Each `Dispose` waits for the GPU to become idle, releases its resources, and
   then disposes the `GpuDevice`, which releases the window claim and destroys the
   device. Initialization failures release whatever was created in reverse order
   and then rethrow.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
-- `HelloCube`, `HelloOBJ`, and `HelloO3D` own their `Camera` instances and share
-  the `FlyCameraControls` implementation. The camera has no unmanaged resources.
-  The input mapping disables relative mouse mode and discards pending mouse
-  motion during disposal, before the window is destroyed.
-- No renderer creates per-frame GPU resources. Command buffers and swapchain
+- `HelloCube`, `HelloOBJ`, `HelloO3D`, and `HelloScene` own their `Camera`
+  instances and share the `FlyCameraControls` implementation. The camera has no
+  unmanaged resources. The input mapping disables relative mouse mode and
+  discards pending mouse motion during disposal, before the window is destroyed.
+- No renderer creates per-frame GPU resources. The scene renderer uploads a
+  newly referenced mesh once and reuses it; command buffers and swapchain
   textures are owned and recycled by SDL.
 
 Limitations in this version:
@@ -395,8 +433,9 @@ Limitations in this version:
   packages, which are not implemented.
 - Apple Silicon and Intel Macs both use Metal. The macOS native package contains
   both architectures.
-- There is no scene graph, texture, lighting, material system, collision system,
-  or engine-level input system. `Camera` is reusable math, but input mapping and
+- There is no scene hierarchy, ECS, serialization, editor, texture, lighting,
+  material system, collision system, or engine-level input system. The scene
+  layer holds flat objects only. `Camera` is reusable math, but input mapping and
   timing stay in the examples; the triangle remains static clip-space geometry.
 - The Wavefront OBJ parser handles a documented polygonal subset only. It does
   not load MTL materials or textures, tessellate concave or non-planar polygons,
@@ -436,7 +475,8 @@ Nymeria.Graphics   Nymeria.Platform   Nymeria.Formats.Obj   Nymeria.Formats.O3d
 - `tests/` may reference the project under test.
 
 `Nymeria.Core` has no project references; it uses `System.Numerics` and the base
-class library only. `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d` reference
+class library only. Its scene types reference `MeshData` but no GPU, SDL3, or
+format code. `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d` reference
 `Nymeria.Core` only. `Nymeria.Graphics` and `Nymeria.Platform` have no
 `Nymeria.Core` reference because neither has a demonstrated need for it yet.
 They do not reference each other: each example creates the window and passes
@@ -446,7 +486,9 @@ They do not reference each other: each example creates the window and passes
 `Nymeria.Core` for its cube model data; `HelloOBJ` references `Nymeria.Core`,
 `Nymeria.Formats.Obj`, `Nymeria.Graphics`, and `Nymeria.Platform`; `HelloO3D`
 references `Nymeria.Core`, `Nymeria.Formats.O3d`, `Nymeria.Graphics`, and
-`Nymeria.Platform`; `HelloTriangle` does not need the core or formats projects.
+`Nymeria.Platform`; `HelloScene` references `Nymeria.Core` for scene and mesh
+data, `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for
+the window; `HelloTriangle` does not need the core or formats projects.
 No engine project references an example. `Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`, and
 `Nymeria.Platform.Tests` reference their project or projects under test. No
@@ -467,13 +509,18 @@ The following choices are implemented:
   `GpuDevice`; the examples embed their own `.metal` files, and `HelloOBJ` and
   `HelloO3D` share `examples/Shared/Shaders/Model.metal`, compiled by SDL at
   runtime. No direct Metal interop or shader compiler is used.
-- **Math:** `System.Numerics` vectors and matrices, with no custom math library.
-  `Camera` uses it for yaw/pitch view and projection math. `HelloCube` composes
-  one model-view-projection matrix per cube, uploads row-major bytes, and lets
-  MSL interpret them as column-major.
+- **Math:** `System.Numerics` vectors, quaternions, and matrices, with no custom
+  math library. `Camera` uses it for yaw/pitch view and projection math.
+  `Transform` uses it for normalized quaternion rotation and row-vector
+  `scale * rotation * translation` composition. `HelloCube` and `HelloScene`
+  upload row-major bytes and let MSL interpret them as column-major.
 - **Model data:** `Nymeria.Core` contains validated, format-independent
   `ModelData`/`MeshData` types and the `IModelParser` stream contract. It uses
   `System.Numerics` and no external package, SDL3, or GPU dependency.
+- **Scene data:** `Nymeria.Core` contains `Scene`, `SceneObject`, and `Transform`
+  in `Nymeria.Core.Scenes`. Objects reference shared `MeshData`; the scene owns
+  no GPU resources. Finite transform validation, a 100,000-object default limit,
+  and deterministic ordering are documented in [SCENE.md](SCENE.md).
 - **Model parsing:** `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d` are
   dependency-free parsers in isolated format projects. They use the base class
   library and `Nymeria.Core` only, implement `IModelParser`, and document their
@@ -482,8 +529,9 @@ The following choices are implemented:
 - **External packages:** the SDL3 binding and macOS native runtime, plus the
   xUnit test packages `xunit` 2.9.3, `xunit.runner.visualstudio` 4.0.1, and
   `Microsoft.NET.Test.Sdk` 18.11.0. The headless tests cover platform-independent
-  `WindowOptions` behavior, model-data validation and parser error semantics, the
-  OBJ subset, and the O3D subset; they do not launch a GUI or create a GPU device.
+  `WindowOptions` behavior, model-data validation and parser error semantics,
+  transform composition, scene lifecycle and mesh sharing, the OBJ subset, and
+  the O3D subset; they do not launch a GUI or create a GPU device.
 
 The following choices remain open:
 

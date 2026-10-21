@@ -15,17 +15,19 @@ dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
 dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
+dotnet run --project examples/HelloScene/HelloScene.csproj
 ```
 
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/HelloCube/Shaders/Cube.metal`, and the shared
-`examples/Shared/Shaders/Model.metal`. The model shader is embedded in both
-`HelloOBJ` and `HelloO3D` as `Nymeria.Examples.Shaders.Model.metal`. Shaders are
-embedded in their examples and compiled by SDL's Metal backend at startup, so
-there is no shader compiler step and no external shader file to deploy.
+`examples/Shared/Shaders/Model.metal`. The model shader is embedded in
+`HelloOBJ`, `HelloO3D`, and `HelloScene` as
+`Nymeria.Examples.Shaders.Model.metal`. Shaders are embedded in their examples
+and compiled by SDL's Metal backend at startup, so there is no shader compiler
+step and no external shader file to deploy.
 
 Run each example checklist separately. The failure-path checks at the end apply
-to all four.
+to all five.
 
 ## HelloTriangle checks
 
@@ -193,6 +195,54 @@ to all four.
 14. **No unhandled exceptions.** No exception text appears in the terminal during
     normal launch, movement, mouse look, resize, minimize, restore, or shutdown.
 
+## HelloScene checks
+
+1. **Window appears.** A native window opens without a console error. The
+   terminal prints the `E`/`Q`/`R` control summary.
+2. **Title is correct.** The title bar reads `Nymeria`.
+3. **Objects render.** Four cubes are visible against the dark background with
+   six distinct solid face colors and perspective-projected edges. They have
+   different positions, orientations, and scales, including at least one visibly
+   non-uniform scale. The output is not blank or black.
+4. **Shared mesh is visually consistent.** All four objects use the same cube
+   mesh and color mapping; only their transforms differ.
+5. **Depth occlusion is correct.** Near faces hide the faces behind them, and
+   nearer cubes hide farther cubes where they overlap. The scene reads as solid
+   objects.
+6. **Camera framing is stable.** Without input, the camera does not drift and the
+   initial objects stay visible.
+7. **Movement and mouse look work.** The shared controls behave as in
+   `HelloCube`: `W`/`A`/`S`/`D`, `Space`, `Left Control`, `Shift`, and held right
+   mouse button for look. Releasing the button restores the cursor.
+8. **Add works.** Press `E` several times. One new cube appears per press at a
+   deterministic position and scale. Holding `E` must not add a continuous
+   stream of objects; release and press again to add another.
+9. **Remove works.** Press `Q` several times. The last object is removed each
+   time while the remaining objects stay in place. Press `Q` until the scene is
+   empty: the window must keep clearing to the dark background without crashing.
+10. **Reset works.** With the initial objects removed or extra objects added,
+    press `R`. The scene returns to the original four objects and the add/remove
+    sequence restarts.
+11. **Resize works.** Drag a corner or edge, including to a very wide and a very
+    tall window. Proportions stay correct, the scene is not stretched, and the
+    window remains responsive.
+12. **High-DPI works.** On a Retina display, cube edges are drawn at the display's
+    native pixel density rather than an upscaled low-resolution image.
+13. **Minimize and restore work.** Minimize the window for a few seconds, then
+    restore it. The scene reappears with correct depth and proportions, and the
+    process does not crash or freeze while minimized.
+14. **Close button exits.** Click the red close button. The process ends, the
+    terminal prompt returns, and `echo $?` reports `0`. The cursor is visible.
+15. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
+    The process ends with status code `0`.
+16. **No busy-spin.** The loop renders continuously at about 60 frames per
+    second, so CPU use is higher than the idle triangle, but it must stay well
+    below one full core. Memory use stays stable while adding and removing the
+    same shared mesh repeatedly; it must not grow per instance or per frame.
+17. **No unhandled exceptions.** No exception text appears in the terminal during
+    normal launch, movement, mouse look, add, remove, reset, resize, minimize,
+    restore, or shutdown.
+
 macOS notes:
 
 - The movement keys are read by physical scancode, so `W`/`A`/`S`/`D` occupy the
@@ -249,6 +299,7 @@ These checks are optional and must not modify tracked files.
 
 Report the macOS version, architecture (`arm64` or `x86_64`), GPU model, date, and
 pass/fail for each check, separately for `HelloTriangle`, `HelloCube`,
-`HelloOBJ`, and `HelloO3D`. Do not describe this manual checklist as a CI result.
+`HelloOBJ`, `HelloO3D`, and `HelloScene`. Do not describe this manual checklist
+as a CI result.
 State separately that the checked-in `HelloO3D` fixture is synthetic and that
 real OMSI content was not available for validation.

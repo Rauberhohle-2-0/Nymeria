@@ -40,10 +40,31 @@ internal static class ModelGpuGeometryBuilder
     {
         ArgumentNullException.ThrowIfNull(model);
 
-        var vertices = new List<float>();
-        var indices = new List<uint>();
+        var builder = new GeometryBuilder();
 
         foreach (MeshData mesh in model.Meshes)
+        {
+            builder.Append(mesh);
+        }
+
+        return builder.ToGeometry();
+    }
+
+    public static ModelGpuGeometry Build(MeshData mesh)
+    {
+        ArgumentNullException.ThrowIfNull(mesh);
+
+        var builder = new GeometryBuilder();
+        builder.Append(mesh);
+        return builder.ToGeometry();
+    }
+
+    private sealed class GeometryBuilder
+    {
+        private readonly List<float> _vertices = new();
+        private readonly List<uint> _indices = new();
+
+        public void Append(MeshData mesh)
         {
             ReadOnlySpan<Vector3> positions = mesh.Positions.Span;
             ReadOnlySpan<uint> sourceIndices = mesh.Indices.Span;
@@ -62,7 +83,7 @@ internal static class ModelGpuGeometryBuilder
 
                     if (!vertexMap.TryGetValue(sourceIndex, out uint gpuIndex))
                     {
-                        int nextIndex = vertices.Count / FloatsPerVertex;
+                        int nextIndex = _vertices.Count / FloatsPerVertex;
 
                         if (nextIndex >= MaxGpuVertices)
                         {
@@ -73,25 +94,28 @@ internal static class ModelGpuGeometryBuilder
                         vertexMap.Add(sourceIndex, gpuIndex);
 
                         Vector3 position = positions[(int)sourceIndex];
-                        vertices.Add(position.X);
-                        vertices.Add(position.Y);
-                        vertices.Add(position.Z);
-                        vertices.Add(color.X);
-                        vertices.Add(color.Y);
-                        vertices.Add(color.Z);
+                        _vertices.Add(position.X);
+                        _vertices.Add(position.Y);
+                        _vertices.Add(position.Z);
+                        _vertices.Add(color.X);
+                        _vertices.Add(color.Y);
+                        _vertices.Add(color.Z);
                     }
 
-                    if (indices.Count >= MaxGpuIndices)
+                    if (_indices.Count >= MaxGpuIndices)
                     {
                         throw CreateBudgetException();
                     }
 
-                    indices.Add(gpuIndex);
+                    _indices.Add(gpuIndex);
                 }
             }
         }
 
-        return new ModelGpuGeometry(vertices.ToArray(), indices.ToArray());
+        public ModelGpuGeometry ToGeometry()
+        {
+            return new ModelGpuGeometry(_vertices.ToArray(), _indices.ToArray());
+        }
     }
 
     private static InvalidOperationException CreateBudgetException()

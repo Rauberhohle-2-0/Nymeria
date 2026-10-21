@@ -9,12 +9,13 @@ interactive, depth-tested cube scene.
 ## Current status
 
 - **Implemented now:** .NET 10 solution, the `Nymeria.Platform` window API,
-  `Nymeria.Core` with validated format-independent model data and a parser
-  contract, `Nymeria.Formats.Obj` with a dependency-free Wavefront OBJ parser,
-  `Nymeria.Formats.O3d` with a dependency-free OMSI O3D static-mesh parser,
-  `Nymeria.Graphics` with reusable Metal GPU device infrastructure and camera
-  math, `examples/HelloTriangle`, the interactive `examples/HelloCube`, the
-  OBJ-rendering `examples/HelloOBJ`, the O3D-rendering `examples/HelloO3D`,
+  `Nymeria.Core` with validated format-independent model data, a parser
+  contract, and a minimal scene layer, `Nymeria.Formats.Obj` with a
+  dependency-free Wavefront OBJ parser, `Nymeria.Formats.O3d` with a
+  dependency-free OMSI O3D static-mesh parser, `Nymeria.Graphics` with reusable
+  Metal GPU device infrastructure and camera math, `examples/HelloTriangle`, the
+  interactive `examples/HelloCube`, the OBJ-rendering `examples/HelloOBJ`, the
+  O3D-rendering `examples/HelloO3D`, the scene-instancing `examples/HelloScene`,
   platform-independent unit tests, CI restore/build/test on macOS, Windows, and
   Linux, repository checks, an audited dependency restore, a documented security
   baseline, and Dependabot updates for GitHub Actions and NuGet.
@@ -52,6 +53,7 @@ dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
 dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
+dotnet run --project examples/HelloScene/HelloScene.csproj
 ```
 
 A resizable native window titled `Nymeria` opens at 960 × 540. `HelloTriangle`
@@ -60,7 +62,9 @@ positions with perspective projection and depth testing, plus a free-fly camera.
 `HelloOBJ` loads its checked-in cube fixture and renders it through the same
 camera and GPU path; pass a path after `--` to load a different OBJ file.
 `HelloO3D` uses the same viewer and GPU path with its synthetic O3D fixture or a
-path to another O3D file. Move with `W`/`A`/`S`/`D`, `Space`, and
+path to another O3D file. `HelloScene` draws several transformed instances of one
+shared mesh; press `E` to add an instance, `Q` to remove the last object, and `R`
+to reset. Move with `W`/`A`/`S`/`D`, `Space`, and
 `Left Control`; hold `Shift` to go faster; hold the right mouse button and move
 the mouse to look around. Close any window with the red close button or the
 standard macOS quit shortcut (`Cmd+Q`). The command exits with status code `0`
@@ -76,10 +80,13 @@ pipeline cannot be created, or the OBJ/O3D example cannot read or parse its file
 The GPU examples use SDL3's GPU API on the Metal backend. There is no direct
 Metal interop and no software fallback. `Nymeria.Graphics` provides the reusable
 GPU device and the `Camera` math type; `Nymeria.Core` provides the model data
-used by `HelloCube`; `Nymeria.Formats.Obj` parses the file used by `HelloOBJ`,
-and `Nymeria.Formats.O3d` parses the file used by `HelloO3D`. Each example owns
+used by `HelloCube` and the scene data used by `HelloScene`;
+`Nymeria.Formats.Obj` parses the file used by `HelloOBJ`, and
+`Nymeria.Formats.O3d` parses the file used by `HelloO3D`. Each example owns
 its pipeline and depth target, while `HelloOBJ` and `HelloO3D` share the renderer,
-shader, model-viewer loop, and camera controls in `examples/Shared`.
+shader, model-viewer loop, and camera controls in `examples/Shared`. `HelloScene`
+uses the shared geometry builder, model shader, and camera controls with its own
+scene renderer.
 
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/HelloCube/Shaders/Cube.metal`, and the shared
@@ -124,7 +131,14 @@ bones, unknown sections, and unknown flags with offset-based diagnostics. See
 [docs/O3D.md](docs/O3D.md) for the exact support matrix, provenance, and known
 uncertainties.
 
-All four examples skip rendering while minimized and recover when a drawable is
+`HelloScene` renders a `Nymeria.Core.Scenes.Scene` containing objects that share
+one procedural cube mesh. Its renderer uploads one GPU mesh per distinct
+`MeshData` and draws each object with its own model matrix. Scenes own no GPU
+resources; removing objects leaves shared meshes and cached uploads intact for
+other instances. `E`, `Q`, and `R` add, remove, and reset objects at runtime.
+See [docs/SCENE.md](docs/SCENE.md) for the data and ownership contract.
+
+All five examples skip rendering while minimized and recover when a drawable is
 available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
@@ -142,10 +156,10 @@ dotnet test Nymeria.slnx
 ```
 
 The tests cover `WindowOptions` defaults and validation, model-data validation
-and parser-contract error semantics in `Nymeria.Core.Tests`, the OBJ subset and
-diagnostics in `Nymeria.Formats.Obj.Tests`, and the O3D header, supported
-versions and flags, conversions, limits, and failure behavior in
-`Nymeria.Formats.O3d.Tests`. There are deliberately no fake GUI tests: native
+and parser-contract error semantics, transform composition, and scene lifecycle
+and mesh sharing in `Nymeria.Core.Tests`, the OBJ subset and diagnostics in
+`Nymeria.Formats.Obj.Tests`, and the O3D header, supported versions and flags,
+conversions, limits, and failure behavior in `Nymeria.Formats.O3d.Tests`. There are deliberately no fake GUI tests: native
 window behavior is covered by the manual smoke test below and is not claimed as
 a headless CI result.
 
@@ -159,11 +173,11 @@ manually; it is not claimed as a headless CI result.
 ```text
 .github/        Repository checks and Dependabot configuration
 docs/           Architecture, Git policy, and manual smoke test
-src/core/       Nymeria.Core model data and parser contract
+src/core/       Nymeria.Core model data, parser contract, and scene data
 src/formats/    Nymeria.Formats.Obj and Nymeria.Formats.O3d parsers
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
-examples/       HelloTriangle, HelloCube, HelloOBJ, and HelloO3D examples
+examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, and HelloScene
 tests/          Headless unit tests for core, formats, and platform projects
 ```
 
@@ -171,6 +185,7 @@ tests/          Headless unit tests for core, formats, and platform projects
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Model data and parser contract](docs/MODEL_DATA.md)
+- [Scene data and instancing](docs/SCENE.md)
 - [Wavefront OBJ import](docs/OBJ.md)
 - [OMSI O3D import](docs/O3D.md)
 - [Examples](examples/README.md)

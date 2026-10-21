@@ -68,6 +68,10 @@ and is enforced before the model is uploaded.
   resources.
 - Wait for the GPU to become idle before releasing resources that pending work
   may reference, including in failure paths.
+- Scene data owns no native or GPU resources. A `SceneObject` references shared
+  managed `MeshData`; the renderer owns and releases one upload per distinct
+  mesh. Removing an object must not dispose a mesh that another object still
+  references.
 - After `SDL_AcquireGPUSwapchainTexture` returns a texture, submit the command
   buffer. Do not cancel an acquired command buffer. A null texture or a failed
   acquisition may still be cancelled.

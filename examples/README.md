@@ -9,7 +9,8 @@ format-independent model data used by `HelloCube`, `Nymeria.Formats.Obj`
 provides the OBJ parser used by `HelloOBJ`, and `Nymeria.Formats.O3d` provides
 the O3D parser used by `HelloO3D`. `HelloOBJ` and `HelloO3D` share the renderer,
 geometry builder, shader, model-viewer loop, and input mapping in
-`examples/Shared`.
+`examples/Shared`. `HelloScene` uses the scene layer in `Nymeria.Core`, the
+shared geometry builder, the shared model shader, and the shared camera controls.
 
 All examples use SDL3's GPU API with the Metal backend and Metal Shading
 Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
@@ -24,6 +25,7 @@ dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
 dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
+dotnet run --project examples/HelloScene/HelloScene.csproj
 ```
 
 ## HelloTriangle
@@ -70,8 +72,8 @@ renders continuously, and targets about 16 ms per frame.
 
 ### Controls
 
-`HelloCube`, `HelloOBJ`, and `HelloO3D` share
-`examples/Shared/FlyCameraControls.cs`, so these controls apply to all three
+`HelloCube`, `HelloOBJ`, `HelloO3D`, and `HelloScene` share
+`examples/Shared/FlyCameraControls.cs`, so these controls apply to all four
 examples.
 
 | Input | Action |
@@ -81,6 +83,10 @@ examples.
 | `Space` / `Left Control` | Move up / down |
 | Hold right mouse button | Look around; motion is relative and the cursor is hidden |
 | Hold `Shift` | Move faster |
+
+`HelloScene` adds scene-editing keys: `E` adds an instance of the shared mesh,
+`Q` removes the last object, and `R` restores the initial objects. The scene keys
+are edge-triggered, so holding a key adds or removes only one object per press.
 
 Mouse look rotates only while the right button is held. Releasing the button,
 losing input focus, minimizing the window, or exiting disables relative mouse
@@ -186,8 +192,8 @@ dotnet run --project examples/HelloOBJ/HelloOBJ.csproj -- path/to/model.obj
   shader.
 - Camera: framed from the parsed model's bounds so the fixture and ordinary
   user-supplied models start visible. It uses the shared `FlyCameraControls`.
-- Scope: no textures, lighting, material properties, animation, scene graph, or
-  generic asset registry.
+- Scope: no textures, lighting, material properties, animation, object hierarchy,
+  or generic asset registry.
 
 ## HelloO3D
 
@@ -223,15 +229,46 @@ dotnet run --project examples/HelloO3D/HelloO3D.csproj -- path/to/model.o3d
   and `bottom` map to six solid colors. Unknown labels use one neutral color.
   This is example presentation, not a material system.
 - Scope: no textures, lighting, animation, bones, skinning, scrambling, pivot
-  transforms, scene graph, or generic asset registry.
+  transforms, object hierarchy, or generic asset registry.
+
+## HelloScene
+
+`HelloScene` demonstrates `Nymeria.Core.Scenes`: four initial objects reference
+one shared procedural cube mesh at different positions, rotations, and
+non-uniform scales. It uses the existing model shader, depth test, shared
+geometry builder, and free camera. The scene data has no SDL3, GPU, or file
+format dependency.
+
+```bash
+dotnet run --project examples/HelloScene/HelloScene.csproj
+```
+
+- Mesh: a deterministic six-color cube built as `MeshData` in
+  `HelloScene/SceneFixtures.cs`. It is original project content and requires no
+  OBJ, O3D, or OMSI asset.
+- Sharing: all objects reference the same `MeshData`. `SceneRenderer` caches one
+  GPU vertex/index upload per distinct mesh, so adding instances does not
+  re-upload geometry.
+- Transforms: each object has a `Transform` with a quaternion rotation. The
+  model matrix composes `scale * rotation * translation` and then
+  `model * view * projection`, using the same row-major upload convention as
+  `HelloCube`. See [../docs/SCENE.md](../docs/SCENE.md).
+- Runtime editing: `E` adds a deterministic instance, `Q` removes the last
+  object, and `R` restores the initial four. Removing every object leaves an
+  empty scene that still clears the color and depth targets.
+- Lifetime: the scene owns no GPU resources. The renderer releases its cached
+  uploads, depth target, pipeline, shaders, and device on shutdown.
+- Scope: no hierarchy, ECS, serialization, editor, physics, animation, culling,
+  textures, lighting, or material system.
 
 ## Platform limits
 
-All four examples are macOS-only for now. They require SDL's Metal backend and
+All five examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
 formats. `HelloOBJ` and `HelloO3D` use focused format subsets, not general
 material or scene importers. `HelloO3D` accepts only unscrambled static meshes
 and rejects bones and animation. `HelloCube` still constructs its model data in
-code. No example has textures, lighting, a scene graph, or collisions. GPU output
-and input behavior are validated manually with
+code. `HelloScene` adds flat, transformed instances but no hierarchy. No example
+has textures, lighting, an object hierarchy, or collisions. GPU output and input
+behavior are validated manually with
 [../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.
