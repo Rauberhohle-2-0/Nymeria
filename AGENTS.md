@@ -14,4 +14,7 @@ They are the authoritative project instructions.
   is gated on `Repository checks`. Do not extend it without approval.
 - Verify every change, commit small logical changes, push them, and confirm the
   actual GitHub Actions result. Never claim an unverified push or check result.
+- Follow [docs/SECURITY.md](docs/SECURITY.md) and use
+  [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md) for changes that touch
+  untrusted input, native or GPU resources, dependencies, or automation.
 - Never force-push or rewrite published history without explicit approval.

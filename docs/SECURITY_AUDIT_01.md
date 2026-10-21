@@ -4,9 +4,8 @@
 - **Scope:** The whole tracked Nymeria repository at commit `978e86c`, with
   emphasis on the OBJ and O3D parsers, model-to-GPU conversion, SDL3 native
   ownership, repository automation, and dependencies.
-- **Status:** Initial findings register. Remediation and final verification are
-  recorded in the follow-up sections as they are completed. This document does
-  not claim that Nymeria is fully audited or secure.
+- **Status:** Initial findings register with remediation and verification results.
+  This document does not claim that Nymeria is fully audited or secure.
 
 ## Method
 
@@ -39,15 +38,15 @@ database other than NuGet's advisory feed.
 
 | ID | Severity | Area | Finding | Status |
 | --- | --- | --- | --- | --- |
-| NYM-SEC-01 | High | OBJ parsing | No input, vertex, triangle, subset, or line-length bounds. | Confirmed; remediation pending |
-| NYM-SEC-02 | Medium | OBJ/O3D parsing | One subset per triangle can amplify a small file into millions of subsets. | Confirmed; remediation pending |
-| NYM-SEC-03 | Medium | GPU ownership | Renderer failure cleanup could release uploaded buffers while GPU work was pending. | Confirmed; remediation pending |
-| NYM-SEC-04 | Medium | GPU lifetime | A managed failure after swapchain acquisition could leave an acquired command buffer unsubmitted. `HelloTriangle` also cancelled after acquisition for a zero-sized drawable. | Confirmed; remediation pending |
-| NYM-SEC-05 | Medium | Example GPU path | Model-to-GPU conversion had no upload budget, so a model within parser limits could request hundreds of megabytes. | Confirmed; remediation pending |
-| NYM-SEC-06 | Low | OBJ text decoding | Invalid UTF-8 was silently replaced with `U+FFFD`. | Confirmed; remediation pending |
-| NYM-SEC-07 | Low | Native handles | `Window.Handle` and `GpuDevice.Handle` returned stale native pointers after disposal. | Confirmed; remediation pending |
+| NYM-SEC-01 | High | OBJ parsing | No input, vertex, triangle, subset, or line-length bounds. | Fixed in `659a713` |
+| NYM-SEC-02 | Medium | OBJ/O3D parsing | One subset per triangle can amplify a small file into millions of subsets. | Fixed in `659a713` |
+| NYM-SEC-03 | Medium | GPU ownership | Renderer failure cleanup could release uploaded buffers while GPU work was pending. | Fixed in `114f50e` |
+| NYM-SEC-04 | Medium | GPU lifetime | A managed failure after swapchain acquisition could leave an acquired command buffer unsubmitted. `HelloTriangle` also cancelled after acquisition for a zero-sized drawable. | Fixed in `114f50e` |
+| NYM-SEC-05 | Medium | Example GPU path | Model-to-GPU conversion had no upload budget, so a model within parser limits could request hundreds of megabytes. | Fixed in `114f50e` |
+| NYM-SEC-06 | Low | OBJ text decoding | Invalid UTF-8 was silently replaced with `U+FFFD`. | Fixed in `659a713` |
+| NYM-SEC-07 | Low | Native handles | `Window.Handle` and `GpuDevice.Handle` returned stale native pointers after disposal. | Fixed in `114f50e` |
 | NYM-SEC-08 | Informational | O3D memory use | A 64 MiB input can produce roughly 176 MiB of parser-owned arrays plus subset overhead. | Accepted residual risk |
-| NYM-SEC-09 | Informational | Dependencies and CI | No vulnerable package was reported; actions are SHA-pinned; workflows use least-privilege permissions; no secrets were found. | Reviewed, no defect |
+| NYM-SEC-09 | Informational | Dependencies and CI | No vulnerable package was reported; actions are SHA-pinned; workflows use least-privilege permissions; no secrets were found. | Reviewed; `NuGetAudit` enabled |
 
 ## Finding details
 
@@ -287,4 +286,57 @@ Nymeria.Formats.O3d.Tests     84 passed
 Nymeria.Platform.Tests         9 passed
 ```
 
-Remediation and final verification results are added below as the fixes land.
+## Remediation and verification
+
+### Parser hardening (`659a713`)
+
+- `ObjModelParser` now bounds seekable and non-seekable input, each attribute
+  stream, deduplicated vertices, triangles, subsets, and source line length. The
+  limits are internal and configurable for tests; the public constructor uses the
+  documented defaults.
+- OBJ text is decoded as strict UTF-8 and invalid byte sequences become
+  `ModelFormatException`.
+- `O3dModelParser` caps subsets at 65,536, matching the new OBJ cap.
+- New tests cover oversized input, oversized lines, attribute and triangle
+  limits, subset limits, malformed UTF-8, truncation, and bounded structure
+  mutations.
+- `docs/OBJ.md` and `docs/O3D.md` document the limits and strict decoding.
+
+### Native and GPU hardening (`114f50e`)
+
+- All renderer `Create` failure paths call `SDL_WaitForGPUIdle` before releasing
+  uploaded buffers.
+- `ModelRenderer`, `CubeRenderer`, and `TriangleRenderer` submit an acquired
+  command buffer before propagating a managed failure. `TriangleRenderer` submits
+  for a zero-sized drawable and for a render-pass failure instead of cancelling.
+- The example model viewer enforces a 2,000,000-vertex and 6,000,000-index GPU
+  budget before growth.
+- `Window.Handle` and `GpuDevice.Handle` throw `ObjectDisposedException` after
+  disposal.
+
+### Dependency enforcement
+
+`Directory.Build.props` enables `NuGetAudit` with `NuGetAuditMode=all`. Because
+`TreatWarningsAsErrors` is already enabled, a NuGet advisory for a direct or
+transitive package fails restore and the repository checks. A manual
+`dotnet list Nymeria.slnx package --vulnerable --include-transitive` scan reported
+no known vulnerable package during this audit.
+
+### Verification results
+
+- Release build: zero warnings, zero errors, SDK `10.0.402`, macOS `osx-arm64`.
+- Headless tests: 183 passed, 0 failed, 0 skipped.
+  - `Nymeria.Formats.Obj.Tests`: 59
+  - `Nymeria.Formats.O3d.Tests`: 86
+  - `Nymeria.Core.Tests`: 29
+  - `Nymeria.Platform.Tests`: 9
+- GitHub Actions `Repository checks`:
+  - run `39570073949` passed for `659a713` on macOS, Windows, and Linux;
+  - run `39570282602` passed for `114f50e` on macOS, Windows, and Linux.
+- The GPU and window paths were code-reviewed and compiled but were not launched
+  during this audit. The manual [smoke test](SMOKE_TEST.md) remains required
+  before treating the GPU lifetime fixes as runtime-verified.
+
+The findings above are addressed at the source level. This audit does not claim
+that Nymeria is secure or fully audited; the residual risks listed earlier still
+apply.

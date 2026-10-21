@@ -16,7 +16,8 @@ interactive, depth-tested cube scene.
   math, `examples/HelloTriangle`, the interactive `examples/HelloCube`, the
   OBJ-rendering `examples/HelloOBJ`, the O3D-rendering `examples/HelloO3D`,
   platform-independent unit tests, CI restore/build/test on macOS, Windows, and
-  Linux, repository checks, and Dependabot updates for GitHub Actions and NuGet.
+  Linux, repository checks, an audited dependency restore, a documented security
+  baseline, and Dependabot updates for GitHub Actions and NuGet.
 - **Planned later:** engine-level input, the engine loop, further O3D features
   (scrambled vertices, bones, animation, and material rendering), additional
   graphics backends, and Windows/Linux rendering. See
@@ -173,6 +174,9 @@ tests/          Headless unit tests for core, formats, and platform projects
 - [Wavefront OBJ import](docs/OBJ.md)
 - [OMSI O3D import](docs/O3D.md)
 - [Examples](examples/README.md)
+- [Security baseline](docs/SECURITY.md)
+- [Security checklist](docs/SECURITY_CHECKLIST.md)
+- [Security audit 01](docs/SECURITY_AUDIT_01.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)
 - [Agent instructions](AGENTS.md)
