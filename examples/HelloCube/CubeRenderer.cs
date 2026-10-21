@@ -137,6 +137,11 @@ public sealed class CubeRenderer : IDisposable
         }
         catch
         {
+            // Buffer creation submits an upload. Drain any pending work before
+            // releasing resources so SDL is never asked to destroy a buffer that
+            // a command buffer may still reference.
+            SDL.WaitForGPUIdle(device.Handle);
+
             if (pipeline != IntPtr.Zero)
             {
                 SDL.ReleaseGPUGraphicsPipeline(device.Handle, pipeline);
@@ -219,11 +224,23 @@ public sealed class CubeRenderer : IDisposable
             return;
         }
 
-        EnsureDepthTexture(width, height);
+        Matrix4x4 view;
+        Matrix4x4 projection;
 
-        float aspectRatio = (float)width / height;
-        Matrix4x4 view = camera.ViewMatrix;
-        Matrix4x4 projection = camera.CreateProjectionMatrix(aspectRatio);
+        try
+        {
+            EnsureDepthTexture(width, height);
+            view = camera.ViewMatrix;
+            projection = camera.CreateProjectionMatrix((float)width / height);
+        }
+        catch
+        {
+            // A swapchain texture is already acquired, so cancellation is not
+            // allowed. Submit the still-empty command buffer before propagating
+            // the error instead of leaking an acquired native command buffer.
+            SDL.SubmitGPUCommandBuffer(commandBuffer);
+            throw;
+        }
 
         Span<Matrix4x4> matrixData = stackalloc Matrix4x4[1];
 

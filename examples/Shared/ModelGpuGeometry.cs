@@ -17,6 +17,12 @@ internal static class ModelGpuGeometryBuilder
 {
     private const int FloatsPerVertex = 6;
 
+    // The examples are a viewer, not a streaming engine. Bound the converted
+    // geometry so a large but otherwise valid model cannot exhaust process
+    // memory or 32-bit GPU buffer sizes before SDL sees the data.
+    private const int MaxGpuVertices = 2_000_000;
+    private const int MaxGpuIndices = 6_000_000;
+
     private static readonly Vector3 DefaultColor = new(0.62f, 0.68f, 0.78f);
 
     private static readonly Dictionary<string, Vector3> s_materialColors =
@@ -57,6 +63,12 @@ internal static class ModelGpuGeometryBuilder
                     if (!vertexMap.TryGetValue(sourceIndex, out uint gpuIndex))
                     {
                         int nextIndex = vertices.Count / FloatsPerVertex;
+
+                        if (nextIndex >= MaxGpuVertices)
+                        {
+                            throw CreateBudgetException();
+                        }
+
                         gpuIndex = (uint)nextIndex;
                         vertexMap.Add(sourceIndex, gpuIndex);
 
@@ -69,12 +81,26 @@ internal static class ModelGpuGeometryBuilder
                         vertices.Add(color.Z);
                     }
 
+                    if (indices.Count >= MaxGpuIndices)
+                    {
+                        throw CreateBudgetException();
+                    }
+
                     indices.Add(gpuIndex);
                 }
             }
         }
 
         return new ModelGpuGeometry(vertices.ToArray(), indices.ToArray());
+    }
+
+    private static InvalidOperationException CreateBudgetException()
+    {
+        return new InvalidOperationException(
+            $"The model exceeds the example's GPU budget of " +
+            $"{MaxGpuVertices} vertices and {MaxGpuIndices} indices. " +
+            "Use a smaller model or raise the limit in " +
+            nameof(ModelGpuGeometryBuilder) + ".");
     }
 
     private static Vector3 ResolveColor(string? materialName)

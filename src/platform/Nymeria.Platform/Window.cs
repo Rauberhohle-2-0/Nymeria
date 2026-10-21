@@ -30,10 +30,17 @@ public sealed class Window : IDisposable
     /// Gets the native <c>SDL_Window*</c> handle used for GPU presentation.
     /// </summary>
     /// <remarks>
-    /// The handle remains owned by this window. Do not destroy it or use it after
-    /// the window has been disposed.
+    /// The handle remains owned by this window. Do not destroy it.
     /// </remarks>
-    public IntPtr Handle => _handle;
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    public IntPtr Handle
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _handle;
+        }
+    }
 
     /// <summary>
     /// Initializes SDL video and creates a visible, resizable window.

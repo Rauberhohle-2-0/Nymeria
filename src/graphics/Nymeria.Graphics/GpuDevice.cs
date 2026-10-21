@@ -29,7 +29,15 @@ public sealed class GpuDevice : IDisposable
     /// Gets the native <c>SDL_GPUDevice*</c> handle used to create resources and
     /// record command buffers.
     /// </summary>
-    public IntPtr Handle => _handle;
+    /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
+    public IntPtr Handle
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _handle;
+        }
+    }
 
     /// <summary>
     /// Gets the pixel format of the claimed window's swapchain.

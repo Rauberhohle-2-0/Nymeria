@@ -99,6 +99,11 @@ public sealed class TriangleRenderer : IDisposable
         }
         catch
         {
+            // Buffer creation submits an upload. Drain any pending work before
+            // releasing resources so SDL is never asked to destroy a buffer that
+            // a command buffer may still reference.
+            SDL.WaitForGPUIdle(device.Handle);
+
             if (pipeline != IntPtr.Zero)
             {
                 SDL.ReleaseGPUGraphicsPipeline(device.Handle, pipeline);
@@ -159,9 +164,17 @@ public sealed class TriangleRenderer : IDisposable
                 $"SDL could not acquire a GPU swapchain texture: {SDL.GetError()}");
         }
 
-        if (swapchainTexture == IntPtr.Zero || width == 0 || height == 0)
+        if (swapchainTexture == IntPtr.Zero)
         {
             SDL.CancelGPUCommandBuffer(commandBuffer);
+            return;
+        }
+
+        // Once a swapchain texture is acquired the command buffer cannot be
+        // cancelled. A zero-sized drawable is not usable, so submit it empty.
+        if (width == 0 || height == 0)
+        {
+            SDL.SubmitGPUCommandBuffer(commandBuffer);
             return;
         }
 
@@ -184,9 +197,12 @@ public sealed class TriangleRenderer : IDisposable
 
         if (renderPass == IntPtr.Zero)
         {
-            SDL.CancelGPUCommandBuffer(commandBuffer);
+            // Cancellation is not allowed once a swapchain texture has been
+            // acquired, so submit the still-empty command buffer first.
+            string error = SDL.GetError();
+            SDL.SubmitGPUCommandBuffer(commandBuffer);
             throw new InvalidOperationException(
-                $"SDL could not begin a GPU render pass: {SDL.GetError()}");
+                $"SDL could not begin a GPU render pass: {error}");
         }
 
         SDL.BindGPUGraphicsPipeline(renderPass, _pipeline);
