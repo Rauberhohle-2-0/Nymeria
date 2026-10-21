@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/examples/">
     <Project Path="examples/HelloCube/HelloCube.csproj" />
+    <Project Path="examples/HelloO3D/HelloO3D.csproj" />
     <Project Path="examples/HelloOBJ/HelloOBJ.csproj" />
     <Project Path="examples/HelloTriangle/HelloTriangle.csproj" />
   </Folder>
