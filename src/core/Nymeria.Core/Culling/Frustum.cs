@@ -30,23 +30,35 @@ namespace Nymeria.Core.Culling;
 /// are handled the same way. This sacrifices culling for that frame instead of
 /// risking the loss of visible geometry.
 /// </para>
+/// <para>
+/// <see cref="Update(Matrix4x4)"/> exists for a renderer that owns one scratch
+/// frustum and refreshes it each frame. It does not allocate; <see cref="Create"/>
+/// remains the independent-instance factory. A frustum must not be updated while
+/// another thread is testing it.
+/// </para>
 /// </remarks>
 public sealed class Frustum
 {
     private const int PlaneCount = 6;
 
-    private readonly Plane[]? _planes;
+    private readonly Plane[] _planes = new Plane[PlaneCount];
+    private bool _isUnbounded;
 
-    private Frustum(Plane[]? planes)
+    /// <summary>
+    /// Creates an unbounded frustum that can be refreshed with
+    /// <see cref="Update(Matrix4x4)"/>.
+    /// </summary>
+    public Frustum()
     {
-        _planes = planes;
+        _isUnbounded = true;
     }
 
     /// <summary>
     /// Gets whether this frustum accepts every bounding box because its source
-    /// matrix or one of its planes was degenerate.
+    /// matrix or one of its planes was degenerate, or because it has not been
+    /// updated yet.
     /// </summary>
-    public bool IsUnbounded => _planes is null;
+    public bool IsUnbounded => _isUnbounded;
 
     /// <summary>
     /// Derives the six clip planes from a view-projection matrix.
@@ -61,19 +73,39 @@ public sealed class Frustum
     /// </returns>
     public static Frustum Create(Matrix4x4 viewProjection)
     {
+        var frustum = new Frustum();
+        frustum.Update(viewProjection);
+        return frustum;
+    }
+
+    /// <summary>
+    /// Recomputes this frustum from a view-projection matrix without allocating.
+    /// </summary>
+    /// <param name="viewProjection">
+    /// The combined view-projection matrix, composed as
+    /// <c>view * projection</c> for <see cref="System.Numerics"/> row vectors.
+    /// </param>
+    /// <remarks>
+    /// Use this on a frustum owned by one renderer or scene traversal. A failed
+    /// update leaves the frustum unbounded, which keeps every instance visible.
+    /// Do not update a frustum while another thread is calling
+    /// <see cref="Intersects(BoundingBox)"/>.
+    /// </remarks>
+    public void Update(Matrix4x4 viewProjection)
+    {
+        _isUnbounded = true;
+
         if (!IsFinite(viewProjection))
         {
-            return Unbounded();
+            return;
         }
 
         float determinant = viewProjection.GetDeterminant();
 
         if (!float.IsFinite(determinant) || determinant == 0.0f)
         {
-            return Unbounded();
+            return;
         }
-
-        var planes = new Plane[PlaneCount];
 
         // Clip-space inequalities for a [0, 1] depth range:
         //   -w <= x <= w, -w <= y <= w, 0 <= z <= w
@@ -85,42 +117,42 @@ public sealed class Frustum
                 viewProjection.M21 + viewProjection.M24,
                 viewProjection.M31 + viewProjection.M34,
                 viewProjection.M41 + viewProjection.M44,
-                out planes[0]) ||
+                out _planes[0]) ||
             !TryCreatePlane(
                 viewProjection.M14 - viewProjection.M11,
                 viewProjection.M24 - viewProjection.M21,
                 viewProjection.M34 - viewProjection.M31,
                 viewProjection.M44 - viewProjection.M41,
-                out planes[1]) ||
+                out _planes[1]) ||
             !TryCreatePlane(
                 viewProjection.M12 + viewProjection.M14,
                 viewProjection.M22 + viewProjection.M24,
                 viewProjection.M32 + viewProjection.M34,
                 viewProjection.M42 + viewProjection.M44,
-                out planes[2]) ||
+                out _planes[2]) ||
             !TryCreatePlane(
                 viewProjection.M14 - viewProjection.M12,
                 viewProjection.M24 - viewProjection.M22,
                 viewProjection.M34 - viewProjection.M32,
                 viewProjection.M44 - viewProjection.M42,
-                out planes[3]) ||
+                out _planes[3]) ||
             !TryCreatePlane(
                 viewProjection.M13,
                 viewProjection.M23,
                 viewProjection.M33,
                 viewProjection.M43,
-                out planes[4]) ||
+                out _planes[4]) ||
             !TryCreatePlane(
                 viewProjection.M14 - viewProjection.M13,
                 viewProjection.M24 - viewProjection.M23,
                 viewProjection.M34 - viewProjection.M33,
                 viewProjection.M44 - viewProjection.M43,
-                out planes[5]))
+                out _planes[5]))
         {
-            return Unbounded();
+            return;
         }
 
-        return new Frustum(planes);
+        _isUnbounded = false;
     }
 
     /// <summary>
@@ -131,7 +163,7 @@ public sealed class Frustum
     /// </returns>
     public bool Intersects(BoundingBox bounds)
     {
-        if (_planes is null)
+        if (IsUnbounded)
         {
             return true;
         }
@@ -167,11 +199,6 @@ public sealed class Frustum
         }
 
         return true;
-    }
-
-    private static Frustum Unbounded()
-    {
-        return new Frustum(null);
     }
 
     private static bool TryCreatePlane(

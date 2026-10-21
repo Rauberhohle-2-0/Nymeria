@@ -177,6 +177,52 @@ public sealed class FrustumTests
     }
 
     [Fact]
+    public void NewFrustum_IsUnbounded()
+    {
+        // A scratch frustum has no planes until it is updated. It must remain
+        // conservative rather than treating every box as outside.
+        var frustum = new Frustum();
+
+        Assert.True(frustum.IsUnbounded);
+        Assert.True(frustum.Intersects(Box(new Vector3(0.0f, 0.0f, 10.0f), 1.0f)));
+    }
+
+    [Fact]
+    public void Update_RefreshesReusedPlanes()
+    {
+        var frustum = new Frustum();
+        BoundingBox outside = Box(new Vector3(0.0f, 0.0f, 10.0f), 1.0f);
+        BoundingBox inside = Box(new Vector3(0.0f, 0.0f, -10.0f), 1.0f);
+
+        frustum.Update(CreateViewProjection(Vector3.Zero, -Vector3.UnitZ));
+
+        Assert.False(frustum.IsUnbounded);
+        Assert.False(frustum.Intersects(outside));
+        Assert.True(frustum.Intersects(inside));
+
+        // Refresh the same instance with a view facing the opposite direction.
+        frustum.Update(CreateViewProjection(Vector3.Zero, Vector3.UnitZ));
+
+        Assert.False(frustum.IsUnbounded);
+        Assert.True(frustum.Intersects(outside));
+        Assert.False(frustum.Intersects(inside));
+    }
+
+    [Fact]
+    public void Update_WithInvalidMatrix_BecomesUnbounded()
+    {
+        Frustum frustum = CreateFrustum(Vector3.Zero, -Vector3.UnitZ);
+        BoundingBox outside = Box(new Vector3(0.0f, 0.0f, 10.0f), 1.0f);
+
+        Assert.False(frustum.Intersects(outside));
+
+        frustum.Update(default);
+
+        Assert.True(frustum.IsUnbounded);
+        Assert.True(frustum.Intersects(outside));
+    }
+
+    [Fact]
     public void ZeroMatrix_IsUnbounded()
     {
         Frustum frustum = Frustum.Create(new Matrix4x4());

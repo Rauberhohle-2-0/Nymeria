@@ -68,6 +68,7 @@ public sealed class MaterialRenderer : IDisposable
     private readonly Dictionary<Texture, GpuTexture> _textures =
         new(ReferenceEqualityComparer.Instance);
     private readonly SceneVisibilityCounter _visibility = new();
+    private readonly Frustum _cullingFrustum = new();
     private IntPtr _depthTexture;
     private uint _depthWidth;
     private uint _depthHeight;
@@ -295,6 +296,7 @@ public sealed class MaterialRenderer : IDisposable
 
         Matrix4x4 view;
         Matrix4x4 projection;
+        bool cullingEnabled = FrustumCullingEnabled;
         Frustum? frustum;
 
         try
@@ -302,9 +304,15 @@ public sealed class MaterialRenderer : IDisposable
             EnsureDepthTexture(width, height);
             view = camera.ViewMatrix;
             projection = camera.CreateProjectionMatrix((float)width / height);
-            frustum = FrustumCullingEnabled
-                ? Frustum.Create(view * projection)
-                : null;
+
+            if (cullingEnabled)
+            {
+                // Reuse the renderer-owned scratch frustum so an enabled cull
+                // path does not allocate a frustum and plane array every frame.
+                _cullingFrustum.Update(view * projection);
+            }
+
+            frustum = cullingEnabled ? _cullingFrustum : null;
         }
         catch
         {
