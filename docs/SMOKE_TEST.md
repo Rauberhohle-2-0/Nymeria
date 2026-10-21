@@ -14,16 +14,18 @@ dotnet build Nymeria.slnx
 dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
 dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
+dotnet run --project examples/HelloO3D/HelloO3D.csproj
 ```
 
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
-`examples/HelloCube/Shaders/Cube.metal`, and
-`examples/HelloOBJ/Shaders/Model.metal`. They are embedded in their examples and
-compiled by SDL's Metal backend at startup, so there is no shader compiler step
-and no external shader file to deploy.
+`examples/HelloCube/Shaders/Cube.metal`, and the shared
+`examples/Shared/Shaders/Model.metal`. The model shader is embedded in both
+`HelloOBJ` and `HelloO3D` as `Nymeria.Examples.Shaders.Model.metal`. Shaders are
+embedded in their examples and compiled by SDL's Metal backend at startup, so
+there is no shader compiler step and no external shader file to deploy.
 
 Run each example checklist separately. The failure-path checks at the end apply
-to all three.
+to all four.
 
 ## HelloTriangle checks
 
@@ -150,6 +152,47 @@ to all three.
 14. **No unhandled exceptions.** No exception text appears in the terminal during
     normal launch, movement, mouse look, resize, minimize, restore, or shutdown.
 
+## HelloO3D checks
+
+1. **Window appears.** With no arguments, a native window opens without a
+   console error. The checked-in synthetic `Assets/cube.o3d` fixture is copied
+   beside the built executable, so this works from any current directory.
+2. **Title is correct.** The title bar reads `Nymeria`.
+3. **Model renders.** A cube is visible against the dark background with six
+   distinct solid face colors and clearly perspective-projected edges. The output
+   is not blank, black, or stretched.
+4. **Depth occlusion is correct.** Near faces hide the faces behind them. The
+   cube reads as a solid object rather than a flat set of triangles.
+5. **Camera framing is stable.** Without input, the camera does not drift and the
+   model stays visible.
+6. **Movement and mouse look work.** The shared controls behave as in
+   `HelloCube`: `W`/`A`/`S`/`D`, `Space`, `Left Control`, `Shift`, and held right
+   mouse button for look. Releasing the button restores the cursor.
+7. **Resize works.** Drag a corner or edge, including to a very wide and a very
+   tall window. Proportions stay correct, the scene is not stretched, and the
+   window remains responsive.
+8. **High-DPI works.** On a Retina display, cube edges are drawn at the display's
+   native pixel density rather than an upscaled low-resolution image.
+9. **Minimize and restore work.** Minimize the window for a few seconds, then
+   restore it. The scene reappears with correct depth and proportions, and the
+   process does not crash or freeze while minimized.
+10. **User-supplied path works.** Run the example with the fixture path passed
+    explicitly, for example
+    `dotnet run --project examples/HelloO3D/HelloO3D.csproj -- examples/HelloO3D/Assets/cube.o3d`.
+    The same cube renders. If you also have a lawfully obtained unscrambled
+    static OMSI model, record what it shows, including any diagnostic; a failure
+    there is useful evidence, not a checklist pass.
+11. **Close button exits.** Click the red close button. The process ends, the
+    terminal prompt returns, and `echo $?` reports `0`. The cursor is visible.
+12. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
+    The process ends with status code `0`.
+13. **No busy-spin.** The loop renders continuously at about 60 frames per
+    second, so CPU use is higher than the idle triangle, but it must stay well
+    below one full core. Activity Monitor must not show a pegged core, and memory
+    use must stay stable over several minutes.
+14. **No unhandled exceptions.** No exception text appears in the terminal during
+    normal launch, movement, mouse look, resize, minimize, restore, or shutdown.
+
 macOS notes:
 
 - The movement keys are read by physical scancode, so `W`/`A`/`S`/`D` occupy the
@@ -190,9 +233,22 @@ These checks are optional and must not modify tracked files.
   example, a face that references an undefined position. `HelloOBJ` must print
   the source line and offending reference, then exit with status code `1`
   without an unhandled exception.
+- **Missing O3D file:** run `HelloO3D` with a path that does not exist. It must
+  print a clear "not found" message and exit with status code `1` before a window
+  is created.
+- **Malformed O3D file:** create a temporary file outside tracked paths with, for
+  example, the same header as the fixture but a truncated vertex section.
+  `HelloO3D` must print the byte offset and the reason, then exit with status
+  code `1` without an unhandled exception or partial geometry.
+- **Unsupported O3D feature:** if you have a scrambled, bone, or animation O3D
+  file, `HelloO3D` must reject it with a message that names the unsupported
+  feature, then exit with status code `1`. Do not treat a guessed or partially
+  drawn result as a pass.
 
 ## Recording results
 
 Report the macOS version, architecture (`arm64` or `x86_64`), GPU model, date, and
-pass/fail for each check, separately for `HelloTriangle`, `HelloCube`, and
-`HelloOBJ`. Do not describe this manual checklist as a CI result.
+pass/fail for each check, separately for `HelloTriangle`, `HelloCube`,
+`HelloOBJ`, and `HelloO3D`. Do not describe this manual checklist as a CI result.
+State separately that the checked-in `HelloO3D` fixture is synthetic and that
+real OMSI content was not available for validation.

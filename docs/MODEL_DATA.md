@@ -3,7 +3,7 @@
 This document is the authoritative description of Nymeria's format-independent,
 CPU-side model data and the boundary that format parsers implement. It does not
 describe any file format. Wavefront OBJ support lives in
-[OBJ.md](OBJ.md); OMSI O3D parsing remains a future task.
+[OBJ.md](OBJ.md); OMSI O3D support lives in [O3D.md](O3D.md).
 
 ## Purpose and non-goals
 
@@ -104,10 +104,11 @@ All loaders must convert source data to these conventions before constructing a
 Format-specific conversions belong in the parser. The Wavefront OBJ parser
 resolves one-based and negative indices, converts texture coordinates from OBJ's
 bottom-left origin (`v = 1 - v`), fan-triangulates its documented convex polygon
-subset, and preserves OBJ's right-handed counter-clockwise winding. A future OMSI
-O3D parser must convert that format's coordinate system, handedness, winding, and
-index width. The core types must not grow format-specific branches for either
-source. See [OBJ.md](OBJ.md) for the complete OBJ subset.
+subset, and preserves OBJ's right-handed counter-clockwise winding. The O3D
+parser converts Direct3D's left-handed frame by negating Z for positions and
+normals, reverses triangle winding, and preserves texture coordinates unchanged.
+The core types must not grow format-specific branches for either source. See
+[OBJ.md](OBJ.md) and [O3D.md](O3D.md) for the complete supported subsets.
 
 ## Validation boundary and error behavior
 
@@ -178,8 +179,8 @@ they need.
 ## Extension point for format parsers
 
 Task 06.1 (Wavefront OBJ) adds a format-specific implementation of
-`IModelParser` in `src/formats/Nymeria.Formats.Obj`. Task 06.2 (OMSI O3D) remains
-a future task. Format-specific implementations:
+`IModelParser` in `src/formats/Nymeria.Formats.Obj`. Task 06.2 (OMSI O3D) adds
+`Nymeria.Formats.O3d`. Format-specific implementations:
 
 1. reference `Nymeria.Core`;
 2. must not reference `Nymeria.Graphics` or `Nymeria.Platform`;
@@ -189,10 +190,12 @@ a future task. Format-specific implementations:
 5. keep format knowledge out of `Nymeria.Core` so it can later be extracted or
    versioned independently.
 
-The OBJ parser is the first production parser. Its supported subset, conversions,
-and limitations are documented in [OBJ.md](OBJ.md). The core test project still
-contains a contract test double; format-specific behavior is tested headlessly in
-`tests/Nymeria.Formats.Obj.Tests` without SDL3 or a GPU.
+The OBJ and O3D parsers are the production parsers. Their supported subsets,
+conversions, and limitations are documented in [OBJ.md](OBJ.md) and
+[O3D.md](O3D.md). The core test project still contains a contract test double;
+format-specific behavior is tested headlessly in
+`tests/Nymeria.Formats.Obj.Tests` and `tests/Nymeria.Formats.O3d.Tests` without
+SDL3 or a GPU.
 
 ## Rendering integration
 
@@ -202,11 +205,13 @@ material names. It converts that model to the interleaved position/color layout
 and 16-bit index buffer already used by its shader, then uploads through the
 existing `GpuDevice.CreateBuffer` path.
 
-`HelloOBJ` does the same with an OBJ file parsed by `Nymeria.Formats.Obj`. It
-converts the parsed model to its own position/color layout and a 32-bit index
-buffer, then uses the existing `GpuDevice`, depth test, camera, and pipeline
-patterns. Both conversions live in the examples because they are tied to each
-example's shader and pipeline, not to the model data.
+`HelloOBJ` does the same with an OBJ file parsed by `Nymeria.Formats.Obj`.
+`HelloO3D` does it with an O3D file parsed by `Nymeria.Formats.O3d`. Both share
+the same model renderer, geometry builder, shader, camera, and model-viewer loop
+in `examples/Shared`, so they convert the parsed model to the same position/color
+layout and 32-bit index buffer and use the existing `GpuDevice`, depth test, and
+pipeline patterns. The conversions live in the examples because they are tied to
+the example shader and pipeline, not to the model data.
 
 A future renderer should perform the same kind of explicit conversion for its
 own vertex layout. Loading model data must remain independent of GPU resource
@@ -219,5 +224,6 @@ geometry, optional attributes, each validation invariant, subset rules, error
 type semantics, and a small `IModelParser` test double.
 
 `tests/Nymeria.Formats.Obj.Tests` is also headless and covers the OBJ subset and
-its diagnostics. It requires neither SDL3 nor a GPU. `Nymeria.Platform.Tests`
-remains unchanged.
+its diagnostics. `tests/Nymeria.Formats.O3d.Tests` covers the O3D header,
+supported versions and flags, conversions, limits, and failure behavior. Neither
+requires SDL3 or a GPU. `Nymeria.Platform.Tests` remains unchanged.

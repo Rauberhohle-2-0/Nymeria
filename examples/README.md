@@ -1,14 +1,17 @@
 # Nymeria examples
 
 The examples are small, runnable programs that demonstrate the engine on macOS.
-They are intentionally separate from the reusable projects: each example owns its
-shaders, pipelines, input mapping, and frame loop. `Nymeria.Graphics` provides the
+They are intentionally separate from the reusable projects: they own their
+pipelines, input mapping, and frame loop. `Nymeria.Graphics` provides the
 GPU device, the window presentation claim, shader and buffer creation, the
 swapchain format, and the reusable camera math. `Nymeria.Core` provides the
-format-independent model data used by `HelloCube`, and `Nymeria.Formats.Obj`
-provides the OBJ parser used by `HelloOBJ`.
+format-independent model data used by `HelloCube`, `Nymeria.Formats.Obj`
+provides the OBJ parser used by `HelloOBJ`, and `Nymeria.Formats.O3d` provides
+the O3D parser used by `HelloO3D`. `HelloOBJ` and `HelloO3D` share the renderer,
+geometry builder, shader, model-viewer loop, and input mapping in
+`examples/Shared`.
 
-All three examples use SDL3's GPU API with the Metal backend and Metal Shading
+All examples use SDL3's GPU API with the Metal backend and Metal Shading
 Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
 created, so there is no Xcode build step and no generated shader artifact.
 
@@ -20,6 +23,7 @@ dotnet build Nymeria.slnx
 dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
 dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
+dotnet run --project examples/HelloO3D/HelloO3D.csproj
 ```
 
 ## HelloTriangle
@@ -66,8 +70,9 @@ renders continuously, and targets about 16 ms per frame.
 
 ### Controls
 
-`HelloCube` and `HelloOBJ` share `examples/Shared/FlyCameraControls.cs`, so these
-controls apply to both examples.
+`HelloCube`, `HelloOBJ`, and `HelloO3D` share
+`examples/Shared/FlyCameraControls.cs`, so these controls apply to all three
+examples.
 
 | Input | Action |
 | --- | --- |
@@ -150,7 +155,8 @@ drawable size is known to be non-zero.
 `HelloOBJ` loads a Wavefront OBJ file and renders it with the same GPU device,
 camera, depth test, input mapping, resize handling, and shutdown conventions as
 `HelloCube`. It is the rendering proof for the parser described in
-[../docs/OBJ.md](../docs/OBJ.md).
+[../docs/OBJ.md](../docs/OBJ.md). `HelloOBJ` and `HelloO3D` share the model
+renderer, geometry builder, shader, and frame loop in `examples/Shared`.
 
 ```bash
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
@@ -174,20 +180,58 @@ dotnet run --project examples/HelloOBJ/HelloOBJ.csproj -- path/to/model.obj
 - Subset colors: the six fixture labels `front`, `back`, `right`, `left`, `top`,
   and `bottom` map to six solid colors. Unknown labels use one neutral color.
   This is example presentation, not a material system.
-- Shader: `HelloOBJ/Shaders/Model.metal`, embedded as
-  `HelloOBJ.Shaders.Model.metal`. It uses the same row-major matrix upload and
-  one uniform buffer as the cube shader.
+- Shader: `examples/Shared/Shaders/Model.metal`, embedded as
+  `Nymeria.Examples.Shaders.Model.metal` in both `HelloOBJ` and `HelloO3D`. It
+  uses the same row-major matrix upload and one uniform buffer as the cube
+  shader.
 - Camera: framed from the parsed model's bounds so the fixture and ordinary
   user-supplied models start visible. It uses the shared `FlyCameraControls`.
 - Scope: no textures, lighting, material properties, animation, scene graph, or
   generic asset registry.
 
+## HelloO3D
+
+`HelloO3D` loads an OMSI `.o3d` file and renders it through the same shared
+renderer, camera, depth test, input mapping, resize handling, and shutdown path as
+`HelloOBJ`. It is the rendering proof for the importer described in
+[../docs/O3D.md](../docs/O3D.md).
+
+```bash
+dotnet run --project examples/HelloO3D/HelloO3D.csproj
+dotnet run --project examples/HelloO3D/HelloO3D.csproj -- path/to/model.o3d
+```
+
+- Fixture: [HelloO3D/Assets/cube.o3d](HelloO3D/Assets/cube.o3d), a synthetic
+  project asset. It re-expresses the `HelloOBJ` cube in the O3D frame and winding:
+  version 3, 16-bit indices, unscrambled, 24 vertices, 12 triangles, and six
+  material subsets. Its provenance is documented in
+  [HelloO3D/Assets/README.md](HelloO3D/Assets/README.md). It is not an OMSI game
+  asset and is not evidence of real-world compatibility.
+- Default path: the fixture is copied next to the built executable, so the
+  no-argument command works from any directory. A supplied path is used as given
+  and may be relative to the current directory.
+- Errors: a missing, unreadable, or malformed file prints a message that includes
+  the parser's offset diagnostic when available, then exits with status code `1`
+  before a window is created. Scrambled files, bones, unknown sections, and
+  unknown versions or flags fail the same way instead of being guessed.
+- Geometry conversion: the importer already converts positions and normals to
+  Nymeria's right-handed frame and reverses triangle winding. The example builds
+  the shared position/color layout with 32-bit indices and uploads it through
+  `GpuDevice.CreateBuffer`. Vertices are duplicated per subset because the shader
+  carries one color per vertex.
+- Subset colors: the six fixture labels `front`, `back`, `right`, `left`, `top`,
+  and `bottom` map to six solid colors. Unknown labels use one neutral color.
+  This is example presentation, not a material system.
+- Scope: no textures, lighting, animation, bones, skinning, scrambling, pivot
+  transforms, scene graph, or generic asset registry.
+
 ## Platform limits
 
-All three examples are macOS-only for now. They require SDL's Metal backend and
+All four examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
-formats. `HelloOBJ` uses the focused OBJ subset, not a general material or scene
-importer. `HelloCube` still constructs its model data in code. No example has
-textures, lighting, a scene graph, or collisions. GPU output and input behavior
-are validated manually with [../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in
-CI.
+formats. `HelloOBJ` and `HelloO3D` use focused format subsets, not general
+material or scene importers. `HelloO3D` accepts only unscrambled static meshes
+and rejects bones and animation. `HelloCube` still constructs its model data in
+code. No example has textures, lighting, a scene graph, or collisions. GPU output
+and input behavior are validated manually with
+[../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.
