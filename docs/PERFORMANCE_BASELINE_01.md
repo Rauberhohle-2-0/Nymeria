@@ -5,6 +5,12 @@ This is the first Nymeria performance baseline. It is a CPU-side measurement of
 the scene and material submission path, not a GPU benchmark or a game workload.
 The methodology and definitions are in [PERFORMANCE.md](PERFORMANCE.md).
 
+This baseline predates the LOD workload change. The current `HelloBenchmark`
+builds three cube variants (768/108/12 triangles) and adds `--lod` and
+`--no-distance-culling`; the numbers below remain the historical record for the
+one-variant, 12-triangle workload and are not directly comparable with the later
+LOD-on results in [LOD.md](LOD.md).
+
 ## Summary
 
 - The paced loop is frame-cap limited: the final session held total frame time

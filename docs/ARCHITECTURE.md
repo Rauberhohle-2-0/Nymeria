@@ -26,10 +26,11 @@ extension is a direction, not a current feature.
 - `Nymeria.Platform`, a class library exposing a minimal native window API.
 - `Nymeria.Core`, a dependency-free class library containing validated,
   format-independent model data, the `IModelParser` contract, minimal scene data
-  (`Scene`, `SceneObject`, and `Transform`), optional ambient and directional
-  lighting data, conservative bounds and frustum-culling helpers, bounded
-  frame-timing diagnostics, and format-independent material and texture data
-  with RGBA and block-compressed mip chains.
+  (`Scene`, `SceneObject`, and `Transform`), optional explicit mesh
+  level-of-detail configurations, optional ambient and directional lighting
+  data, conservative bounds and frustum-culling helpers, bounded frame-timing
+  diagnostics, and format-independent material and texture data with RGBA and
+  block-compressed mip chains.
 - `Nymeria.Formats.Obj`, a dependency-free Wavefront OBJ parser implementing
   `IModelParser` for a documented polygonal subset.
 - `Nymeria.Formats.O3d`, a dependency-free OMSI O3D parser implementing
@@ -78,17 +79,24 @@ extension is a direction, not a current feature.
 - `examples/HelloCulling`, an interactive example that draws many instances of
   one shared mesh with optional conservative camera-frustum culling, a runtime
   toggle, and per-frame visibility statistics.
+- `examples/HelloLOD`, an interactive example that switches each instance among
+  three explicit sphere-detail meshes at configurable camera distances, with
+  optional distance culling, a free camera, and runtime LOD, distance, and
+  frustum toggles.
 - `examples/HelloBenchmark`, an auto-exiting Release benchmark with a fixed
-  camera, deterministic 512/2048/8192-instance scenes, culling and pacing
+  camera, deterministic 512/2048/8192-instance scenes, culling, LOD, and pacing
   modes, bounded CPU phase timings, and allocation/GC counters.
 - `MeshData.Bounds` plus `Nymeria.Core.Culling` bounds, frustum, and per-frame
-  visibility helpers. They are headless, use `System.Numerics` only, and contain
-  no SDL3, GPU, window, or format dependency.
+  visibility helpers, and `Nymeria.Core.Lod` explicit mesh variants, validated
+  activation distances, conservative union bounds, and hysteresis-aware
+  selection. They are headless, use `System.Numerics` only, and contain no SDL3,
+  GPU, window, or format dependency.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - `Nymeria.Core.Tests`, GPU-independent tests for model-data validation,
   parser-contract error behavior, transform composition, scene lifecycle,
   lighting data and math, materials, texture-data validation, mesh bounds,
-  frustum-plane intersection, visibility counters, and bounded frame-timing
+  frustum-plane intersection, visibility counters, LOD validation, distance and
+  hysteresis selection, conservative LOD bounds, and bounded frame-timing
   aggregation with warm-up exclusion and invalid samples.
 - `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
   conversions, and diagnostics.
@@ -159,8 +167,8 @@ contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`,
 `Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`, `Nymeria.Formats.Bmp`, and
 `Nymeria.Formats.Textures`, `examples/` contains `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, and `HelloBenchmark`, and `tests/` contains
-`Nymeria.Core.Tests`,
+`HelloLighting`, `HelloCulling`, `HelloLOD`, and `HelloBenchmark`, and `tests/`
+contains `Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
 `Nymeria.Formats.DirectX.Tests`, `Nymeria.Formats.Png.Tests`,
 `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
@@ -169,7 +177,8 @@ contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`,
 
 `Nymeria.Core` owns the format-independent model data and parser contract
 described in [MODEL_DATA.md](MODEL_DATA.md), the minimal scene data described in
-[SCENE.md](SCENE.md), and the material and texture data described in
+[SCENE.md](SCENE.md), the explicit mesh level-of-detail data described in
+[LOD.md](LOD.md), and the material and texture data described in
 [MATERIALS.md](MATERIALS.md). It references `System.Numerics` and the base class
 library only. The camera lives in `Nymeria.Graphics` rather than
 in `Nymeria.Core`: it is reusable 3D rendering math with no SDL, window, or GPU
@@ -324,8 +333,8 @@ software fallback.
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
 `examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloX`,
 `examples/HelloScene`, `examples/HelloMaterials`, `examples/HelloLighting`,
-`examples/HelloCulling`, and `examples/HelloBenchmark`. Each has its own vertex
-data and draw calls, and uses `GpuDevice` for the device, window claim, shader
+`examples/HelloCulling`, `examples/HelloLOD`, and `examples/HelloBenchmark`.
+Each has its own vertex data and draw calls, and uses `GpuDevice` for the device, window claim, shader
 creation, buffer and texture upload, sampler creation, and swapchain format.
 [examples/README.md](../examples/README.md) documents their run commands and
 rendering conventions. `HelloOBJ`, `HelloO3D`, and `HelloX` share the renderer,
@@ -548,14 +557,16 @@ alpha channel. EXIF orientation is not applied.
 their signatures and TGA by a `.tga`/`.targa` source name plus header validation.
 It never opens a file, resolves a path, caches data, or makes a GPU call.
 
-`HelloMaterials` and `HelloLighting` share `examples/Shared/MaterialRenderer.cs`
-and `examples/Shared/Shaders/Material.metal`. The renderer caches one GPU upload
-per distinct `MeshData` and one GPU texture per distinct `Texture`, both by
-reference, uploads mip chains once, selects a mipped sampler for chains, and
-binds a generated white texture for materials without a texture or meshes without
-UVs. The shared vertex layout is position, normal, and UV; the fragment shader
-multiplies sampled RGB by the material tint and an optional lighting term; alpha
-is not blended.
+`HelloMaterials`, `HelloLighting`, `HelloCulling`, and `HelloLOD` share
+`examples/Shared/MaterialRenderer.cs` and
+`examples/Shared/Shaders/Material.metal`. The renderer caches one GPU upload per
+distinct `MeshData` and one GPU texture per distinct `Texture`, both by reference,
+uploads mip chains once, selects a mipped sampler for chains, and binds a
+generated white texture for materials without a texture or meshes without UVs.
+It also caches each distinct LOD variant once and may draw any one of them per
+instance. The shared vertex layout is position, normal, and UV; the fragment
+shader multiplies sampled RGB by the material tint and an optional lighting term;
+alpha is not blended.
 
 `HelloMaterials` builds a UV-mapped cube and a generated four-quadrant
 checkerboard in code, shares one checkerboard material and one mesh between two
@@ -616,14 +627,25 @@ when it is fully outside one plane; intersecting, touching, and uncertain cases
 remain visible. Degenerate or non-finite matrices produce an unbounded frustum,
 and invalid bounds are treated as visible, rather than risking a false cull.
 
-`SceneVisibilityCounter` performs the per-frame test and counts total, visible,
-and culled instances. The shared material renderer exposes
-`FrustumCullingEnabled` (default `false`) and `LastFrameStatistics` (instance
-counts plus actual indexed draw calls). Culling only skips draw submission: scene
-objects, shared meshes, materials, textures, and GPU uploads are unchanged.
-There is no occlusion culling, distance culling, LOD, spatial index, hierarchy,
-GPU-driven culling, or cached world-bounds invalidation. [CULLING.md](CULLING.md)
-documents the contract, fallbacks, statistics, and limits.
+`SceneVisibilityCounter` performs the per-frame distance, frustum, and LOD test
+and counts total, visible, frustum-culled, distance-culled, drawn, and per-level
+instances. The shared material renderer exposes `FrustumCullingEnabled` (default
+`false`), `LodEnabled` and `DistanceCullingEnabled` (default `true`), and
+`LastFrameStatistics` (instance counts, draw calls, submitted triangles, and
+per-level usage). Culling and LOD selection only skip draw submission or choose
+one referenced variant: scene objects, shared meshes, materials, textures, and
+their GPU uploads are unchanged.
+
+The renderer checks distance culling before the six-plane frustum test, then
+selects a LOD level only for instances that will be drawn. A configured
+`MeshLod` supplies an ordered set of explicit meshes and uses the conservative
+union of their model-space bounds for both distance measurement and visibility.
+That union cannot change with the selected level, so a level switch never culls
+previously visible geometry. Hysteresis state belongs to each `SceneObject`, not
+to a shared configuration. There is no occlusion culling, spatial index,
+hierarchy, GPU-driven culling, automatic mesh simplification, or cached
+world-bounds invalidation. [CULLING.md](CULLING.md) and [LOD.md](LOD.md) document
+the contracts, fallbacks, statistics, and limits.
 
 ### Ownership and lifetime
 
@@ -631,13 +653,14 @@ documents the contract, fallbacks, statistics, and limits.
   shaders, geometry buffers, textures, samplers, pipeline, and depth texture. A
   renderer must be created after the window and disposed before it.
 - `Scene` and `SceneObject` own no GPU resources. `SceneObject.Mesh` is a shared
-  reference to managed `MeshData`, and `SceneObject.Material` is a shared
+  reference to managed `MeshData`, `SceneObject.Lod` is an optional shared
+  reference to immutable LOD data, and `SceneObject.Material` is a shared
   reference to managed `Material` and its `Texture`. `Scene.Lighting` is an
   optional reference to immutable CPU lighting data. The scene renderer owns one
   upload per distinct mesh; the shared material renderer owns one upload per
-  distinct mesh and texture. Each cached upload is released exactly once.
-  Removing an object never disposes a mesh, material, or texture that other
-  objects may still reference.
+  distinct mesh and texture, including every distinct LOD variant. Each cached
+  upload is released exactly once. Removing an object never disposes a mesh,
+  material, or texture that other objects may still reference.
 - A texture reference is not ownership. The code that constructs `TextureData`
   or `CompressedTextureData` owns the memory and must not mutate it. The renderer
   that calls `GpuDevice.CreateTexture` owns the GPU texture and releases it after
@@ -650,8 +673,9 @@ documents the contract, fallbacks, statistics, and limits.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
 - `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-  `HelloLighting`, and `HelloCulling` own their `Camera` instances and share the
-  `FlyCameraControls` implementation. `HelloBenchmark` owns a fixed `Camera` and
+  `HelloLighting`, `HelloCulling`, and `HelloLOD` own their `Camera` instances
+  and share the `FlyCameraControls` implementation. `HelloBenchmark` owns a fixed
+  `Camera` and
   does not use input controls. The camera has no unmanaged resources. The
   input mapping disables relative mouse mode and discards pending mouse motion
   during disposal, before the window is destroyed.
@@ -670,10 +694,14 @@ Limitations in this version:
   system, and no engine-level input system. The scene layer holds flat objects
   only. `Camera` is reusable math, but input mapping and timing stay in the
   examples; the triangle remains static clip-space geometry.
-- Culling is one conservative axis-aligned test per instance against six frustum
-  planes. There is no per-subset, occlusion, distance, or LOD culling, no spatial
-  index, no cached world-bounds invalidation, and no GPU timing. A degenerate
-  projection disables culling for that frame instead of risking a false cull.
+- Culling is one conservative axis-aligned distance test plus one six-plane
+  frustum test per instance. LOD chooses one explicit application-supplied mesh
+  per object from a conservative union of its variants. There is no per-subset
+  or occlusion culling, no spatial index, no cached world-bounds invalidation,
+  and no GPU timing. A degenerate projection disables frustum culling for that
+  frame instead of risking a false cull. Nymeria does not generate, simplify,
+  stream, morph, or cross-fade meshes; distance culling is optional and applies
+  only to objects with a configured maximum.
 - Lighting is one ambient term plus at most one directional Lambert term. There
   is no specular or PBR shading, multiple-light collection, point or spot light,
   shadow, normal mapping, deferred rendering, global illumination, or shader
@@ -768,8 +796,10 @@ references `Nymeria.Core` for scene, lighting, and material data,
 `Nymeria.Graphics`, and `Nymeria.Platform`; `HelloCulling` references
 `Nymeria.Core` for scene, mesh, material, and culling data,
 `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for the
-window; `HelloBenchmark` references `Nymeria.Core` for scene, mesh, material,
-and timing data, `Nymeria.Graphics` for the device and camera, and
+window; `HelloLOD` references `Nymeria.Core` for scene, LOD, mesh, and material
+data, `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for
+the window; `HelloBenchmark` references `Nymeria.Core` for scene, LOD, mesh,
+material, and timing data, `Nymeria.Graphics` for the device and camera, and
 `Nymeria.Platform` for the window; `HelloTriangle` does not need the core
 or formats projects.
 No engine project references an example. `Nymeria.Core.Tests`,
@@ -822,14 +852,23 @@ The following choices are implemented:
   shared material renderer opts in with `FrustumCullingEnabled` and exposes
   instance and draw-call statistics. Invalid data fails open rather than
   discarding geometry. [CULLING.md](CULLING.md) is the authoritative contract.
+- **Level of detail:** `Nymeria.Core.Lod` validates an optional ordered list of
+  explicit mesh variants per `SceneObject`, measures camera distance to the
+  conservative union of their world bounds, selects one variant per frame with a
+  per-object hysteresis state, and can skip an instance beyond an optional
+  maximum distance. Selection state is headless and allocation-free per frame;
+  the renderer uploads each distinct variant once and shares it by reference.
+  Nymeria does not simplify meshes. [LOD.md](LOD.md) is the authoritative
+  contract.
 - **Performance diagnostics:** `Nymeria.Core.Diagnostics.FrameTimingWindow` is a
   bounded, warm-up-aware rolling window for CPU frame durations. It rejects
   invalid samples, reports average, nearest-rank p95, maximum, and FPS from the
   average, and its `AddSample` path does not allocate; `GetSummary` allocates a
   copy for sorting and is intended for reporting intervals only. It does not
   collect GPU timings or run in the background. `examples/HelloBenchmark` is the
-  only workload that uses it; [PERFORMANCE.md](PERFORMANCE.md) defines the
-  phases, method, and limits.
+  reproducible workload; `HelloLOD` also reports a rolling render-time average
+  and p95. [PERFORMANCE.md](PERFORMANCE.md) defines the phases, method, and
+  limits.
 - **Model parsing:** `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`, and
   `Nymeria.Formats.DirectX` are dependency-free parsers in isolated format
   projects. They use the base class library and `Nymeria.Core` only, implement

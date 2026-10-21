@@ -175,6 +175,24 @@ modify transforms. The per-frame cost is bounded by the scene object limit
 per-object allocation or vertex traversal. It adds no native handle, GPU
 resource, or third-party dependency.
 
+LOD configurations are application-owned data validated at construction.
+`MeshLodLevel` rejects a null mesh, a negative or non-finite activation distance,
+and `MeshLod` additionally rejects empty or oversized lists, null entries, a
+first level that does not activate at zero, non-increasing distances, a
+non-finite or nonpositive maximum render distance, and non-finite or negative
+hysteresis. `SceneObject.Lod` requires the highest-detail mesh to be the object's
+primary `MeshData` reference. `LodMath.DistanceToBounds` uses double precision,
+saturates finite extremes, and fails safe to zero for a non-finite point or
+invalid bounds. The distance and LOD path computes conservative bounds from
+validated mesh data, keeps its eight-level usage counters fixed-size, and does
+not parse files or load assemblies. A malformed configuration throws before a
+frame is submitted; it is never silently repaired.
+
+LOD selection state is stored per `SceneObject` and is not shared by a reused
+configuration. Assigning a configuration or disabling LOD resets that state.
+Selection reads transforms, distance, and frustum results only; it does not
+modify scene geometry or resource ownership.
+
 ## Native and GPU ownership
 
 - Native handles are owned by the managed wrapper that created them. Do not
@@ -186,9 +204,12 @@ resource, or third-party dependency.
 - Wait for the GPU to become idle before releasing resources that pending work
   may reference, including in failure paths.
 - Scene data owns no native or GPU resources. A `SceneObject` references shared
-  managed `MeshData`, `Material`, and `TextureData`; the renderer owns and
-  releases one upload per distinct mesh and one GPU texture per distinct texture.
-  Removing an object must not dispose data that another object still references.
+  managed `MeshData`, `Material`, `TextureData`, and optional `MeshLod`; the
+  renderer owns and releases one upload per distinct mesh, including every
+  distinct LOD variant, and one GPU texture per distinct texture. Removing an
+  object or changing its LOD configuration must not dispose data that another
+  object still references. Each variant is uploaded once and cached by mesh
+  reference; selecting a level never allocates or releases a GPU buffer.
 - A material or texture reference is not GPU ownership. Releasing a GPU texture
   or sampler releases only that native handle, never the managed `TextureData`,
   `CompressedTextureData`, or `Material` object that other callers may share.

@@ -3,7 +3,8 @@
 This document is the authoritative description of Nymeria's minimal,
 format-independent scene layer. It covers transforms, scene objects, shared mesh
 and material references, optional scene lighting, resource ownership, and the
-`HelloScene`, `HelloMaterials`, and `HelloLighting` examples. Related contracts
+`HelloScene`, `HelloMaterials`, `HelloLighting`, and `HelloLOD` examples. Related
+contracts
 are [MODEL_DATA.md](MODEL_DATA.md), [MATERIALS.md](MATERIALS.md),
 [LIGHTING.md](LIGHTING.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
 [MODEL_DATA.md's coordinate conventions](MODEL_DATA.md#coordinate-and-index-conventions).
@@ -22,11 +23,13 @@ Metal, window, or file-format logic. Materials and lighting are references to
 format-independent CPU data, not a rendering pipeline. The scene layer carries
 one optional ambient-plus-directional lighting configuration; it does not
 calculate shading. [LIGHTING.md](LIGHTING.md) is the authoritative lighting
-contract.
+contract. It also carries an optional explicit mesh level-of-detail reference;
+[LOD.md](LOD.md) is the authoritative LOD contract.
 
-Visibility culling is not part of the scene layer: it is a separate headless
-helper in `Nymeria.Core.Culling` that reads scene data and never mutates it.
-[CULLING.md](CULLING.md) is the authoritative culling contract.
+Visibility culling and LOD selection are not part of the scene layer: they are
+headless helpers in `Nymeria.Core.Culling` and `Nymeria.Core.Lod` that read scene
+data and keep their per-frame selection state on each object. [CULLING.md](CULLING.md)
+and [LOD.md](LOD.md) are the authoritative contracts.
 
 ## Public types
 
@@ -76,13 +79,14 @@ non-uniform scale.
 ### `SceneObject`
 
 A scene object is one renderable instance with a mesh reference, its own
-transform, and a material reference:
+transform, a material reference, and an optional LOD configuration:
 
 ```csharp
 MeshData mesh = CreateSharedMesh();
 Material material = CreateSharedMaterial();
-var first = new SceneObject(mesh, transformA, material);
-var second = new SceneObject(mesh, transformB, material);
+MeshLod? lod = CreateSharedLod(mesh);
+var first = new SceneObject(mesh, transformA, material, lod);
+var second = new SceneObject(mesh, transformB, material, lod);
 ```
 
 - `Mesh` is a shared reference to validated `MeshData`. The geometry is not
@@ -91,13 +95,19 @@ var second = new SceneObject(mesh, transformB, material);
 - `Material` is a shared reference to an immutable `Material`. It is not copied.
   It defaults to the shared `Material.Default`, an untextured white material, when
   none is supplied. Assigning `null` throws `ArgumentNullException`.
-- The object does not own or dispose its mesh or material. `MeshData`,
-  `Material`, and `Texture` are managed data with no unmanaged resources.
+- `Lod` is an optional shared reference to immutable `MeshLod` data. It defaults
+  to `null`. When set, its highest-detail mesh must be the same reference as
+  `Mesh`; otherwise assignment throws `ArgumentException`. Assigning a
+  configuration resets the object's current LOD level. See [LOD.md](LOD.md).
+- The object does not own or dispose its mesh, material, or LOD configuration.
+  `MeshData`, `Material`, `Texture`, and `MeshLod` are managed data with no
+  unmanaged resources.
 - The constructor copies the supplied transform values into a new `Transform`,
   so objects do not accidentally share mutable transform state.
 - Mutate `sceneObject.Transform` to change an instance, replace
-  `sceneObject.Material` to change its surface, and replace the mesh only by
-  creating a new `SceneObject`.
+  `sceneObject.Material` to change its surface, replace `sceneObject.Lod` to
+  change detail thresholds, and replace the mesh only by creating a new
+  `SceneObject`.
 
 ### `Scene`
 
@@ -187,10 +197,18 @@ renderer unlit; `HelloLighting` supplies ambient and directional light, while
 `MaterialRenderer.FrustumCullingEnabled` is optional and defaults to `false`.
 When enabled, an instance whose world axis-aligned bounds are fully outside the
 camera frustum skips draw submission. The test is conservative, and
-`LastFrameStatistics` reports tested, visible, culled, and submitted draw-call
-counts. Culling never removes an object, releases a resource, or changes a
-transform. [CULLING.md](CULLING.md) documents the bounds, planes, fallbacks, and
-statistics.
+`LastFrameStatistics` reports tested, visible, frustum-culled, distance-culled,
+drawn, per-LOD, and submitted draw-call counts. Culling never removes an object,
+releases a resource, or changes a transform. [CULLING.md](CULLING.md) documents
+the bounds, planes, fallbacks, and statistics.
+
+`MaterialRenderer.LodEnabled` and `DistanceCullingEnabled` default to `true`.
+They only affect objects with a `SceneObject.Lod` configuration. LOD selects one
+cached mesh variant per drawn instance using the conservative union of its
+variant bounds; an optional maximum distance skips the instance first. Objects
+without a configuration keep the single-mesh path exactly. Each distinct variant
+is uploaded once and shared by reference. [LOD.md](LOD.md) documents the distance
+semantics, hysteresis, validation, counters, and example.
 
 An empty scene still clears the color and depth targets. Removed objects are
 simply absent from the traversal. Minimized windows skip the frame, zero-sized
@@ -261,6 +279,27 @@ an imported OBJ mesh. It links the same shared material renderer and shader as
 [LIGHTING.md](LIGHTING.md) documents the equation, coordinate space, normal
 matrix, defaults, and controls.
 
+## `HelloLOD`
+
+`examples/HelloLOD` demonstrates explicit mesh variants and optional distance
+culling over the same scene, camera, material, and renderer infrastructure. It
+needs no asset file.
+
+- Three procedural sphere variants with 576, 100, and 30 triangles are shared by
+  every instance and uploaded once each.
+- Forty-five instances recede from the camera in three columns, plus three larger
+  instances whose bounds exercise bounding-volume-aware distance.
+- `L` toggles LOD, `X` toggles distance culling, `F` toggles frustum culling,
+  `[` and `]` change both thresholds and the maximum distance, and `R` resets
+  them. A configuration change is applied to every object and resets its stored
+  level.
+- Once per second the example prints FPS, render-time average and p95, candidate,
+  frustum-culled, distance-culled, drawn, draw-call, submitted-triangle, and
+  per-level usage counts.
+
+[LOD.md](LOD.md) documents the thresholds, hysteresis, distance semantics, and
+limits. [examples/README.md](../examples/README.md) lists the run commands.
+
 ## `HelloCulling`
 
 `examples/HelloCulling` demonstrates conservative instance culling through the
@@ -297,18 +336,20 @@ limits.
 - ambient and directional light validation, Lambert terms, normal matrices,
   combined lighting, and `Scene.Lighting` default/replacement semantics.
 
-Bounds, frustum intersection, and visibility counters have headless tests in
-`tests/Nymeria.Core.Tests`; see [CULLING.md](CULLING.md). GPU rendering, window
-behavior, and input are validated manually with [SMOKE_TEST.md](SMOKE_TEST.md),
-not by headless CI.
+Bounds, frustum intersection, visibility counters, and LOD selection have
+headless tests in `tests/Nymeria.Core.Tests`; see [CULLING.md](CULLING.md) and
+[LOD.md](LOD.md). GPU rendering, window behavior, and input are validated
+manually with [SMOKE_TEST.md](SMOKE_TEST.md), not by headless CI.
 
 ## Intentionally unsupported
 
 The following are out of scope for this milestone: parent-child transforms,
 scene graphs, ECS, instanced draw APIs beyond per-object uniform uploads,
-serialization, editors, occlusion or distance culling, LOD, spatial indexes,
-physics, collision, animation, multiple lights, point or spot lights, shadows,
-specular or PBR shading, transparency sorting, texture streaming or hot reload,
-MTL or OMSI material parsing, and automatic unloading of a cached GPU mesh or
-texture when the last referencing object is removed. Frustum culling is
-supported separately and documented in [CULLING.md](CULLING.md).
+serialization, editors, occlusion culling, spatial indexes, physics, collision,
+animation, multiple lights, point or spot lights, shadows, specular or PBR
+shading, transparency sorting, texture streaming or hot reload, MTL or OMSI
+material parsing, automatic mesh simplification or LOD generation, and automatic
+unloading of a cached GPU mesh or texture when the last referencing object is
+removed. Frustum culling, explicit LOD selection, and optional distance culling
+are supported separately and documented in [CULLING.md](CULLING.md) and
+[LOD.md](LOD.md).

@@ -20,6 +20,7 @@ dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
+dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
   -- --instances 128 --warmup 10 --frames 60
 ```
@@ -30,13 +31,13 @@ The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/Shared/Shaders/Material.metal`. The model shader is embedded in
 `HelloOBJ`, `HelloO3D`, and `HelloScene` as
 `Nymeria.Examples.Shaders.Model.metal`; the material shader is embedded in
-`HelloMaterials` and `HelloLighting` as
+`HelloMaterials`, `HelloLighting`, `HelloCulling`, and `HelloLOD` as
 `Nymeria.Examples.Shaders.Material.metal`. Shaders are embedded in their examples
 and compiled by SDL's Metal backend at startup, so there is no shader compiler
 step and no external shader file to deploy.
 
 Run each interactive example checklist separately. The failure-path checks at
-the end apply to all eight interactive examples; `HelloBenchmark` has its own
+the end apply to all nine interactive examples; `HelloBenchmark` has its own
 automated checks below.
 
 ## HelloTriangle checks
@@ -531,10 +532,71 @@ echo $?
 
 Expected: `0`.
 
+## HelloLOD checks
+
+1. **Window appears.** With no arguments, a native window opens and the terminal
+   prints the control summary. The first statistics line is a startup sample and
+   contains zeros; later lines update once per second.
+2. **Three detail levels are visible.** Three receding columns of spheres and
+   three larger spheres fill the view. Near spheres have smooth silhouettes;
+   distant spheres are visibly faceted, with at least two clearly different
+   triangle densities. No sphere is missing, black, or drawn as a wireframe.
+3. **Initial counts are consistent.** With LOD, distance culling, and frustum
+   culling enabled, the counters satisfy `candidates = drawn + frustum culled +
+   distance culled` and `drawn = draw calls`. LOD usage level counts sum to the
+   LOD-drawn count. The exact split changes with the camera and window aspect.
+4. **LOD toggle works.** Press `L`. The terminal reports LOD disabled, every
+   sphere becomes the dense high-detail mesh (including distant ones), and the
+   LOD usage counts become zero while draw calls still equal drawn instances.
+   The distance-culled count also becomes zero. Press `L` again to restore.
+5. **Distance toggle works.** Press `X`. The terminal reports distance culling
+   disabled and the distance-culled count becomes zero; far instances beyond the
+   previous maximum reappear at the low detail level. Press `X` again to restore
+   the previous counts. The remaining scene must not change shape or pop.
+6. **Frustum toggle works.** Press `F`. Instances behind the camera and off the
+   sides return; the image may reveal geometry that was previously outside the
+   view. Press `F` again to restore. LOD and distance counts remain consistent.
+7. **Threshold changes work.** Press `]` several times. The printed thresholds and
+   maximum distance increase. Near spheres keep the high level longer, and the
+   number of high-detail draws rises; press `[` to reverse the change. `R`
+   restores the base 14/38 thresholds and 120 maximum.
+8. **Hysteresis is stable.** Move the camera slowly back and forth across one
+   threshold (a sphere at roughly 14 or 38 units). A sphere must change silhouette
+   once and hold; it must not flicker between levels while the camera oscillates
+   inside the 0.75-unit band.
+9. **Bounding-volume distance is used.** Fly toward a large sphere and compare it
+   with a small sphere at the same origin distance. The larger object keeps its
+   higher detail longer because its nearest surface is closer.
+10. **Transforms remain correct.** Rotated and uniformly scaled spheres render
+    with correct silhouettes and no inverted normals, stretched faces, or depth
+    artifacts. There are no textures or lighting terms, so the material tint is
+    flat.
+11. **Resize works.** Drag the window through a very wide and a very tall shape.
+    Proportions stay correct, counters update for the new aspect ratio, and the
+    renderer remains responsive.
+12. **High-DPI works.** On a Retina display, sphere edges are drawn at native
+    pixel density rather than an upscaled low-resolution image.
+13. **Minimize and restore work.** Minimize for a few seconds, then restore. The
+    process does not crash or freeze. While minimized, rendering is skipped and
+    statistics report zeros; after restore, non-zero counts return.
+14. **No per-frame uploads or leaks.** CPU use stays below one full core and
+    memory stays stable while moving across thresholds and toggling LOD for
+    several minutes. GPU buffers for all three variants are created once during
+    startup, not repeatedly on each switch.
+15. **No unhandled exceptions.** No exception text appears during launch, camera
+    movement, threshold changes, toggles, resize, minimize, restore, or
+    shutdown.
+16. **Close and standard quit exit.** The close button and `Cmd+Q` end the
+    process with status code `0`, and the cursor is visible.
+17. **Disabled starts work.** Run with `--no-lod`, `--no-distance-culling`, and
+    `--no-culling` separately. The first statistics line and subsequent samples
+    must reflect each starting state, and the runtime keys must still toggle it.
+
 ## HelloBenchmark checks
 
 `HelloBenchmark` is a CPU benchmark, not a visual or GPU-timing test. It opens a
-window, runs two fixed modes, prints a report, and exits without user input.
+window, runs the requested fixed modes, prints a report, and exits without user
+input.
 
 1. **Run the short smoke workload.** From the repository root:
 
@@ -546,12 +608,14 @@ window, runs two fixed modes, prints a report, and exits without user input.
    Expected: a window titled `Nymeria - HelloBenchmark` opens and closes. The
    terminal prints the runtime, OS, architecture, window sizes, Metal backend,
    scene size, pacing, warm-up, and sample settings before the reports.
-2. **Both modes run, off first.** The output contains `mode: culling off` and
-   then `mode: culling on`, each with `samples 60` and `skipped 0`.
+2. **Both culling modes run, off first.** The output contains `mode: culling
+   off | lod off | distance on` and then `mode: culling on | lod off | distance
+   on`, each with `samples 60` and `skipped 0`.
 3. **Counts are consistent.** For 128 instances, culling off reports 128 tested,
-   128 visible, 0 culled, and 128 draw calls. Culling on reports 128 tested, 120
-   visible, 8 culled, and 120 draw calls. Submitted plus culled equals tested in
-   both modes.
+   128 visible, 0 frustum-culled, and 128 draw calls. Culling on reports 128
+   tested, 120 visible, 8 frustum-culled, and 120 draw calls. Submitted plus
+   frustum-culled plus distance-culled equals tested in both modes. LOD usage is
+   zero when LOD is off.
 4. **Pacing is explicit.** Each report shows a total frame average of roughly
    17.5–18.3 ms and FPS around 55–57, with a separate pacing interval. The exact
    paced total can vary with the machine's scheduling and display state. Do not
@@ -560,20 +624,30 @@ window, runs two fixed modes, prints a report, and exits without user input.
    reported.
 5. **Allocation is bounded and equal across modes.** Each mode reports
    `40 bytes/frame` managed allocation and `GC +0/+0/+0` for the short run. A
-   culling-on value above the culling-off value indicates a per-frame frustum
-   allocation regression; see [PERFORMANCE.md](PERFORMANCE.md).
-6. **Clean exit.** The process exits with status code `0` after both reports and
+   LOD-on or culling-on value above the baseline indicates a per-frame allocation
+   regression; see [PERFORMANCE.md](PERFORMANCE.md).
+6. **LOD comparison works.** Run the short workload with `--lod both`. Four
+   reports appear: culling off/lod off, culling off/lod on, culling on/lod off,
+   and culling on/lod on. With LOD on, `lod drawn` equals the visible count and
+   the LOD usage levels sum to it; submitted triangles drop substantially. With
+   LOD off, LOD usage is zero. Run with `--lod on` and `--lod off` separately to
+   confirm mode selection. Add `--no-distance-culling` to keep draw calls equal
+   and isolate the triangle reduction from whole-instance distance culling; the
+   report then says `distance off` and `distance culled avg 0.0`.
+7. **Clean exit.** The process exits with status code `0` after all reports and
    writes no report file. Check with:
 
    ```bash
    echo $?
    ```
-7. **Option handling.** `--help` prints usage and exits with status code `0`. An
-   unknown option or an out-of-range value such as `--frames 0` prints an error
-   and exits with status code `1` without opening a measurement window.
-8. **Scope.** The output must not claim GPU timings, GPU memory, or process-wide
-   resident memory. `render` is CPU submission time; `managed` is the benchmark
-   thread's managed allocation only.
+8. **Option handling.** `--help` prints usage and exits with status code `0`. An
+   unknown option or an out-of-range value such as `--frames 0` or `--lod maybe`
+   prints an error and exits with status code `1` without opening a measurement
+   window.
+9. **Scope.** The output must not claim GPU timings, GPU memory, or process-wide
+   resident memory. `render` is CPU submission time; `triangles` is submitted
+   indexed geometry, not fragments; `managed` is the benchmark thread's managed
+   allocation only.
 
 ## Failure-path checks (optional)
 
@@ -631,7 +705,8 @@ These checks are optional and must not modify tracked files.
 Report the macOS version, architecture (`arm64` or `x86_64`), GPU model, date, and
 pass/fail for each check, separately for `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, and `HelloCulling`, plus the separate `HelloBenchmark` checks.
+`HelloLighting`, `HelloCulling`, and `HelloLOD`, plus the separate
+`HelloBenchmark` checks.
 Do not describe this manual checklist as a CI result.
 State separately that the checked-in `HelloO3D` fixture is synthetic, that the
 `HelloX` fixture is original project content rather than an exported game asset,

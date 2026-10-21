@@ -10,8 +10,9 @@ interactive, depth-tested cube scene.
 
 - **Implemented now:** .NET 10 solution, the `Nymeria.Platform` window API,
   `Nymeria.Core` with validated format-independent model data, a parser
-  contract, a minimal scene layer, mesh bounds and conservative frustum
-  helpers, and base-color materials with validated texture data,
+  contract, a minimal scene layer, explicit mesh level-of-detail data, mesh
+  bounds and conservative frustum helpers, and base-color materials with
+  validated texture data,
   `Nymeria.Formats.Obj` with a
   dependency-free Wavefront OBJ parser, `Nymeria.Formats.O3d` with a
   dependency-free OMSI O3D static-mesh parser, `Nymeria.Formats.DirectX` with a
@@ -26,9 +27,10 @@ interactive, depth-tested cube scene.
   O3D-rendering `examples/HelloO3D`, the text-`.x`-rendering `examples/HelloX`,
   the scene-instancing `examples/HelloScene`, the textured and solid-material
   `examples/HelloMaterials`, the lit `examples/HelloLighting`, the conservative
-  frustum-culling `examples/HelloCulling`, the CPU-profiling
-  `examples/HelloBenchmark`, bounded frame-timing diagnostics, headless
-  mesh-bounds and visibility helpers, platform-independent unit tests, CI
+  frustum-culling `examples/HelloCulling`, the explicit-LOD and distance-culling
+  `examples/HelloLOD`, the CPU-profiling `examples/HelloBenchmark`, bounded
+  frame-timing diagnostics, headless mesh-bounds, visibility, and LOD helpers,
+  platform-independent unit tests, CI
   restore/build/test on macOS, Windows, and
   Linux, repository checks, an audited dependency restore, a documented security
   baseline, and Dependabot updates for GitHub Actions and NuGet.
@@ -75,6 +77,7 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/H
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj -- --no-culling
+dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj --configuration Release -- --instances 2048
 ```
 
@@ -96,11 +99,16 @@ directional Lambert light; press `L` to toggle ambient-only mode, use the arrow
 keys to move the light, `[` and `]` to change its intensity, and `R` to reset it.
 `HelloCulling` draws 551 instances of one shared cube mesh and skips instances
 proven fully outside the camera frustum; press `C` to toggle culling at runtime,
-or start with `--no-culling` for comparison. `HelloBenchmark` is an auto-exiting
-Release CPU benchmark with a fixed camera, deterministic 512/2048/8192-instance
-scenes, culling on/off, and 16 ms pacing control; it prints bounded phase timings,
-instance and draw-call counts, and managed allocation, then exits. See
-[docs/PERFORMANCE.md](docs/PERFORMANCE.md) for commands and interpretation. Move with
+or start with `--no-culling` for comparison. `HelloLOD` switches each instance
+among three explicit sphere-detail meshes at configurable distances and can skip
+objects beyond a maximum distance; `L` toggles LOD, `X` toggles distance
+culling, `F` toggles frustum culling, `[`/`]` change the thresholds, and `R`
+resets them. `HelloBenchmark` is an auto-exiting Release CPU benchmark with a
+fixed camera, deterministic 512/2048/8192-instance scenes, culling and LOD
+modes, and 16 ms pacing control; it prints bounded phase timings, instance,
+draw-call, triangle, and per-level counts, and managed allocation, then exits.
+See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for commands and interpretation.
+Move with
 `W`/`A`/`S`/`D`, `Space`, and
 `Left Control`; hold `Shift` to go faster; hold the right mouse button and move
 the mouse to look around. Close any window with the red close button or the
@@ -129,13 +137,16 @@ example owns its pipeline and depth target, while `HelloOBJ`, `HelloO3D`, and
 `HelloX` share the renderer, shader, model-viewer loop, and camera controls in
 `examples/Shared`.
 `HelloScene` uses the shared geometry builder, model shader, and camera controls
-with its own scene renderer. `HelloMaterials`, `HelloLighting`, and
-`HelloCulling` share the material renderer and camera controls in
+with its own scene renderer. `HelloMaterials`, `HelloLighting`, `HelloCulling`,
+and `HelloLOD` share the material renderer and camera controls in
 `examples/Shared`. `HelloCulling` enables the renderer's optional conservative
 frustum culling and prints per-frame instance and draw-call counts; bounds,
 planes, fallbacks, and limitations are documented in
-[docs/CULLING.md](docs/CULLING.md). `HelloBenchmark` provides the repeatable
-culling comparison and CPU timing baseline described in
+[docs/CULLING.md](docs/CULLING.md). `HelloLOD` enables the renderer's optional
+LOD and distance culling for objects with a `MeshLod` configuration and prints
+per-level usage; distance semantics, hysteresis, and limits are documented in
+[docs/LOD.md](docs/LOD.md). `HelloBenchmark` provides the repeatable culling and
+LOD comparison and CPU timing baseline described in
 [docs/PERFORMANCE.md](docs/PERFORMANCE.md) and
 [docs/PERFORMANCE_BASELINE_01.md](docs/PERFORMANCE_BASELINE_01.md).
 
@@ -240,7 +251,17 @@ instances tested, submitted, culled, and actual indexed draw calls. See
 [docs/CULLING.md](docs/CULLING.md) for bounds semantics, safe fallbacks,
 statistics, measurements, and limits.
 
-All eight interactive examples skip rendering while minimized and recover when a
+`HelloLOD` supplies three explicit sphere meshes (576, 100, and 30 triangles) for
+each instance and selects one per frame from the camera distance to the
+conservative union of their world bounds. The configuration also has an optional
+maximum distance, so instances beyond it skip draw submission. The medium and low
+levels are visibly faceted, and a 0.75-unit hysteresis band keeps a camera
+oscillating near a threshold from flickering. The example prints candidate,
+frustum-culled, distance-culled, drawn, draw-call, submitted-triangle, and
+per-level counts plus render-time average and p95; see
+[docs/LOD.md](docs/LOD.md) for the contract, benchmark method, and limits.
+
+All nine interactive examples skip rendering while minimized and recover when a
 drawable is available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 

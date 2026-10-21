@@ -7,8 +7,9 @@ recorded baseline and its findings are in
 
 The scope is deliberately narrow. There is no engine-wide profiler, frame
 capture integration, GPU timer, telemetry, or background collection. The only
-reusable instrumentation is a bounded frame-timing window in `Nymeria.Core`; the
-only workload is the `HelloBenchmark` example.
+reusable instrumentation is a bounded frame-timing window in `Nymeria.Core`. The
+`HelloBenchmark` example is the reproducible workload; `HelloLOD` also uses the
+window for its once-per-second render-time average and p95.
 
 ## Instrumentation
 
@@ -57,7 +58,7 @@ The benchmark records these non-overlapping CPU intervals:
 | Phase | Boundary | Includes | Does not include |
 | --- | --- | --- | --- |
 | Events | start of frame to return from `Window.ProcessEvents(0)` | SDL event pumping and close handling | rendering |
-| Render | return from events to return from `MaterialRenderer.Render` | resource-cache lookup, optional bounds/frustum culling, model and normal-matrix math, uniform pushes, draw recording, command-buffer submission, swapchain acquisition | waiting for the GPU to finish, presentation latency, driver work after submission |
+| Render | return from events to return from `MaterialRenderer.Render` | resource-cache lookup, optional bounds/frustum/distance/LOD selection, model and normal-matrix math, uniform pushes, draw recording, command-buffer submission, swapchain acquisition | waiting for the GPU to finish, presentation latency, driver work after submission |
 | Pacing | return from render to end of frame | `SDL.Delay` for the remainder of the 16 ms budget when pacing is enabled | work when pacing is disabled |
 | Total frame | start of frame to end of frame | events, render, pacing, and OS scheduling between them | startup and warm-up frames |
 
@@ -66,15 +67,20 @@ must not be used as one. A fast CPU submission can still be followed by a slow
 GPU frame; the CPU timer cannot see that. Conversely, a swapchain acquisition can
 block on presentation even though the code is nominally recording commands.
 
-The benchmark also reports, from the existing Task 11 visibility statistics:
+The benchmark also reports, from the existing visibility statistics:
 
 - instances tested;
-- visible and culled instances, averaged over measured frames;
-- actual indexed draw calls submitted, average and maximum.
+- visible, frustum-culled, distance-culled, and LOD-drawn instances, averaged
+  over measured frames;
+- actual indexed draw calls submitted, average and maximum;
+- submitted triangles, average and maximum;
+- drawn-instance counts per LOD level.
 
 At the moment this renderer submits one indexed draw call per visible instance.
 Keep those counters separate: `DrawCalls` is a property of the renderer, not of
-the culling helper, and the instance counts are not GPU primitive counts.
+the culling or LOD helper, and the instance counts are not GPU primitive counts.
+`SubmittedTriangles` is the sum of index counts divided by three for submitted
+meshes; it is not a fragment count and does not measure GPU execution.
 
 Managed allocation is sampled with `GC.GetAllocatedBytesForCurrentThread()` over
 the measured loop. It covers the benchmark thread only, not the SDL/Metal driver
@@ -86,11 +92,13 @@ memory because SDL3 does not expose a reliable portable number for it here.
 ## Reproducible benchmark
 
 `examples/HelloBenchmark` is a deterministic, auto-exiting workload. It creates
-one shared cube `MeshData`, four shared untextured materials, and a fixed camera.
-It places one sixteenth of the instances behind the camera and the rest on a
-deterministic grid that grows away from the camera and past its side and far
-planes. The scene has rotation, non-uniform scale, and negative scale, so the
-world-bounds path is exercised. No animation, input, texture decoding, or file
+three shared cube detail variants (768, 108, and 12 triangles), four shared
+untextured materials, and a fixed camera. It places one sixteenth of the
+instances behind the camera and the rest on a deterministic grid that grows away
+from the camera and past its side and far planes. The scene has rotation,
+non-uniform scale, and negative scale, so the world-bounds path is exercised.
+Every object carries one shared `MeshLod` with thresholds 18 and 45, maximum
+distance 90, and hysteresis 0.5. No animation, input, texture decoding, or file
 I/O runs during measurement.
 
 Build once, then run each scene size in Release configuration:
@@ -104,6 +112,11 @@ dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
   --configuration Release -- --instances 2048 --warmup 120 --frames 600
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
   --configuration Release -- --instances 8192 --warmup 120 --frames 600
+
+# LOD comparison with culling held off
+dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
+  --configuration Release -- \
+  --instances 2048 --culling off --lod both --warmup 120 --frames 600
 ```
 
 Options:
@@ -112,6 +125,8 @@ Options:
 | --- | --- | --- |
 | `--instances <count>` | `2048` | Scene size, from 1 through the scene's 100,000-object limit |
 | `--culling <on\|off\|both>` | `both` | Culling comparison; `both` runs off first, then on, with a separate warm-up for each |
+| `--lod <on\|off\|both>` | `off` | LOD comparison; `both` runs off first, then on for each culling mode, with a separate warm-up for each |
+| `--no-distance-culling` | enabled | Disables every configured maximum render distance; used to isolate LOD from whole-instance distance culling |
 | `--warmup <frames>` | `120` | Frames excluded before each measured mode |
 | `--frames <count>` | `600` | Measured frames per mode |
 | `--no-pacing` | pacing on | Removes the 16 ms frame-budget delay |
@@ -146,6 +161,12 @@ counts, and scene size alongside the numbers.
   scene sizes the test can cost slightly more than the draws it removes; at large
   sizes the saved per-instance submission dominates. Compare both modes at the
   same size rather than assuming culling always wins.
+- **LOD trade-off.** LOD reduces submitted triangles but not the draw-call count
+  in this renderer. It adds bounds transformation and selection work per object.
+  Compare `lod off` and `lod on` at the same instance count and culling mode; do
+  not attribute a GPU saving to the CPU `render` time. Distance culling is a
+  separate effect because it removes whole draw submissions. See
+  [LOD.md](LOD.md) for the recorded comparison and its conditions.
 - **GPU-bound cases are inconclusive here.** A slow total frame with a small
   `render` time may indicate presentation or GPU limits, but this instrumentation
   cannot distinguish them. Use Instruments, Metal System Trace, or a GPU timer
@@ -184,8 +205,10 @@ counts, and scene size alongside the numbers.
 - The benchmark's fixed camera and scene layout are intentionally simple. They
   are not a game workload and do not cover texture upload, shader compilation,
   file parsing, audio, physics, or input latency.
-- The culling comparison changes only the renderer's optional culling flag. It
-  does not change meshes, materials, uploads, or the scene.
+- The culling comparison changes only the renderer's optional frustum-culling
+  flag. The LOD comparison changes only `LodEnabled`. Neither changes the scene,
+  materials, transforms, or uploads; all three variants are uploaded during
+  warm-up in every mode.
 - Managed allocation sampling is current-thread and coarse. It does not measure
   native allocations, driver allocations, or GPU memory.
 - The repository has no Task 10.1 diagnostics or Discord RPC integration, so the
@@ -196,5 +219,6 @@ counts, and scene size alongside the numbers.
 - [PERFORMANCE_BASELINE_01.md](PERFORMANCE_BASELINE_01.md) — recorded baseline,
   findings, and the one implemented optimization.
 - [CULLING.md](CULLING.md) — bounds, frustum, statistics, and culling limits.
+- [LOD.md](LOD.md) — LOD contract, counters, and the recorded LOD comparison.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — project scope and dependency direction.
 - [SMOKE_TEST.md](SMOKE_TEST.md) — manual GUI checks, including the benchmark.

@@ -14,12 +14,13 @@ renderer, geometry builder, shader, model-viewer loop, and input mapping in
 shared geometry builder, the shared model shader, and the shared camera controls.
 `HelloMaterials` uses the material and texture data in `Nymeria.Core`, the
 PNG/JPEG/TGA/DDS/BMP loader in `Nymeria.Formats.Textures`, and the shared camera
-controls. `HelloMaterials`, `HelloLighting`, and `HelloCulling` share the
+controls. `HelloMaterials`, `HelloLighting`, `HelloCulling`, and `HelloLOD` share the
 material renderer and shader in `examples/Shared`; `HelloLighting` adds the
 lighting data in `Nymeria.Core`, the OBJ parser in `Nymeria.Formats.Obj`, and the
 same texture loader, while `HelloCulling` adds the headless bounds and frustum
-helpers in `Nymeria.Core.Culling`. `HelloBenchmark` reuses the shared material
-renderer with a fixed camera and the bounded timing helpers in
+helpers in `Nymeria.Core.Culling`, and `HelloLOD` adds the explicit mesh-variant
+and distance-selection data in `Nymeria.Core.Lod`. `HelloBenchmark` reuses the
+shared material renderer with a fixed camera and the bounded timing helpers in
 `Nymeria.Core.Diagnostics`.
 
 All examples use SDL3's GPU API with the Metal backend and Metal Shading
@@ -40,6 +41,7 @@ dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
+dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj -- --instances 2048
 ```
 
@@ -88,8 +90,9 @@ renders continuously, and targets about 16 ms per frame.
 ### Controls
 
 `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, and `HelloCulling` share `examples/Shared/FlyCameraControls.cs`,
-so these controls apply to all eight examples.
+`HelloLighting`, `HelloCulling`, and `HelloLOD` share
+`examples/Shared/FlyCameraControls.cs`, so these controls apply to all nine
+interactive examples.
 
 | Input | Action |
 | --- | --- |
@@ -110,6 +113,11 @@ rotate continuously.
 
 `HelloCulling` adds `C`, which toggles frustum culling. The example also accepts
 `--no-culling` to start with culling disabled for a comparison session.
+
+`HelloLOD` adds `L` to toggle LOD, `X` to toggle distance culling, `F` to toggle
+frustum culling, `[` and `]` to change both thresholds and the maximum distance,
+and `R` to reset them. It also accepts `--no-lod`, `--no-distance-culling`, and
+`--no-culling` for comparison sessions.
 
 Mouse look rotates only while the right button is held. Releasing the button,
 losing input focus, minimizing the window, or exiting disables relative mouse
@@ -468,7 +476,44 @@ dotnet run --project examples/HelloCulling/HelloCulling.csproj -- --no-culling
 - Scope: whole-instance frustum culling only. There is no occlusion culling,
   distance culling, LOD, spatial index, hierarchy, GPU-driven culling, or cached
   world-bounds invalidation. Existing meshes, materials, textures, lighting,
-  scene objects, and transforms are never changed by a cull decision.
+  scene objects, and transforms are never changed by a cull decision. Explicit
+  LOD and distance culling are demonstrated by `HelloLOD`.
+
+## HelloLOD
+
+`HelloLOD` demonstrates explicit mesh variants and optional per-object distance
+culling through the existing scene and shared material renderer. It needs no
+asset file.
+
+```bash
+dotnet run --project examples/HelloLOD/HelloLOD.csproj
+dotnet run --project examples/HelloLOD/HelloLOD.csproj -- --no-lod
+```
+
+- Variants: three original procedural spheres with 576, 100, and 30 triangles.
+  The medium and low levels are visibly faceted. All instances share one high
+  mesh, one `MeshLod`, and four untextured materials. Each variant is uploaded
+  once and reused by reference.
+- Distances: thresholds scale with `[` and `]` from 50% to 300% of the base
+  14/38 units, and the optional maximum distance scales with them from the base
+  120 units. Hysteresis is 0.75 world units around each threshold.
+- Scene: forty-five instances in three receding columns plus three larger
+  objects. The larger objects show that distance is measured to the conservative
+  bounding volume, not the object origin.
+- Toggles: `L` disables LOD and distance culling and draws the high mesh; `X`
+  disables distance culling while keeping LOD; `F` toggles frustum culling.
+  `R` resets the threshold scale.
+- Diagnostics: once per second the example prints FPS, render-time average and
+  p95, candidates, frustum- and distance-culled instances, drawn instances, draw
+  calls, submitted triangles, and per-level usage. The first line is a zero
+  startup sample.
+- Comparison: run with `--no-lod`, `--no-distance-culling`, or `--no-culling` and
+  compare the same camera path and statistics interval. Do not interpret an FPS
+  difference under the 16 ms frame budget as a proven GPU improvement.
+- Scope: explicit application-supplied variants only. Nymeria does not
+  simplify, generate, stream, morph, or cross-fade meshes, and there is no
+  per-subset, occlusion, spatial-index, or GPU-driven LOD. See
+  [../docs/LOD.md](../docs/LOD.md).
 
 ## HelloBenchmark
 
@@ -483,21 +528,27 @@ dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
   --configuration Release -- --instances 8192 --warmup 120 --frames 600
 ```
 
-- Scene: one shared cube mesh, four shared untextured materials, a fixed camera,
-  and a deterministic grid with rotation, non-uniform scale, and negative scale.
-  One sixteenth of the instances sit behind the camera; larger sizes also extend
-  beyond the side and far planes.
+- Scene: three shared cube variants (768/108/12 triangles), four shared
+  untextured materials, a fixed camera, and a deterministic grid with rotation,
+  non-uniform scale, and negative scale. Every object carries one shared `MeshLod`
+  with thresholds 18/45, maximum distance 90, and hysteresis 0.5. One sixteenth
+  of the instances sit behind the camera; larger sizes also extend beyond the
+  side and far planes.
 - Modes: culling off and on by default, each with its own warm-up. `--culling on`
-  or `--culling off` restricts the run.
+  or `--culling off` restricts the run. `--lod on`, `--lod off`, or `--lod both`
+  selects the LOD comparison; the default is off. `--no-distance-culling`
+  disables the configured maximum render distance so LOD can be measured without
+  whole-instance distance culling.
 - Timing: total frame, event pump, renderer submission, and pacing are separate
   CPU wall-clock intervals. `render` includes culling, command recording,
   submission, and swapchain acquisition, not GPU execution.
-- Counters: instances tested, visible and culled averages, actual indexed draw
-  calls, managed bytes allocated on the benchmark thread, and process-wide GC
-  counts.
-- Options: `--instances`, `--culling`, `--warmup`, `--frames`, `--no-pacing`, and
-  `--help`. Defaults are 2048 instances, both culling modes, 120 warm-up frames,
-  and 600 measured frames per mode.
+- Counters: instances tested, visible/frustum-culled/distance-culled/LOD-drawn
+  averages, actual indexed draw calls, submitted triangles, per-level usage,
+  managed bytes allocated on the benchmark thread, and process-wide GC counts.
+- Options: `--instances`, `--culling`, `--lod`, `--no-distance-culling`,
+  `--warmup`, `--frames`, `--no-pacing`, and `--help`. Defaults are 2048
+  instances, both culling modes, LOD off, distance culling enabled, 120 warm-up
+  frames, and 600 measured frames per mode.
 - Scope: CPU profiling only. There is no GPU timestamp query, automatic report
   file, network telemetry, or CI benchmark. See
   [../docs/PERFORMANCE.md](../docs/PERFORMANCE.md) for methodology, metric
@@ -507,7 +558,7 @@ dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
 
 ## Platform limits
 
-All ten examples are macOS-only for now. They require SDL's Metal backend and
+All eleven examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
 formats. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
 general material or scene importers. `HelloO3D` accepts only unscrambled static meshes
@@ -518,9 +569,10 @@ TGA, BMP, or a documented DDS subset, not a material pipeline. DDS and BMP
 support are not universal, and compressed DDS formats depend on backend
 capability. `HelloLighting`
 adds one ambient term and one directional Lambert term, not a general light
-system. `HelloCulling` adds a conservative whole-instance frustum test, not an
-occlusion, distance, or LOD system. No example has shadows, specular or PBR
-shading, an object hierarchy, or collisions. GPU output, texture sampling,
-compressed-format capability, lighting, culling, and input behavior are
-validated manually with [../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in
-CI.
+system. `HelloCulling` adds a conservative whole-instance frustum test. `HelloLOD` adds
+explicit application-supplied mesh variants, distance culling, and hysteresis;
+it does not simplify or generate geometry. No example has shadows, specular or
+PBR shading, an object hierarchy, or collisions. GPU output, texture sampling,
+compressed-format capability, lighting, frustum culling, LOD selection, distance
+culling, and input behavior are validated manually with
+[../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.

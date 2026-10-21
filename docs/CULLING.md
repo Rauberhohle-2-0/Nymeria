@@ -16,8 +16,10 @@ submitted. Culling does not remove scene objects, change transforms, unload
 meshes or materials, or alter simulation state.
 
 The implementation is a whole-instance axis-aligned-bounds test against six
-frustum planes. It is not an ECS, spatial index, BVH, octree, occlusion query,
-distance cull, or LOD system, and it does not use GPU timing or GPU-side culling.
+frustum planes. It is not an ECS, spatial index, BVH, octree, or occlusion query,
+and it does not use GPU timing or GPU-side culling. Distance culling and explicit
+mesh LOD selection are separate, optional parts of the same per-frame test; see
+[LOD.md](LOD.md).
 
 ## Coordinate and matrix conventions
 
@@ -105,15 +107,21 @@ non-finite model transforms when it builds a lighting normal matrix.
 
 - `FrustumCullingEnabled` defaults to `false`, so `HelloMaterials` and
   `HelloLighting` keep their existing behavior. `HelloCulling` enables it.
-- For every scene object it calls `SceneVisibilityCounter.Test`. With culling
-  disabled, the counter is passed no frustum and treats every instance as
-  visible; with culling enabled, the object's world bounds are tested.
+- For every scene object it calls a `SceneVisibilityCounter.Test` overload. With
+  frustum culling disabled, the counter is passed no frustum and treats every
+  instance as visible; with it enabled, the object's world bounds are tested.
+- When an object has a `MeshLod`, the test uses the conservative union of all of
+  its variants' model-space bounds for both distance measurement and the frustum
+  test. The union is transformed by the object's current model matrix. Distance
+  culling runs before the frustum test, and LOD selection runs only for instances
+  that pass both tests. See [LOD.md](LOD.md).
 - A visible instance proceeds through the existing material, texture, lighting,
-  and geometry path. A culled instance only skips draw submission. No scene
-  object is removed, and no CPU or GPU resource is released.
-- Resources for every referenced mesh and texture are still uploaded before the
-  frame command buffer is acquired, so culling never triggers an upload between
-  render-pass commands.
+  and geometry path with exactly one selected mesh variant. A culled instance
+  only skips draw submission. No scene object is removed, and no CPU or GPU
+  resource is released.
+- Resources for every referenced mesh and texture, including every LOD variant,
+  are still uploaded before the frame command buffer is acquired, so culling
+  never triggers an upload between render-pass commands.
 - `LastFrameStatistics` reports the most recent frame that reached command
   submission. A minimized window or unusable drawable leaves the value at zero,
   and every `Render` call resets the per-frame counter first.
@@ -132,9 +140,13 @@ allocation.
 | Field | Meaning |
 | --- | --- |
 | `TotalInstances` | Scene instances tested in the frame |
-| `VisibleInstances` | Instances that passed the conservative test |
-| `CulledInstances` | Instances proven fully outside the frustum |
+| `VisibleInstances` | Instances that passed every enabled test and were submitted |
+| `CulledInstances` | Instances proven fully outside the frustum, after distance culling |
+| `DistanceCulledInstances` | Instances skipped for exceeding their maximum render distance |
 | `DrawCalls` | Indexed draw calls actually submitted |
+| `LodDrawnInstances` | Submitted instances with an active LOD configuration |
+| `LodUsage` | Fixed-size per-level usage snapshot |
+| `SubmittedTriangles` | Sum of submitted `indexCount / 3` |
 
 Instance counts are not GPU draw-call counts. This renderer issues one indexed
 draw call per visible instance, so `DrawCalls` currently equals
@@ -142,9 +154,12 @@ draw call per visible instance, so `DrawCalls` currently equals
 culling API. The statistics are not GPU timings, primitive counts, or a claim
 about rasterization cost.
 
-With culling disabled, `CulledInstances` is zero and every tested instance is
-visible. With culling enabled, `TotalInstances` equals
-`VisibleInstances + CulledInstances`. Skipped frames report all zeros.
+With frustum culling disabled, `CulledInstances` is zero and every tested
+instance that is not distance-culled is visible. When distance culling is also
+disabled or no object has a maximum, `TotalInstances` equals
+`VisibleInstances + CulledInstances`. More generally it equals
+`VisibleInstances + CulledInstances + DistanceCulledInstances`, so an instance is
+never counted in two cull categories. Skipped frames report all zeros.
 
 ## `HelloCulling`
 
@@ -240,12 +255,16 @@ through the renderer used by `HelloCulling`; it is not a CI test. The interactiv
 - One axis-aligned box per mesh instance. Rotated objects use the box of their
   transformed corners, which is conservative but can submit extra work.
 - Bounds cover all mesh positions, including unreferenced vertices.
-- No per-subset, per-primitive, occlusion, distance, or LOD culling.
+- No per-subset, per-primitive, or occlusion culling.
 - No spatial index, scene hierarchy, instanced draw API, or multi-threaded
   culling.
+- LOD visibility uses a conservative union of all variant bounds rather than the
+  selected variant's bounds. This can submit an instance that the selected lower
+  detail mesh alone would have culled, but it cannot hide visible geometry.
+- Distance culling is per object and optional; there is no global distance limit.
 - No caching or invalidation of world bounds; they are recomputed per frame.
 - Culling only skips draw submission. It does not skip texture or mesh uploads,
-  which remain renderer-owned and shared.
+  which remain renderer-owned and shared, including all LOD variants.
 - The renderer reuses one scratch frustum, so the frustum itself is not allocated
   per frame, but the culling path is not allocation-free end to end; the
   benchmark reports residual managed allocation per frame. See
