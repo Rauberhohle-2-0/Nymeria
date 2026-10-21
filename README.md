@@ -10,12 +10,14 @@ interactive, depth-tested cube scene.
 
 - **Implemented now:** .NET 10 solution, the `Nymeria.Platform` window API,
   `Nymeria.Core` with validated format-independent model data and a parser
-  contract, `Nymeria.Graphics` with reusable Metal GPU device infrastructure and
-  camera math, `examples/HelloTriangle`, the interactive `examples/HelloCube`,
-  platform-independent unit tests, CI restore/build/test on macOS, Windows, and
-  Linux, repository checks, and Dependabot updates for GitHub Actions and NuGet.
-- **Planned later:** engine-level input, the engine loop, Wavefront OBJ and OMSI
-  O3D parsers, additional graphics backends, and Windows/Linux rendering. See
+  contract, `Nymeria.Formats.Obj` with a dependency-free Wavefront OBJ parser,
+  `Nymeria.Graphics` with reusable Metal GPU device infrastructure and camera
+  math, `examples/HelloTriangle`, the interactive `examples/HelloCube`, the
+  OBJ-rendering `examples/HelloOBJ`, platform-independent unit tests, CI
+  restore/build/test on macOS, Windows, and Linux, repository checks, and
+  Dependabot updates for GitHub Actions and NuGet.
+- **Planned later:** engine-level input, the engine loop, OMSI O3D parsing,
+  additional graphics backends, and Windows/Linux rendering. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the authoritative distinction.
 
 ## Prerequisites (macOS)
@@ -45,28 +47,32 @@ dotnet restore Nymeria.slnx
 dotnet build Nymeria.slnx
 dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
 dotnet run --project examples/HelloCube/HelloCube.csproj
+dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 ```
 
 A resizable native window titled `Nymeria` opens at 960 × 540. `HelloTriangle`
 draws one red/green/blue triangle. `HelloCube` draws seven cubes at fixed
 positions with perspective projection and depth testing, plus a free-fly camera.
-Move with `W`/`A`/`S`/`D`, `Space`, and `Left Control`; hold `Shift` to go
-faster; hold the right mouse button and move the mouse to look around. Close
-either window with the red close button or the standard macOS quit shortcut
-(`Cmd+Q`). The command exits with status code `0` on a normal shutdown.
+`HelloOBJ` loads its checked-in cube fixture and renders it through the same
+camera and GPU path; pass a path after `--` to load a different OBJ file. Move
+with `W`/`A`/`S`/`D`, `Space`, and `Left Control`; hold `Shift` to go faster;
+hold the right mouse button and move the mouse to look around. Close any window
+with the red close button or the standard macOS quit shortcut (`Cmd+Q`). The
+command exits with status code `0` on a normal shutdown.
 
 The startup path prints an actionable error and exits with status code `1` if the
 native SDL3 library is missing or mismatched, SDL initialization fails, the Metal
-GPU backend is unavailable, the window cannot be created or claimed, or a shader
-or pipeline cannot be created.
+GPU backend is unavailable, the window cannot be created or claimed, a shader or
+pipeline cannot be created, or `HelloOBJ` cannot read or parse its file.
 
 ### GPU examples
 
-Both examples use SDL3's GPU API on the Metal backend. There is no direct Metal
-interop and no software fallback. `Nymeria.Graphics` provides the reusable GPU
-device and the `Camera` math type; `Nymeria.Core` provides the model data used by
-`HelloCube`; each example owns its renderer, shader, pipeline, input mapping, and,
-for the cube scene, its depth target.
+The GPU examples use SDL3's GPU API on the Metal backend. There is no direct
+Metal interop and no software fallback. `Nymeria.Graphics` provides the reusable
+GPU device and the `Camera` math type; `Nymeria.Core` provides the model data
+used by `HelloCube`; `Nymeria.Formats.Obj` parses the file used by `HelloOBJ`.
+Each example owns its renderer, shader, pipeline, and depth target, and the two
+interactive examples share `examples/Shared/FlyCameraControls.cs`.
 
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal` and
 `examples/HelloCube/Shaders/Cube.metal`. They are embedded into their examples
@@ -93,7 +99,15 @@ uploaded with the same row-major convention as before. The central cube's
 rotation is also advanced by elapsed time with the same cap. The depth target and
 pipeline state live in the example, not in `Nymeria.Graphics`.
 
-Both examples skip rendering while minimized and recover when a drawable is
+`HelloOBJ` loads `examples/HelloOBJ/Assets/cube.obj` by default, or a path passed
+on the command line, through `Nymeria.Formats.Obj`. It converts the parsed model
+to its own position/color layout with 32-bit indices and renders it with the same
+device, depth test, camera, and input path. The checked-in fixture is original
+project content: six convex quads with positions, UVs, normals, and six `usemtl`
+labels. No MTL file is loaded. The parser supports a documented polygonal subset;
+see [docs/OBJ.md](docs/OBJ.md) for its exact behavior and limitations.
+
+All three examples skip rendering while minimized and recover when a drawable is
 available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
@@ -110,10 +124,11 @@ Run the platform-independent unit tests:
 dotnet test Nymeria.slnx
 ```
 
-The tests cover `WindowOptions` defaults and validation, plus model-data
-validation and parser-contract error semantics in `Nymeria.Core.Tests`. There are
-deliberately no fake GUI tests: native window behavior is covered by the manual
-smoke test below and is not claimed as a headless CI result.
+The tests cover `WindowOptions` defaults and validation, model-data validation
+and parser-contract error semantics in `Nymeria.Core.Tests`, and the OBJ subset
+and diagnostics in `Nymeria.Formats.Obj.Tests`. There are deliberately no fake
+GUI tests: native window behavior is covered by the manual smoke test below and
+is not claimed as a headless CI result.
 
 ## Manual smoke test
 
@@ -126,16 +141,18 @@ manually; it is not claimed as a headless CI result.
 .github/        Repository checks and Dependabot configuration
 docs/           Architecture, Git policy, and manual smoke test
 src/core/       Nymeria.Core model data and parser contract
+src/formats/    Nymeria.Formats.Obj Wavefront OBJ parser
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
-examples/       HelloTriangle and HelloCube runnable examples
-tests/          Nymeria.Core.Tests and Nymeria.Platform.Tests unit tests
+examples/       HelloTriangle, HelloCube, and HelloOBJ runnable examples
+tests/          Headless unit tests for core, formats, and platform projects
 ```
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Model data and parser contract](docs/MODEL_DATA.md)
+- [Wavefront OBJ import](docs/OBJ.md)
 - [Examples](examples/README.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)

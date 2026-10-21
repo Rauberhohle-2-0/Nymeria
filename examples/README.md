@@ -5,9 +5,10 @@ They are intentionally separate from the reusable projects: each example owns it
 shaders, pipelines, input mapping, and frame loop. `Nymeria.Graphics` provides the
 GPU device, the window presentation claim, shader and buffer creation, the
 swapchain format, and the reusable camera math. `Nymeria.Core` provides the
-format-independent model data used by `HelloCube`.
+format-independent model data used by `HelloCube`, and `Nymeria.Formats.Obj`
+provides the OBJ parser used by `HelloOBJ`.
 
-Both examples use SDL3's GPU API with the Metal backend and Metal Shading
+All three examples use SDL3's GPU API with the Metal backend and Metal Shading
 Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
 created, so there is no Xcode build step and no generated shader artifact.
 
@@ -18,6 +19,7 @@ dotnet restore Nymeria.slnx
 dotnet build Nymeria.slnx
 dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
 dotnet run --project examples/HelloCube/HelloCube.csproj
+dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 ```
 
 ## HelloTriangle
@@ -64,6 +66,9 @@ renders continuously, and targets about 16 ms per frame.
 
 ### Controls
 
+`HelloCube` and `HelloOBJ` share `examples/Shared/FlyCameraControls.cs`, so these
+controls apply to both examples.
+
 | Input | Action |
 | --- | --- |
 | `W` / `S` | Move forward / backward along the horizontal view direction |
@@ -78,9 +83,9 @@ mode so the cursor is restored. Movement uses measured elapsed time, normalizes
 diagonal input, and caps one frame's contribution at 0.1 s. Moving forward while
 looking up or down stays in the horizontal plane.
 
-There is no global input system. `HelloCube` keeps its SDL3 keyboard and mouse
-mapping in `FlyCameraControls`, reads SDL's cached state after
-`Window.ProcessEvents` pumps the queue, and leaves close handling and the single
+There is no global input system. The examples keep their SDL3 keyboard and mouse
+mapping in the shared `FlyCameraControls`, read SDL's cached state after
+`Window.ProcessEvents` pumps the queue, and leave close handling and the single
 event loop in `Nymeria.Platform` unchanged. SDL reports the movement keys by
 physical scancode, so their positions work across keyboard layouts. On a
 trackpad, use a two-finger or configured secondary click for mouse look; a
@@ -140,11 +145,49 @@ submitted empty, because SDL only allows cancellation before the swapchain
 texture is acquired. The projection aspect ratio is derived only after the
 drawable size is known to be non-zero.
 
+## HelloOBJ
+
+`HelloOBJ` loads a Wavefront OBJ file and renders it with the same GPU device,
+camera, depth test, input mapping, resize handling, and shutdown conventions as
+`HelloCube`. It is the rendering proof for the parser described in
+[../docs/OBJ.md](../docs/OBJ.md).
+
+```bash
+dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
+dotnet run --project examples/HelloOBJ/HelloOBJ.csproj -- path/to/model.obj
+```
+
+- Fixture: [HelloOBJ/Assets/cube.obj](HelloOBJ/Assets/cube.obj), an original
+  project asset. It is a 2 × 2 × 2 cube with six convex quads, positions,
+  bottom-left-origin UVs, face normals, and six `usemtl` labels. No MTL file is
+  provided or loaded.
+- Default path: the fixture is copied next to the built executable, so the
+  no-argument command works from any directory. A supplied path is used as given
+  and may be relative to the current directory.
+- Errors: a missing, unreadable, or malformed file prints a message that includes
+  the parser's source-line diagnostic when available, then exits with status
+  code `1` before a window is created.
+- Geometry conversion: the parsed model is converted to the example's
+  position/color layout with 32-bit indices, then uploaded through
+  `GpuDevice.CreateBuffer`. Vertices are duplicated per subset because the shader
+  carries one color per vertex.
+- Subset colors: the six fixture labels `front`, `back`, `right`, `left`, `top`,
+  and `bottom` map to six solid colors. Unknown labels use one neutral color.
+  This is example presentation, not a material system.
+- Shader: `HelloOBJ/Shaders/Model.metal`, embedded as
+  `HelloOBJ.Shaders.Model.metal`. It uses the same row-major matrix upload and
+  one uniform buffer as the cube shader.
+- Camera: framed from the parsed model's bounds so the fixture and ordinary
+  user-supplied models start visible. It uses the shared `FlyCameraControls`.
+- Scope: no textures, lighting, material properties, animation, scene graph, or
+  generic asset registry.
+
 ## Platform limits
 
-Both examples are macOS-only for now. They require SDL's Metal backend and MSL
-source; Windows and Linux need their own native SDL3 packages and shader
-formats. Neither example has textures, lighting, a scene graph, collisions, or a
-file-format model parser; `HelloCube` constructs its model data in code. GPU
-output and input behavior are validated manually with
-[../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.
+All three examples are macOS-only for now. They require SDL's Metal backend and
+MSL source; Windows and Linux need their own native SDL3 packages and shader
+formats. `HelloOBJ` uses the focused OBJ subset, not a general material or scene
+importer. `HelloCube` still constructs its model data in code. No example has
+textures, lighting, a scene graph, or collisions. GPU output and input behavior
+are validated manually with [../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in
+CI.

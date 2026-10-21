@@ -26,6 +26,8 @@ extension is a direction, not a current feature.
 - `Nymeria.Platform`, a class library exposing a minimal native window API.
 - `Nymeria.Core`, a dependency-free class library containing validated,
   format-independent model data and the `IModelParser` contract.
+- `Nymeria.Formats.Obj`, a dependency-free Wavefront OBJ parser implementing
+  `IModelParser` for a documented polygonal subset.
 - `Nymeria.Graphics`, a class library that owns the SDL3 GPU device and window
   presentation claim, provides reusable MSL shader and buffer creation, and
   contains a reusable, SDL-independent free-fly `Camera`.
@@ -35,9 +37,13 @@ extension is a direction, not a current feature.
   fixed-position cubes with a free-fly camera, perspective projection, depth
   testing, example-owned shaders and geometry from a format-independent model,
   and an example-owned depth target.
+- `examples/HelloOBJ`, an interactive model viewer that parses a checked-in OBJ
+  fixture or a user-supplied path and renders it through the existing GPU path.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - `Nymeria.Core.Tests`, GPU-independent tests for model-data validation and
   parser-contract error behavior.
+- `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
+  conversions, and diagnostics.
 - SDL3 windowing and GPU rendering through the pinned `SDL3-CS` and
   `SDL3-CS.MacOS` packages.
 - A `Repository checks` GitHub Actions workflow that validates repository
@@ -51,7 +57,7 @@ extension is a direction, not a current feature.
 The following are future work and are **not** implemented or approved in detail:
 
 - Engine-level input handling and an engine loop.
-- Wavefront OBJ and OMSI O3D parsers that implement the existing
+- An OMSI O3D parser that implements the existing
   `Nymeria.Core.Models.IModelParser` contract.
 - Additional graphics backends and a rendering abstraction.
 
@@ -76,6 +82,7 @@ would require maintainer approval.
 | Path | Intended responsibility |
 | --- | --- |
 | `src/core/` | Platform-independent engine fundamentals in `Nymeria.Core`. |
+| `src/formats/` | Format-specific model parsers in isolated projects such as `Nymeria.Formats.Obj`. |
 | `src/graphics/` | `Nymeria.Graphics`: reusable SDL3 GPU device and resource infrastructure. |
 | `src/platform/` | `Nymeria.Platform`: windowing, input, and operating-system integration. |
 | `examples/` | Small runnable programs that demonstrate engine usage. |
@@ -84,16 +91,18 @@ would require maintainer approval.
 | `.github/` | Repository automation: checks and dependency updates. |
 
 `src/platform/` contains the `Nymeria.Platform` project, `src/graphics/`
-contains `Nymeria.Graphics`, `src/core/` contains `Nymeria.Core`, `examples/`
-contains `HelloTriangle` and `HelloCube`, and `tests/` contains
-`Nymeria.Core.Tests` and `Nymeria.Platform.Tests`.
+contains `Nymeria.Graphics`, `src/core/` contains `Nymeria.Core`, `src/formats/`
+contains `Nymeria.Formats.Obj`, `examples/` contains `HelloTriangle`,
+`HelloCube`, and `HelloOBJ`, and `tests/` contains `Nymeria.Core.Tests`,
+`Nymeria.Formats.Obj.Tests`, and `Nymeria.Platform.Tests`.
 
 `Nymeria.Core` owns the format-independent model data and parser contract
 described in [MODEL_DATA.md](MODEL_DATA.md). It references `System.Numerics` and
 the base class library only. The camera lives in `Nymeria.Graphics` rather than
 in `Nymeria.Core`: it is reusable 3D rendering math with no SDL, window, or GPU
 dependency, and the model-loading foundation is the first demonstrated need for
-the core project.
+the core project. `Nymeria.Formats.Obj` references only `Nymeria.Core` and the
+base class library; its supported subset is documented in [OBJ.md](OBJ.md).
 
 ## Windowing
 
@@ -151,7 +160,7 @@ values, mismatched attribute counts, out-of-range indices, malformed subsets, an
 index counts that do not describe whole triangles throw `ModelFormatException`.
 The type takes ownership of the geometry arrays without copying them.
 
-`IModelParser` is the small extension point for future parsers:
+`IModelParser` is the small extension point for format parsers:
 
 ```csharp
 public interface IModelParser
@@ -165,14 +174,22 @@ position and must not close it. A parser returns a fully validated model or
 throws `ModelFormatException` for malformed or unsupported input. There is no
 registry, discovery mechanism, or format detection.
 
+`Nymeria.Formats.Obj.ObjModelParser` is the first production implementation. It
+reads positions, texture coordinates, normals, and polygon faces; resolves
+one-based and negative indices; unifies independent per-corner attribute streams;
+fan-triangulates its documented convex polygon subset; preserves `usemtl` labels
+as subsets; and reports malformed input with source-line diagnostics. It ignores
+`mtllib` and loads no materials. [OBJ.md](OBJ.md) is the authoritative statement
+of its supported subset and limitations.
+
 The conventions are right-handed with `+Y` up and `-Z` forward, triangle-list
 winding counter-clockwise when viewed from outside, zero-based indices, and
 texture coordinates with a top-left origin and `+V` down. Parsers convert source
 handedness, winding, index bases, and UV origin. [MODEL_DATA.md](MODEL_DATA.md)
 documents the complete contract, validation rules, and the extension point for
-the planned OBJ and O3D parsers. The cube example builds its geometry as model
-data and converts it to the existing shader layout; `Nymeria.Core` itself never
-creates GPU resources.
+format parsers. The cube example builds its geometry as model data and converts
+it to the existing shader layout; `Nymeria.Core` itself never creates GPU
+resources.
 
 ## GPU rendering
 
@@ -190,11 +207,12 @@ Metal interop, native wrapper, second binding, or software fallback.
 - creates an SDL GPU device with `SDL_CreateGPUDevice(MSL, debug: false, "metal")`;
 - claims the window for presentation and reads its swapchain format.
 
-The demonstrations live in `examples/HelloTriangle` and `examples/HelloCube`.
-Each owns its vertex data, shader resource, buffers, pipeline, and draw calls,
-and uses `GpuDevice` for the device, window claim, shader creation, buffer
-upload, and swapchain format. [examples/README.md](../examples/README.md)
-documents their run commands and rendering conventions.
+The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`, and
+`examples/HelloOBJ`. Each owns its vertex data, shader resource, buffers,
+pipeline, and draw calls, and uses `GpuDevice` for the device, window claim,
+shader creation, buffer upload, and swapchain format.
+[examples/README.md](../examples/README.md) documents their run commands and
+rendering conventions.
 
 `GpuDevice.CreateShader` accepts an optional uniform-buffer count. SDL needs the
 count to bind data pushed with `SDL_PushGPUVertexUniformData`; shaders that
@@ -273,13 +291,13 @@ vectors, so it reads those bytes as the transpose, making `mvp * position`
 equivalent to `position * mvp` in C#. There is no y-flip or depth remap.
 `examples/README.md` records the full conventions.
 
-Input mapping lives in `examples/HelloCube/FlyCameraControls.cs`, not in an
-engine project. It reads SDL's cached keyboard and mouse state after
-`Window.ProcessEvents` pumps the queue. Holding the right mouse button enables
-window-relative mouse mode; releasing it, losing input focus, minimizing, or
-disposing disables relative mode and restores the cursor. The example ignores
-input while the window lacks input focus. Close handling and the single event
-loop remain in `Nymeria.Platform`.
+Input mapping lives in `examples/Shared/FlyCameraControls.cs`, not in an engine
+project, and is linked into both `HelloCube` and `HelloOBJ`. It reads SDL's
+cached keyboard and mouse state after `Window.ProcessEvents` pumps the queue.
+Holding the right mouse button enables window-relative mouse mode; releasing it,
+losing input focus, minimizing, or disposing disables relative mode and restores
+the cursor. The examples ignore input while the window lacks input focus. Close
+handling and the single event loop remain in `Nymeria.Platform`.
 
 The example picks the first supported depth format among `D32Float`,
 `D24Unorm`, and `D16Unorm`, and uses it for both the depth texture and the
@@ -300,22 +318,49 @@ zero-sized drawable is acquired, the command buffer is submitted empty instead
 of cancelled, because SDL only permits cancellation before swapchain
 acquisition; the projection is never built from a zero height.
 
+### HelloOBJ
+
+`HelloOBJ` is the interactive OBJ viewer. It loads the checked-in
+`examples/HelloOBJ/Assets/cube.obj` fixture by default, or a path supplied on the
+command line, and reports a clear error and status code `1` for a missing,
+unreadable, or malformed file. The fixture is original project content: a
+six-quad cube with positions, bottom-left-origin UVs, face normals, and six
+`usemtl` labels. No MTL file is provided or loaded.
+
+`ObjRenderer` owns the model shader, interleaved vertex buffer, 32-bit index
+buffer, pipeline, and depth target. `ObjGpuGeometryBuilder` converts the parsed
+model to the example's position/color vertex layout. It duplicates vertices per
+subset because the shader carries one color per vertex; the six fixture labels
+map to six solid colors and every other label uses a neutral color. That mapping
+is example presentation only, not a material system. The shader is
+`examples/HelloOBJ/Shaders/Model.metal`, embedded under
+`HelloOBJ.Shaders.Model.metal`, with the same matrix convention and one uniform
+buffer as the cube shader.
+
+The example uses the existing `Camera` and the shared `FlyCameraControls`. It
+frames the camera from the parsed model's bounds so a user-supplied model of any
+origin is visible, renders continuously with the same 16 ms budget, and applies
+the same depth, resize, minimize, zero-sized-drawable, and shutdown behavior as
+`HelloCube`. It has no textures, lighting, animation, material properties, or
+scene graph.
+
 ### Ownership and lifetime
 
 - `GpuDevice` owns the GPU device and window claim. Each renderer owns its
-  shaders, geometry buffers, pipeline, and, for the cube scene, the depth
-  texture. A renderer must be created after the window and disposed before it.
+  shaders, geometry buffers, pipeline, and, for the cube and OBJ scenes, the
+  depth texture. A renderer must be created after the window and disposed before
+  it.
 - Each `Dispose` waits for the GPU to become idle, releases its resources, and
   then disposes the `GpuDevice`, which releases the window claim and destroys the
   device. Initialization failures release whatever was created in reverse order
   and then rethrow.
 - `Window` keeps ownership of the native window and calls `SDL_Quit` after the
   renderer has released its claim.
-- `HelloCube` owns its `Camera` instance and its example input mapping. The
-  camera has no unmanaged resources. The input mapping disables relative mouse
-  mode and discards pending mouse motion during disposal, before the window is
-  destroyed.
-- Neither renderer creates per-frame GPU resources. Command buffers and swapchain
+- `HelloCube` and `HelloOBJ` own their `Camera` instances and share the
+  `FlyCameraControls` implementation. The camera has no unmanaged resources. The
+  input mapping disables relative mouse mode and discards pending mouse motion
+  during disposal, before the window is destroyed.
+- No renderer creates per-frame GPU resources. Command buffers and swapchain
   textures are owned and recycled by SDL.
 
 Limitations in this version:
@@ -327,29 +372,32 @@ Limitations in this version:
   both architectures.
 - There is no scene graph, texture, lighting, material system, collision system,
   or engine-level input system. `Camera` is reusable math, but input mapping and
-  timing stay in `HelloCube`; the triangle remains static clip-space geometry.
-- There is no file-format model parser yet. `Nymeria.Core` provides the validated
-  model data and parser contract, and `HelloCube` constructs its cube as model
-  data in code. Wavefront OBJ and OMSI O3D parsing are planned follow-up tasks.
+  timing stay in the examples; the triangle remains static clip-space geometry.
+- The Wavefront OBJ parser handles a documented polygonal subset only. It does
+  not load MTL materials or textures, tessellate concave or non-planar polygons,
+  or import lines, points, or free-form geometry. `HelloCube` still constructs
+  its cube as model data in code. OMSI O3D parsing remains a future task.
 - GPU output and interactive input are not validated by CI.
   [SMOKE_TEST.md](SMOKE_TEST.md) covers them.
 
 ## Dependency direction
 
-The following principle guides project references. The core, graphics, and
-platform projects and the examples exist today.
+The following principle guides project references. The core, formats, graphics,
+and platform projects and the examples exist today.
 
 ```text
 examples  -----------------------> engine projects
    |
    v
-Nymeria.Graphics     Nymeria.Platform
-        \                 /
-         v               v
-             Nymeria.Core
+Nymeria.Graphics     Nymeria.Platform     Nymeria.Formats.Obj
+        \                 /                       |
+         v               v                        v
+                     Nymeria.Core
 ```
 
-- `Nymeria.Core` must not depend on graphics or platform code.
+- `Nymeria.Core` must not depend on graphics, platform, or format code.
+- `Nymeria.Formats.Obj` depends on `Nymeria.Core` and must not depend on
+  graphics or platform code.
 - `Nymeria.Graphics` and `Nymeria.Platform` may depend on `Nymeria.Core`.
 - `Nymeria.Graphics` and `Nymeria.Platform` must not depend on each other
   directly unless the maintainer approves and this document records the reason.
@@ -357,17 +405,19 @@ Nymeria.Graphics     Nymeria.Platform
 - `tests/` may reference the project under test.
 
 `Nymeria.Core` has no project references; it uses `System.Numerics` and the base
-class library only. `Nymeria.Graphics` and `Nymeria.Platform` have no
-`Nymeria.Core` reference because neither has a demonstrated need for it yet.
-They do not reference each other: each example creates the window and passes
-`Window.Handle` to its renderer, which creates a `GpuDevice` in
-`Nymeria.Graphics`; the dependency remains in the example. `Camera` sits in
-`Nymeria.Graphics` and references only `System.Numerics`. `HelloCube` references
-`Nymeria.Core` for its cube model data; `HelloTriangle` does not need it. No
-engine project references an example. `Nymeria.Core.Tests` and
-`Nymeria.Platform.Tests` reference their project under test. No interfaces or
-abstractions are created to enforce the future direction. Adding them
-speculatively would violate YAGNI.
+class library only. `Nymeria.Formats.Obj` references `Nymeria.Core` only.
+`Nymeria.Graphics` and `Nymeria.Platform` have no `Nymeria.Core` reference
+because neither has a demonstrated need for it yet. They do not reference each
+other: each example creates the window and passes `Window.Handle` to its
+renderer, which creates a `GpuDevice` in `Nymeria.Graphics`; the dependency
+remains in the example. `Camera` sits in `Nymeria.Graphics` and references only
+`System.Numerics`. `HelloCube` references `Nymeria.Core` for its cube model data;
+`HelloOBJ` references `Nymeria.Core`, `Nymeria.Formats.Obj`, `Nymeria.Graphics`,
+and `Nymeria.Platform`; `HelloTriangle` does not need the core or formats
+projects. No engine project references an example. `Nymeria.Core.Tests`,
+`Nymeria.Formats.Obj.Tests`, and `Nymeria.Platform.Tests` reference their project
+or projects under test. No interfaces or abstractions are created to enforce the
+future direction. Adding them speculatively would violate YAGNI.
 
 ## Technical choices
 
@@ -389,19 +439,23 @@ The following choices are implemented:
 - **Model data:** `Nymeria.Core` contains validated, format-independent
   `ModelData`/`MeshData` types and the `IModelParser` stream contract. It uses
   `System.Numerics` and no external package, SDL3, or GPU dependency.
+- **Model parsing:** `Nymeria.Formats.Obj` is a dependency-free OBJ parser in an
+  isolated format project. It uses the base class library only, implements
+  `IModelParser`, and documents its supported subset and limitations in
+  [OBJ.md](OBJ.md). No third-party OBJ loader is used.
 - **External packages:** the SDL3 binding and macOS native runtime, plus the
   xUnit test packages `xunit` 2.9.3, `xunit.runner.visualstudio` 4.0.1, and
   `Microsoft.NET.Test.Sdk` 18.11.0. The headless tests cover platform-independent
-  `WindowOptions` behavior plus model-data validation and parser error semantics;
-  they do not launch a GUI or create a GPU device.
+  `WindowOptions` behavior, model-data validation and parser error semantics, and
+  the OBJ parser subset; they do not launch a GUI or create a GPU device.
 
 The following choices remain open:
 
 - **Additional platforms and backends:** Windows and Linux rendering, their
   native SDL3 packages, and the shader formats those backends require are not
   implemented.
-- **Model parsers:** Wavefront OBJ and OMSI O3D parsing, their supported
-  subsets, and their format-specific project locations are not implemented.
+- **OMSI O3D parsing:** its supported subset and format-specific implementation
+  are not implemented.
 
 ## KISS and YAGNI
 
