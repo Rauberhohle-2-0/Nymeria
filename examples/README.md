@@ -18,7 +18,9 @@ controls. `HelloMaterials`, `HelloLighting`, and `HelloCulling` share the
 material renderer and shader in `examples/Shared`; `HelloLighting` adds the
 lighting data in `Nymeria.Core`, the OBJ parser in `Nymeria.Formats.Obj`, and the
 same texture loader, while `HelloCulling` adds the headless bounds and frustum
-helpers in `Nymeria.Core.Culling`.
+helpers in `Nymeria.Core.Culling`. `HelloBenchmark` reuses the shared material
+renderer with a fixed camera and the bounded timing helpers in
+`Nymeria.Core.Diagnostics`.
 
 All examples use SDL3's GPU API with the Metal backend and Metal Shading
 Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
@@ -38,6 +40,7 @@ dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
+dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj -- --instances 2048
 ```
 
 ## HelloTriangle
@@ -467,9 +470,44 @@ dotnet run --project examples/HelloCulling/HelloCulling.csproj -- --no-culling
   world-bounds invalidation. Existing meshes, materials, textures, lighting,
   scene objects, and transforms are never changed by a cull decision.
 
+## HelloBenchmark
+
+`HelloBenchmark` is a deterministic, auto-exiting CPU benchmark for the scene and
+shared material renderer. It opens the same window and GPU path, measures a
+warm-up-separated interval, prints one report per culling mode, then exits
+without user input. It is not an interactive example.
+
+```bash
+dotnet build Nymeria.slnx --configuration Release
+dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
+  --configuration Release -- --instances 8192 --warmup 120 --frames 600
+```
+
+- Scene: one shared cube mesh, four shared untextured materials, a fixed camera,
+  and a deterministic grid with rotation, non-uniform scale, and negative scale.
+  One sixteenth of the instances sit behind the camera; larger sizes also extend
+  beyond the side and far planes.
+- Modes: culling off and on by default, each with its own warm-up. `--culling on`
+  or `--culling off` restricts the run.
+- Timing: total frame, event pump, renderer submission, and pacing are separate
+  CPU wall-clock intervals. `render` includes culling, command recording,
+  submission, and swapchain acquisition, not GPU execution.
+- Counters: instances tested, visible and culled averages, actual indexed draw
+  calls, managed bytes allocated on the benchmark thread, and process-wide GC
+  counts.
+- Options: `--instances`, `--culling`, `--warmup`, `--frames`, `--no-pacing`, and
+  `--help`. Defaults are 2048 instances, both culling modes, 120 warm-up frames,
+  and 600 measured frames per mode.
+- Scope: CPU profiling only. There is no GPU timestamp query, automatic report
+  file, network telemetry, or CI benchmark. See
+  [../docs/PERFORMANCE.md](../docs/PERFORMANCE.md) for methodology, metric
+  definitions, and reproduction guidance, and
+  [../docs/PERFORMANCE_BASELINE_01.md](../docs/PERFORMANCE_BASELINE_01.md) for
+  the first recorded results.
+
 ## Platform limits
 
-All nine examples are macOS-only for now. They require SDL's Metal backend and
+All ten examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
 formats. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
 general material or scene importers. `HelloO3D` accepts only unscrambled static meshes

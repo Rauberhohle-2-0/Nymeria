@@ -27,9 +27,9 @@ extension is a direction, not a current feature.
 - `Nymeria.Core`, a dependency-free class library containing validated,
   format-independent model data, the `IModelParser` contract, minimal scene data
   (`Scene`, `SceneObject`, and `Transform`), optional ambient and directional
-  lighting data, conservative bounds and frustum-culling helpers, and
-  format-independent material and texture data with RGBA and block-compressed
-  mip chains.
+  lighting data, conservative bounds and frustum-culling helpers, bounded
+  frame-timing diagnostics, and format-independent material and texture data
+  with RGBA and block-compressed mip chains.
 - `Nymeria.Formats.Obj`, a dependency-free Wavefront OBJ parser implementing
   `IModelParser` for a documented polygonal subset.
 - `Nymeria.Formats.O3d`, a dependency-free OMSI O3D parser implementing
@@ -78,6 +78,9 @@ extension is a direction, not a current feature.
 - `examples/HelloCulling`, an interactive example that draws many instances of
   one shared mesh with optional conservative camera-frustum culling, a runtime
   toggle, and per-frame visibility statistics.
+- `examples/HelloBenchmark`, an auto-exiting Release benchmark with a fixed
+  camera, deterministic 512/2048/8192-instance scenes, culling and pacing
+  modes, bounded CPU phase timings, and allocation/GC counters.
 - `MeshData.Bounds` plus `Nymeria.Core.Culling` bounds, frustum, and per-frame
   visibility helpers. They are headless, use `System.Numerics` only, and contain
   no SDL3, GPU, window, or format dependency.
@@ -85,7 +88,8 @@ extension is a direction, not a current feature.
 - `Nymeria.Core.Tests`, GPU-independent tests for model-data validation,
   parser-contract error behavior, transform composition, scene lifecycle,
   lighting data and math, materials, texture-data validation, mesh bounds,
-  frustum-plane intersection, and visibility counters.
+  frustum-plane intersection, visibility counters, and bounded frame-timing
+  aggregation with warm-up exclusion and invalid samples.
 - `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
   conversions, and diagnostics.
 - `Nymeria.Formats.O3d.Tests`, GPU-independent tests for the O3D header,
@@ -155,7 +159,8 @@ contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`,
 `Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`, `Nymeria.Formats.Bmp`, and
 `Nymeria.Formats.Textures`, `examples/` contains `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, and `HelloCulling`, and `tests/` contains `Nymeria.Core.Tests`,
+`HelloLighting`, `HelloCulling`, and `HelloBenchmark`, and `tests/` contains
+`Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
 `Nymeria.Formats.DirectX.Tests`, `Nymeria.Formats.Png.Tests`,
 `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
@@ -318,8 +323,8 @@ software fallback.
 
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
 `examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloX`,
-`examples/HelloScene`, `examples/HelloMaterials`, `examples/HelloLighting`, and
-`examples/HelloCulling`. Each has its own vertex
+`examples/HelloScene`, `examples/HelloMaterials`, `examples/HelloLighting`,
+`examples/HelloCulling`, and `examples/HelloBenchmark`. Each has its own vertex
 data and draw calls, and uses `GpuDevice` for the device, window claim, shader
 creation, buffer and texture upload, sampler creation, and swapchain format.
 [examples/README.md](../examples/README.md) documents their run commands and
@@ -646,7 +651,8 @@ documents the contract, fallbacks, statistics, and limits.
   renderer has released its claim.
 - `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
   `HelloLighting`, and `HelloCulling` own their `Camera` instances and share the
-  `FlyCameraControls` implementation. The camera has no unmanaged resources. The
+  `FlyCameraControls` implementation. `HelloBenchmark` owns a fixed `Camera` and
+  does not use input controls. The camera has no unmanaged resources. The
   input mapping disables relative mouse mode and discards pending mouse motion
   during disposal, before the window is destroyed.
 - No renderer creates per-frame GPU resources. The scene and material renderers
@@ -762,7 +768,9 @@ references `Nymeria.Core` for scene, lighting, and material data,
 `Nymeria.Graphics`, and `Nymeria.Platform`; `HelloCulling` references
 `Nymeria.Core` for scene, mesh, material, and culling data,
 `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for the
-window; `HelloTriangle` does not need the core
+window; `HelloBenchmark` references `Nymeria.Core` for scene, mesh, material,
+and timing data, `Nymeria.Graphics` for the device and camera, and
+`Nymeria.Platform` for the window; `HelloTriangle` does not need the core
 or formats projects.
 No engine project references an example. `Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
@@ -814,6 +822,14 @@ The following choices are implemented:
   shared material renderer opts in with `FrustumCullingEnabled` and exposes
   instance and draw-call statistics. Invalid data fails open rather than
   discarding geometry. [CULLING.md](CULLING.md) is the authoritative contract.
+- **Performance diagnostics:** `Nymeria.Core.Diagnostics.FrameTimingWindow` is a
+  bounded, warm-up-aware rolling window for CPU frame durations. It rejects
+  invalid samples, reports average, nearest-rank p95, maximum, and FPS from the
+  average, and its `AddSample` path does not allocate; `GetSummary` allocates a
+  copy for sorting and is intended for reporting intervals only. It does not
+  collect GPU timings or run in the background. `examples/HelloBenchmark` is the
+  only workload that uses it; [PERFORMANCE.md](PERFORMANCE.md) defines the
+  phases, method, and limits.
 - **Model parsing:** `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`, and
   `Nymeria.Formats.DirectX` are dependency-free parsers in isolated format
   projects. They use the base class library and `Nymeria.Core` only, implement
@@ -847,9 +863,9 @@ The following choices are implemented:
   headless tests cover platform-independent `WindowOptions` behavior, model-data
   validation and parser error semantics, transform composition, scene lifecycle
   and mesh sharing, lighting data and math, mesh bounds and frustum culling,
-  visibility counts, material and texture data, the OBJ,
-  O3D, and text `.x` subsets, and the PNG, JPEG, TGA, BMP, DDS, and loader paths;
-  they do not launch a GUI or create a GPU device.
+  visibility counts, bounded frame-timing aggregation, material and texture data,
+  the OBJ, O3D, and text `.x` subsets, and the PNG, JPEG, TGA, BMP, DDS, and
+  loader paths; they do not launch a GUI or create a GPU device.
 
 The following choices remain open:
 

@@ -19,6 +19,9 @@ dotnet run --project examples/HelloX/HelloX.csproj
 dotnet run --project examples/HelloScene/HelloScene.csproj
 dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
+dotnet run --project examples/HelloCulling/HelloCulling.csproj
+dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
+  -- --instances 128 --warmup 10 --frames 60
 ```
 
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
@@ -32,8 +35,9 @@ The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 and compiled by SDL's Metal backend at startup, so there is no shader compiler
 step and no external shader file to deploy.
 
-Run each example checklist separately. The failure-path checks at the end apply
-to all eight.
+Run each interactive example checklist separately. The failure-path checks at
+the end apply to all eight interactive examples; `HelloBenchmark` has its own
+automated checks below.
 
 ## HelloTriangle checks
 
@@ -527,6 +531,50 @@ echo $?
 
 Expected: `0`.
 
+## HelloBenchmark checks
+
+`HelloBenchmark` is a CPU benchmark, not a visual or GPU-timing test. It opens a
+window, runs two fixed modes, prints a report, and exits without user input.
+
+1. **Run the short smoke workload.** From the repository root:
+
+   ```bash
+   dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
+     -- --instances 128 --warmup 10 --frames 60
+   ```
+
+   Expected: a window titled `Nymeria - HelloBenchmark` opens and closes. The
+   terminal prints the runtime, OS, architecture, window sizes, Metal backend,
+   scene size, pacing, warm-up, and sample settings before the reports.
+2. **Both modes run, off first.** The output contains `mode: culling off` and
+   then `mode: culling on`, each with `samples 60` and `skipped 0`.
+3. **Counts are consistent.** For 128 instances, culling off reports 128 tested,
+   128 visible, 0 culled, and 128 draw calls. Culling on reports 128 tested, 120
+   visible, 8 culled, and 120 draw calls. Submitted plus culled equals tested in
+   both modes.
+4. **Pacing is explicit.** Each report shows a total frame average of roughly
+   17.5–18.3 ms and FPS around 55–57, with a separate pacing interval. The exact
+   paced total can vary with the machine's scheduling and display state. Do not
+   interpret that FPS as a GPU throughput limit. Run with `--no-pacing` only if
+   investigating presentation behavior; skipped frames are then expected and
+   reported.
+5. **Allocation is bounded and equal across modes.** Each mode reports
+   `40 bytes/frame` managed allocation and `GC +0/+0/+0` for the short run. A
+   culling-on value above the culling-off value indicates a per-frame frustum
+   allocation regression; see [PERFORMANCE.md](PERFORMANCE.md).
+6. **Clean exit.** The process exits with status code `0` after both reports and
+   writes no report file. Check with:
+
+   ```bash
+   echo $?
+   ```
+7. **Option handling.** `--help` prints usage and exits with status code `0`. An
+   unknown option or an out-of-range value such as `--frames 0` prints an error
+   and exits with status code `1` without opening a measurement window.
+8. **Scope.** The output must not claim GPU timings, GPU memory, or process-wide
+   resident memory. `render` is CPU submission time; `managed` is the benchmark
+   thread's managed allocation only.
+
 ## Failure-path checks (optional)
 
 These checks are optional and must not modify tracked files.
@@ -583,8 +631,8 @@ These checks are optional and must not modify tracked files.
 Report the macOS version, architecture (`arm64` or `x86_64`), GPU model, date, and
 pass/fail for each check, separately for `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, and `HelloCulling`. Do
-not describe this manual checklist as a CI result.
+`HelloLighting`, and `HelloCulling`, plus the separate `HelloBenchmark` checks.
+Do not describe this manual checklist as a CI result.
 State separately that the checked-in `HelloO3D` fixture is synthetic, that the
 `HelloX` fixture is original project content rather than an exported game asset,
 that real OMSI content was not available for validation, and that no broad

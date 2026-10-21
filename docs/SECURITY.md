@@ -166,11 +166,14 @@ validates as finite. `BoundingBox` rejects non-finite or inverted corners, and
 and saturates results to finite extremes. `Frustum.Create` and
 `Frustum.Intersects` fail open on a non-finite or singular matrix, a degenerate
 plane, invalid bounds, or a non-finite distance, so malformed visibility data
-cannot discard potentially visible geometry. Culling reads scene data only: it
-does not remove objects, release resources, or modify transforms. The per-frame
-cost is bounded by the scene object limit (`Scene.MaxObjectCount`, 100,000), uses
-fixed-size counters, and creates no per-object allocation or vertex traversal.
-It adds no native handle, GPU resource, or third-party dependency.
+cannot discard potentially visible geometry. `Frustum` remains a class with its
+existing factory and query API; a renderer can own one scratch instance and call
+`Update` to refresh its six planes without allocating a new frustum each frame.
+Culling reads scene data only: it does not remove objects, release resources, or
+modify transforms. The per-frame cost is bounded by the scene object limit
+(`Scene.MaxObjectCount`, 100,000), uses fixed-size counters, and creates no
+per-object allocation or vertex traversal. It adds no native handle, GPU
+resource, or third-party dependency.
 
 ## Native and GPU ownership
 
@@ -223,6 +226,22 @@ GPU and window behavior is macOS-only and is verified by the manual
 
 NuGet advisories are not a complete vulnerability database. A clean audit means
 that the configured feed reported no known vulnerable package at that time.
+
+## Performance instrumentation
+
+`Nymeria.Core.Diagnostics.FrameTimingWindow` is opt-in, headless, and bounded by
+its configured capacity. It accepts only finite, non-negative samples, discards
+a configured number of warm-up samples, and retains no more than its fixed
+capacity. `GetSummary` allocates one copy for sorting; callers must not call it
+per frame. The type has no file, network, native, or GPU access.
+
+`examples/HelloBenchmark` is a local diagnostic. It creates a window and GPU
+device through the same validated code paths as the other examples, uses only
+project-owned scene data, and writes only console output. It does not disable
+validation, add native code, collect telemetry, or accept untrusted paths or
+formats. Benchmark and profiling modes must not weaken the checks described in
+this document. CI runs the headless timing tests but never launches the
+benchmark window or claims a GPU measurement.
 
 ## Verification expectations
 

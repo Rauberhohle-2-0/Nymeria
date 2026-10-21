@@ -132,6 +132,17 @@ not a guarantee.
       committed.
 - [ ] Workflow policy and repository settings were not changed without approval.
 
+## Performance instrumentation
+
+- [ ] Diagnostic buffers are fixed-capacity or explicitly bounded; no per-frame
+      file logging, unbounded queues, or background telemetry is introduced.
+- [ ] Profiling and benchmark modes use the same validation, resource ownership,
+      and shutdown paths as normal rendering, and do not disable them.
+- [ ] Timing aggregation has headless tests for invalid samples, zero, warm-up
+      exclusion, and capacity rollover.
+- [ ] Any reported metric is labeled as CPU, process, managed, or GPU according
+      to what was actually measured; no GPU timing or memory is fabricated.
+
 ## Tests and verification
 
 - [ ] Negative tests cover each new rejection path.

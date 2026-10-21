@@ -4,8 +4,8 @@ This document describes Nymeria's CPU-side mesh bounds and conservative camera
 frustum culling. It covers the geometry contract, the runtime integration, the
 statistics, the `HelloCulling` example, and the limits of the current
 implementation. Related contracts are [SCENE.md](SCENE.md),
-[MODEL_DATA.md](MODEL_DATA.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
-[examples/README.md](../examples/README.md).
+[MODEL_DATA.md](MODEL_DATA.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[PERFORMANCE.md](PERFORMANCE.md), and [examples/README.md](../examples/README.md).
 
 ## Scope
 
@@ -61,8 +61,11 @@ instance per frame, not a mesh vertex traversal.
 
 ## Frustum and intersection test
 
-`Nymeria.Core.Culling.Frustum.Create(viewProjection)` builds six normalized
-planes. `Frustum.Intersects(BoundingBox)` uses the standard positive-vertex test:
+`Nymeria.Core.Culling.Frustum.Create(viewProjection)` returns an independent
+frustum with six normalized planes. A renderer can instead own one scratch
+frustum and call `Frustum.Update(viewProjection)` each frame; that refresh does
+not allocate a frustum object or a plane array. `Frustum.Intersects(BoundingBox)`
+uses the standard positive-vertex test:
 for each plane it selects the box corner farthest along the plane normal and
 checks that corner against the plane. The box is culled only when that farthest
 corner is on the outside of a single plane; otherwise it is visible.
@@ -117,7 +120,10 @@ non-finite model transforms when it builds a lighting normal matrix.
 
 `SceneVisibilityCounter` lives in `Nymeria.Core.Culling` and is headless. It
 computes the object's model matrix once, returns it through an `out` parameter
-for reuse by the renderer, and counts total, visible, and culled instances.
+for reuse by the renderer, and counts total, visible, and culled instances. The
+frustum is passed as a nullable reference; culling on and off therefore share the
+same call path, and the renderer-owned scratch frustum adds no per-frame
+allocation.
 
 ### Statistics
 
@@ -143,7 +149,10 @@ visible. With culling enabled, `TotalInstances` equals
 ## `HelloCulling`
 
 `examples/HelloCulling` demonstrates the integration with the existing scene,
-camera, material, mesh, renderer, and input infrastructure:
+camera, material, mesh, renderer, and input infrastructure. For repeatable,
+auto-exiting culling comparisons at fixed camera positions and larger scene
+sizes, use `examples/HelloBenchmark` as described in
+[PERFORMANCE.md](PERFORMANCE.md).
 
 - 551 deterministic instances share one procedural cube `MeshData` and four
   immutable `Material` tints. The shared material renderer uploads the mesh once.
@@ -215,7 +224,7 @@ frame pacing dominate at this scene size. The measured FPS difference is within
 run-to-run noise; no FPS gain is claimed. The verified effect is that 25% of the
 instance draw submissions were skipped.
 
-The full headless suite passed 619 tests in Release configuration. A temporary
+The full headless suite passed 631 tests in Release configuration. A temporary
 native harness (outside the repository) exercised the real
 `MaterialRenderer` with two instances, one visible and one behind the camera. It
 verified `1 visible / 1 culled / 1 draw call` with culling enabled,
@@ -237,6 +246,10 @@ through the renderer used by `HelloCulling`; it is not a CI test. The interactiv
 - No caching or invalidation of world bounds; they are recomputed per frame.
 - Culling only skips draw submission. It does not skip texture or mesh uploads,
   which remain renderer-owned and shared.
+- The renderer reuses one scratch frustum, so the frustum itself is not allocated
+  per frame, but the culling path is not allocation-free end to end; the
+  benchmark reports residual managed allocation per frame. See
+  [PERFORMANCE.md](PERFORMANCE.md).
 - Statistics are CPU-side counts. They do not measure GPU time, fragments, or
   actual rasterization savings.
 - The fallback for invalid matrices is deliberately to keep every instance, so a

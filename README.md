@@ -26,8 +26,10 @@ interactive, depth-tested cube scene.
   O3D-rendering `examples/HelloO3D`, the text-`.x`-rendering `examples/HelloX`,
   the scene-instancing `examples/HelloScene`, the textured and solid-material
   `examples/HelloMaterials`, the lit `examples/HelloLighting`, the conservative
-  frustum-culling `examples/HelloCulling`, headless mesh-bounds and visibility
-  helpers, platform-independent unit tests, CI restore/build/test on macOS, Windows, and
+  frustum-culling `examples/HelloCulling`, the CPU-profiling
+  `examples/HelloBenchmark`, bounded frame-timing diagnostics, headless
+  mesh-bounds and visibility helpers, platform-independent unit tests, CI
+  restore/build/test on macOS, Windows, and
   Linux, repository checks, an audited dependency restore, a documented security
   baseline, and Dependabot updates for GitHub Actions and NuGet.
 - **Planned later:** engine-level input, the engine loop, further O3D features
@@ -73,6 +75,7 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/H
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj -- --no-culling
+dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj --configuration Release -- --instances 2048
 ```
 
 A resizable native window titled `Nymeria` opens at 960 × 540. `HelloTriangle`
@@ -93,7 +96,11 @@ directional Lambert light; press `L` to toggle ambient-only mode, use the arrow
 keys to move the light, `[` and `]` to change its intensity, and `R` to reset it.
 `HelloCulling` draws 551 instances of one shared cube mesh and skips instances
 proven fully outside the camera frustum; press `C` to toggle culling at runtime,
-or start with `--no-culling` for comparison. Move with
+or start with `--no-culling` for comparison. `HelloBenchmark` is an auto-exiting
+Release CPU benchmark with a fixed camera, deterministic 512/2048/8192-instance
+scenes, culling on/off, and 16 ms pacing control; it prints bounded phase timings,
+instance and draw-call counts, and managed allocation, then exits. See
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md) for commands and interpretation. Move with
 `W`/`A`/`S`/`D`, `Space`, and
 `Left Control`; hold `Shift` to go faster; hold the right mouse button and move
 the mouse to look around. Close any window with the red close button or the
@@ -127,7 +134,10 @@ with its own scene renderer. `HelloMaterials`, `HelloLighting`, and
 `examples/Shared`. `HelloCulling` enables the renderer's optional conservative
 frustum culling and prints per-frame instance and draw-call counts; bounds,
 planes, fallbacks, and limitations are documented in
-[docs/CULLING.md](docs/CULLING.md).
+[docs/CULLING.md](docs/CULLING.md). `HelloBenchmark` provides the repeatable
+culling comparison and CPU timing baseline described in
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md) and
+[docs/PERFORMANCE_BASELINE_01.md](docs/PERFORMANCE_BASELINE_01.md).
 
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/HelloCube/Shaders/Cube.metal`, the shared
@@ -249,9 +259,10 @@ dotnet test Nymeria.slnx
 
 The tests cover `WindowOptions` defaults and validation, model-data validation
 and parser-contract error semantics, transform composition, scene lifecycle and
-mesh sharing, mesh bounds, frustum intersection, visibility counts, material and
-texture-data validation, and the lighting data, Lambert
-term, and normal-matrix math in `Nymeria.Core.Tests`, the
+mesh sharing, mesh bounds, frustum intersection, visibility counts, bounded
+frame-timing aggregation and warm-up exclusion, material and texture-data
+validation, and the lighting data, Lambert term, and normal-matrix math in
+`Nymeria.Core.Tests`, the
 OBJ subset and diagnostics in `Nymeria.Formats.Obj.Tests`, the O3D header,
 supported versions and flags, conversions, limits, and failure behavior in
 `Nymeria.Formats.O3d.Tests`, the text `.x` header, frames, transforms, mesh
@@ -280,7 +291,7 @@ src/formats/    Nymeria.Formats.Obj, O3d, DirectX, Png, Tga, Jpeg, Dds, Bmp,
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
 examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloX, HelloScene,
-                HelloMaterials, HelloLighting, and HelloCulling
+                HelloMaterials, HelloLighting, HelloCulling, and HelloBenchmark
 tests/          Headless unit tests for core, formats, and platform projects
 ```
 
@@ -292,6 +303,8 @@ tests/          Headless unit tests for core, formats, and platform projects
 - [Materials and base-color textures](docs/MATERIALS.md)
 - [Ambient and directional lighting](docs/LIGHTING.md)
 - [Mesh bounds and frustum culling](docs/CULLING.md)
+- [Performance measurement](docs/PERFORMANCE.md)
+- [Performance baseline 01](docs/PERFORMANCE_BASELINE_01.md)
 - [Wavefront OBJ import](docs/OBJ.md)
 - [OMSI O3D import](docs/O3D.md)
 - [Text DirectX .x import](docs/DIRECTX_X.md)
