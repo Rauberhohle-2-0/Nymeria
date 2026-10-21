@@ -2,7 +2,7 @@ using System.Numerics;
 using Nymeria.Graphics;
 using SDL3;
 
-namespace HelloCube;
+namespace Nymeria.Examples;
 
 /// <summary>
 /// Maps SDL3 keyboard and mouse state to the free-fly camera for this example.

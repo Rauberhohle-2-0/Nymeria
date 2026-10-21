@@ -1,11 +1,15 @@
 <Solution>
   <Folder Name="/examples/">
     <Project Path="examples/HelloCube/HelloCube.csproj" />
+    <Project Path="examples/HelloOBJ/HelloOBJ.csproj" />
     <Project Path="examples/HelloTriangle/HelloTriangle.csproj" />
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/core/">
     <Project Path="src/core/Nymeria.Core/Nymeria.Core.csproj" />
+  </Folder>
+  <Folder Name="/src/formats/">
+    <Project Path="src/formats/Nymeria.Formats.Obj/Nymeria.Formats.Obj.csproj" />
   </Folder>
   <Folder Name="/src/graphics/">
     <Project Path="src/graphics/Nymeria.Graphics/Nymeria.Graphics.csproj" />
@@ -15,6 +19,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Nymeria.Core.Tests/Nymeria.Core.Tests.csproj" />
+    <Project Path="tests/Nymeria.Formats.Obj.Tests/Nymeria.Formats.Obj.Tests.csproj" />
     <Project Path="tests/Nymeria.Platform.Tests/Nymeria.Platform.Tests.csproj" />
   </Folder>
 </Solution>

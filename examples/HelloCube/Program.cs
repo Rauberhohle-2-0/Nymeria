@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using Nymeria.Examples;
 using Nymeria.Graphics;
 using Nymeria.Platform;
 using SDL3;

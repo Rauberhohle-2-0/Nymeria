@@ -12,6 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="../Shared/FlyCameraControls.cs" Link="FlyCameraControls.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Shaders/Cube.metal"
                       LogicalName="HelloCube.Shaders.Cube.metal" />
   </ItemGroup>
