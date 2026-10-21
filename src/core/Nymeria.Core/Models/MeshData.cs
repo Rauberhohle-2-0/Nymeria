@@ -63,7 +63,7 @@ public sealed class MeshData
         ReadOnlyMemory<uint> indices,
         IReadOnlyList<MeshSubset>? subsets = null)
     {
-        ValidatePositions(positions);
+        Bounds = ValidatePositions(positions);
         ValidateNormals(normals, positions.Length);
         ValidateTextureCoordinates(textureCoordinates, positions.Length);
         ValidateIndices(indices, positions.Length);
@@ -79,6 +79,17 @@ public sealed class MeshData
     /// Gets the model-space position of each vertex.
     /// </summary>
     public ReadOnlyMemory<Vector3> Positions => _positions;
+
+    /// <summary>
+    /// Gets the model-space axis-aligned bounding box of every position.
+    /// </summary>
+    /// <remarks>
+    /// The box is computed once during construction, so it costs no per-frame
+    /// traversal. It is local-space geometry data: a renderer transforms it by
+    /// the object's model matrix when it needs world-space visibility bounds.
+    /// See <see cref="BoundingBox.Transform"/> and <c>docs/CULLING.md</c>.
+    /// </remarks>
+    public BoundingBox Bounds { get; }
 
     /// <summary>
     /// Gets the model-space normal of each vertex, or an empty sequence when the
@@ -102,7 +113,7 @@ public sealed class MeshData
     /// </summary>
     public IReadOnlyList<MeshSubset> Subsets { get; }
 
-    private static void ValidatePositions(ReadOnlyMemory<Vector3> positions)
+    private static BoundingBox ValidatePositions(ReadOnlyMemory<Vector3> positions)
     {
         if (positions.IsEmpty)
         {
@@ -110,6 +121,8 @@ public sealed class MeshData
         }
 
         ReadOnlySpan<Vector3> values = positions.Span;
+        Vector3 min = new(float.MaxValue);
+        Vector3 max = new(-float.MaxValue);
 
         for (int i = 0; i < values.Length; i++)
         {
@@ -122,7 +135,12 @@ public sealed class MeshData
                 throw new ModelFormatException(
                     $"Vertex position {i} contains a non-finite component.");
             }
+
+            min = Vector3.Min(min, position);
+            max = Vector3.Max(max, position);
         }
+
+        return new BoundingBox(min, max);
     }
 
     private static void ValidateNormals(ReadOnlyMemory<Vector3> normals, int positionCount)
