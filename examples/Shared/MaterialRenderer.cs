@@ -55,6 +55,14 @@ namespace Nymeria.Examples;
 /// Objects without a configuration follow the original single-mesh path and are
 /// never distance-culled. See <c>docs/LOD.md</c>.
 /// </para>
+/// <para>
+/// Mesh and texture uploads are cached for the renderer's lifetime by default.
+/// A caller that removes objects, such as a scene streamer unloading a chunk, can
+/// call <see cref="PruneUnusedResources"/> to release caches that the current
+/// scene no longer references. Pruning waits for the GPU to become idle before
+/// releasing anything, so it belongs on an occasional unload path, not in the
+/// per-frame draw loop.
+/// </para>
 /// </remarks>
 public sealed class MaterialRenderer : IDisposable
 {
@@ -702,6 +710,115 @@ public sealed class MaterialRenderer : IDisposable
         var gpuTexture = new GpuTexture(handle, uploadedLevels);
         _textures.Add(texture, gpuTexture);
         return gpuTexture;
+    }
+
+    /// <summary>
+    /// Releases cached GPU meshes and textures that the supplied scene no longer
+    /// references.
+    /// </summary>
+    /// <param name="scene">
+    /// The scene whose current objects define the live mesh and texture set.
+    /// </param>
+    /// <returns>
+    /// The number of cached mesh and texture entries released. A mesh entry owns
+    /// one vertex buffer and one index buffer.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// Every object's primary mesh, every mesh variant in its optional
+    /// <see cref="MeshLod"/>, and every material base-color texture is considered
+    /// referenced, regardless of the current culling, LOD, or distance toggles.
+    /// This is deliberately conservative: enabling a variant later must not find
+    /// its buffers missing. Shared resources remain cached while any current
+    /// object references them.
+    /// </para>
+    /// <para>
+    /// The method waits for the GPU to become idle before releasing a cache entry,
+    /// because a previous frame's submitted command buffer may still reference
+    /// it. Release it only when no other scene is depending on this renderer's
+    /// cache. A released resource is uploaded again if a later scene references
+    /// it; the CPU mesh and texture data are never modified or disposed.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">The renderer is disposed.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="scene"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// SDL could not wait for the GPU to become idle. No cache entry is released
+    /// in that case.
+    /// </exception>
+    public int PruneUnusedResources(Scene scene)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(scene);
+
+        var referencedMeshes = new HashSet<MeshData>(ReferenceEqualityComparer.Instance);
+        var referencedTextures = new HashSet<Texture>(ReferenceEqualityComparer.Instance);
+
+        foreach (SceneObject sceneObject in scene.Objects)
+        {
+            referencedMeshes.Add(sceneObject.Mesh);
+
+            if (sceneObject.Lod is { } lod)
+            {
+                foreach (MeshLodLevel level in lod.Levels)
+                {
+                    referencedMeshes.Add(level.Mesh);
+                }
+            }
+
+            if (sceneObject.Material.BaseColorTexture is { } texture)
+            {
+                referencedTextures.Add(texture);
+            }
+        }
+
+        var meshesToRelease = new List<MeshData>();
+        var texturesToRelease = new List<Texture>();
+
+        foreach (MeshData mesh in _meshes.Keys)
+        {
+            if (!referencedMeshes.Contains(mesh))
+            {
+                meshesToRelease.Add(mesh);
+            }
+        }
+
+        foreach (Texture texture in _textures.Keys)
+        {
+            if (!referencedTextures.Contains(texture))
+            {
+                texturesToRelease.Add(texture);
+            }
+        }
+
+        if (meshesToRelease.Count == 0 && texturesToRelease.Count == 0)
+        {
+            return 0;
+        }
+
+        if (!SDL.WaitForGPUIdle(_device.Handle))
+        {
+            throw new InvalidOperationException(
+                $"SDL could not wait for the GPU while pruning unused resources: " +
+                $"{SDL.GetError()}");
+        }
+
+        foreach (MeshData mesh in meshesToRelease)
+        {
+            GpuMesh gpuMesh = _meshes[mesh];
+            SDL.ReleaseGPUBuffer(_device.Handle, gpuMesh.IndexBuffer);
+            SDL.ReleaseGPUBuffer(_device.Handle, gpuMesh.VertexBuffer);
+            _meshes.Remove(mesh);
+        }
+
+        foreach (Texture texture in texturesToRelease)
+        {
+            GpuTexture gpuTexture = _textures[texture];
+            SDL.ReleaseGPUTexture(_device.Handle, gpuTexture.Handle);
+            _textures.Remove(texture);
+        }
+
+        return meshesToRelease.Count + texturesToRelease.Count;
     }
 
     /// <summary>
