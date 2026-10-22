@@ -22,6 +22,7 @@ dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloCollision/HelloCollision.csproj
 dotnet run --project examples/HelloAudio/HelloAudio.csproj
+dotnet run --project examples/HelloAnimation/HelloAnimation.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
 dotnet run --project examples/HelloPicking/HelloPicking.csproj
@@ -36,13 +37,13 @@ The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `HelloOBJ`, `HelloO3D`, and `HelloScene` as
 `Nymeria.Examples.Shaders.Model.metal`; the material shader is embedded in
 `HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloLOD`,
-`HelloStreaming`, `HelloPicking`, and `HelloAudio` as
+`HelloStreaming`, `HelloPicking`, `HelloAudio`, and `HelloAnimation` as
 `Nymeria.Examples.Shaders.Material.metal`. Shaders are
 embedded in their examples and compiled by SDL's Metal backend at startup, so
 there is no shader compiler step and no external shader file to deploy.
 
 Run each interactive example checklist separately. The failure-path checks at
-the end apply to all thirteen interactive examples; `HelloBenchmark` has its own
+the end apply to all fourteen interactive examples; `HelloBenchmark` has its own
 automated checks below.
 
 ## HelloTriangle checks
@@ -763,6 +764,40 @@ Expected: `0`.
 10. **Close exits cleanly.** Close with the button and with `Cmd+Q`. Both exit
     with status `0`, release the cursor, and leave no orphan process.
 
+## HelloAnimation checks
+
+1. **Window and terminal appear.** The window opens and shows a dark ground
+   plane, a brown door between two frame posts, a dark wiper, a teal hovering
+   cube, and two yellow pivot markers. The terminal prints the control summary
+   and an initial status line with three players at time `0.00`.
+2. **The door swings around the hinge.** The door rotates without drifting away
+   from its frame. The reported angle rises from about `0` toward `109` degrees,
+   holds briefly, and returns. The yellow marker stays at the hinge.
+3. **The wiper sweeps around its base.** The wiper pivots at the yellow marker,
+   not around its center. The reported angle moves between roughly `-37` and
+   `+32` degrees and reverses smoothly.
+4. **The mover translates and scales.** The teal cube rises, grows from `0.70`
+   to `1.50` scale, returns, and shrinks. The printed X scale matches the visible
+   size.
+5. **Clips are independent.** Door, wiper, and mover reach different times and
+   loop at different periods. Pausing or restarting must not reset the camera or
+   any player's clip speed.
+6. **Pause and resume work.** Press `P`; all three player times freeze and the
+   status reports `paused`. Press `P` again and all three resume from their held
+   times without a jump.
+7. **Restart works.** Press `R`; all three players return to time `0.00` and the
+   start pose, and playback continues.
+8. **Looping and speed controls work.** Press `L`; the status reports `loop off`
+   and each player stops at its duration with state `done` (the door first, then
+   the wiper, then the mover). Press `L` again and `R` to restart and confirm
+   looping resumes. Press `-` and `=`; the reported speed multiplier changes in
+   `0.25` steps between `x0.25` and `x3.00`, and the motions visibly slow down or
+   speed up together.
+9. **Off-screen animation continues.** Turn the camera away from all three
+   objects and confirm their times and angles keep changing in the status line.
+10. **Close exits cleanly.** Close with the button and with `Cmd+Q`. Both exit
+    with status `0`, release the cursor, and leave no orphan process.
+
 ## HelloBenchmark checks
 
 `HelloBenchmark` is a CPU benchmark, not a visual or GPU-timing test. It opens a
@@ -876,9 +911,9 @@ These checks are optional and must not modify tracked files.
 Report the macOS version, architecture (`arm64` or `x86_64`), GPU model, date, and
 pass/fail for each check, separately for `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloAudio`, `HelloLOD`,
-`HelloStreaming`, and `HelloPicking`, plus the separate `HelloBenchmark`
-checks. For `HelloAudio`, also record the output device and that the generated
+`HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloAudio`, `HelloAnimation`,
+`HelloLOD`, `HelloStreaming`, and `HelloPicking`, plus the separate
+`HelloBenchmark` checks. For `HelloAudio`, also record the output device and that the generated
 ambient and two spatial tones were audible.
 Do not describe this manual checklist as a CI result.
 State separately that the checked-in `HelloO3D` fixture is synthetic, that the

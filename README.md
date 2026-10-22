@@ -23,6 +23,8 @@ interactive, depth-tested cube scene.
   `Nymeria.Formats.Wav` with a bounded PCM/float decoder, `Nymeria.Audio` with
   validated clips, overlapping 2D and spatial voices, gain, looping, and an SDL3
   playback device, a headless audio listener and distance/pan math layer,
+  immutable translation/rotation/scale animation tracks with deterministic
+  sampling and a per-object playback controller,
   ambient and single-directional lighting data with Lambert diffuse shading,
   `Nymeria.Graphics` with reusable
   Metal GPU device infrastructure and camera math, `examples/HelloTriangle`, the
@@ -34,10 +36,11 @@ interactive, depth-tested cube scene.
   `examples/HelloLOD`, the chunk-streaming `examples/HelloStreaming`, the
   raycasting and picking `examples/HelloPicking`, the collision-detection
   `examples/HelloCollision`, the audio and spatial-sound `examples/HelloAudio`,
+  the transform-animation `examples/HelloAnimation`,
   the CPU-profiling `examples/HelloBenchmark`,
   bounded frame-timing diagnostics, headless mesh-bounds, visibility, LOD,
-  streaming, raycasting, collision, and audio helpers, platform-independent
-  unit tests,
+  streaming, raycasting, collision, audio, and animation helpers,
+  platform-independent unit tests,
   CI restore/build/test on macOS, Windows, and Linux, repository checks, an
   audited dependency restore, a documented security baseline, and Dependabot
   updates for GitHub Actions and NuGet.
@@ -86,6 +89,7 @@ dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj -- --no-culling
 dotnet run --project examples/HelloCollision/HelloCollision.csproj
 dotnet run --project examples/HelloAudio/HelloAudio.csproj
+dotnet run --project examples/HelloAnimation/HelloAnimation.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj -- --no-streaming
@@ -130,7 +134,10 @@ generates its own looping test audio, plays a non-spatial ambient sound and two
 spatial tone sources, draws the source positions, and uses the camera as the
 listener; `P` and `O` pause/resume the ambient and source A, `X` stops and
 restarts source A, `[`/`]` and `-`/`=` change master and source gain, and `R`
-resets the listener. `HelloBenchmark` is an
+resets the listener. `HelloAnimation` plays three independent transform clips: a
+door rotating around its authored hinge, a wiper sweeping around its base, and a
+cube that moves and scales; `P` pauses or resumes, `R` restarts, `L` toggles
+looping, and `-`/`=` change playback speed. `HelloBenchmark` is an
 auto-exiting Release CPU benchmark with a
 fixed camera, deterministic 512/2048/8192-instance scenes, culling and LOD
 modes, and 16 ms pacing control; it prints bounded phase timings, instance,
@@ -166,11 +173,13 @@ example owns its pipeline and depth target, while `HelloOBJ`, `HelloO3D`, and
 `examples/Shared`.
 `HelloScene` uses the shared geometry builder, model shader, and camera controls
 with its own scene renderer. `HelloMaterials`, `HelloLighting`, `HelloCulling`,
-`HelloCollision`, `HelloLOD`, `HelloStreaming`, `HelloPicking`, and `HelloAudio`
-share the material renderer and camera controls in `examples/Shared`;
-`HelloAudio` also uses `Nymeria.Audio` and the headless audio math in
-`Nymeria.Core.Audio`. `HelloCulling` enables the renderer's optional conservative
-frustum culling and prints per-frame instance and draw-call counts; bounds,
+`HelloCollision`, `HelloLOD`, `HelloStreaming`, `HelloPicking`, `HelloAudio`,
+and `HelloAnimation` share the material renderer and camera controls in
+`examples/Shared`; `HelloAudio` also uses `Nymeria.Audio` and the headless audio
+math in `Nymeria.Core.Audio`, and `HelloAnimation` uses the headless transform
+animation in `Nymeria.Core.Animation`. `HelloCulling` enables the renderer's
+optional conservative frustum culling and prints per-frame instance and
+draw-call counts; bounds,
 planes, fallbacks, and limitations are documented in
 [docs/CULLING.md](docs/CULLING.md). `HelloLOD` enables the renderer's optional
 LOD and distance culling for objects with a `MeshLod` configuration and prints
@@ -314,7 +323,7 @@ frustum-culled, distance-culled, drawn, draw-call, submitted-triangle, and
 per-level counts plus render-time average and p95; see
 [docs/LOD.md](docs/LOD.md) for the contract, benchmark method, and limits.
 
-All thirteen interactive examples skip rendering while minimized and recover
+All fourteen interactive examples skip rendering while minimized and recover
 when a drawable is available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
@@ -340,7 +349,9 @@ AABB boundary behavior, nearest-hit selection, transformed bounds, viewport
 camera rays, pick eligibility, picking independence from culling and LOD,
 collision-shape validation, inclusive box and sphere overlap, conservative
 collision transforms, scene collision lifecycle and ordering, audio distance and
-pan math, listener validation, and PCM resampling in
+pan math, listener validation, PCM resampling, animation track sampling and
+validation, quaternion interpolation, clip limits, playback lifecycle, looping,
+and deterministic multi-player conflicts in
 `Nymeria.Core.Tests`, the
 OBJ subset and diagnostics in `Nymeria.Formats.Obj.Tests`, the O3D header,
 supported versions and flags, conversions, limits, and failure behavior in
@@ -369,15 +380,15 @@ manually; it is not claimed as a headless CI result.
 docs/           Architecture, Git policy, and manual smoke test
 src/audio/      Nymeria.Audio SDL3 playback, mixer, clips, and voices
 src/core/       Nymeria.Core model data, parser contract, scene, material,
-                and audio math data
+                audio math, and transform animation data
 src/formats/    Nymeria.Formats.Obj, O3d, DirectX, Png, Tga, Jpeg, Dds, Bmp,
                 Textures, and Wav
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
 examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloX, HelloScene,
                 HelloMaterials, HelloLighting, HelloCulling, HelloCollision,
-                HelloAudio, HelloLOD, HelloStreaming, HelloPicking, and
-                HelloBenchmark
+                HelloAudio, HelloAnimation, HelloLOD, HelloStreaming,
+                HelloPicking, and HelloBenchmark
 tests/          Headless unit tests for audio, core, formats, and platform
                 projects
 ```
@@ -395,6 +406,7 @@ tests/          Headless unit tests for audio, core, formats, and platform
 - [Raycasting and object picking](docs/PICKING.md)
 - [Basic collision detection](docs/COLLISION.md)
 - [Audio and basic spatial sound](docs/AUDIO.md)
+- [Transform animation](docs/ANIMATION.md)
 - [Performance measurement](docs/PERFORMANCE.md)
 - [Performance baseline 01](docs/PERFORMANCE_BASELINE_01.md)
 - [Wavefront OBJ import](docs/OBJ.md)

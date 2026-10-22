@@ -30,8 +30,9 @@ extension is a direction, not a current feature.
   level-of-detail configurations, optional ambient and directional lighting
   data, conservative bounds and frustum-culling helpers, a validated CPU
   collision layer with box and sphere overlap queries, bounded frame-timing
-  diagnostics, and format-independent material and texture data with RGBA and
-  block-compressed mip chains.
+  diagnostics, format-independent material and texture data with RGBA and
+  block-compressed mip chains, and headless transform animation tracks, clips,
+  and playback.
 - `Nymeria.Formats.Obj`, a dependency-free Wavefront OBJ parser implementing
   `IModelParser` for a documented polygonal subset.
 - `Nymeria.Formats.O3d`, a dependency-free OMSI O3D parser implementing
@@ -64,6 +65,11 @@ extension is a direction, not a current feature.
 - `Nymeria.Audio`, an SDL3-backed playback system with a bounded managed stereo
   mixer, shared clips, independent 2D and spatial voices, pause/resume/stop,
   looping, per-source and master gain, and explicit device and thread ownership.
+- `Nymeria.Core.Animation`, immutable keyframe tracks for translation, rotation,
+  and scale, a validated transform clip with deterministic sampling, and a
+  per-target playback controller. It is headless, writes ordinary scene
+  transforms, and contains no SDL3, GPU, window, format, or scene-membership
+  dependency.
 - `Nymeria.Graphics`, a class library that owns the SDL3 GPU device and window
   presentation claim, provides reusable MSL shader, buffer, texture, and sampler
   creation, and contains a reusable, SDL-independent free-fly `Camera`.
@@ -113,6 +119,11 @@ extension is a direction, not a current feature.
   source markers and a ground plane show the spatial layout, and the console
   reports device state, distance, attenuation, pan, and gains. It keeps running
   with an explicit status when no audio device is available.
+- `examples/HelloAnimation`, an interactive example with three independent
+  transform clips: a door rotating around its authored hinge, a wiper sweeping
+  around its base, and a cube that moves and scales. It demonstrates playback
+  speed, looping, pause/resume, restart, pivot placement, and per-player
+  diagnostics.
 - `MeshData.Bounds` plus `Nymeria.Core.Culling` bounds, frustum, and per-frame
   visibility helpers, `Nymeria.Core.Lod` explicit mesh variants, validated
   activation distances, conservative union bounds, and hysteresis-aware
@@ -139,7 +150,10 @@ extension is a direction, not a current feature.
   pair ordering, bounded frame-timing aggregation with warm-up exclusion and
   invalid samples, audio distance attenuation at and beyond the range with
   invalid values, stereo panning for rotated listeners and degenerate bases,
-  listener validation, and PCM data validation and resampling.
+  listener validation, PCM data validation and resampling, transform animation
+  track sampling and validation, quaternion shortest-path interpolation, clip
+  boundaries and limits, playback lifecycle, looping, delta partitioning, and
+  deterministic multi-player conflicts.
 - `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
   conversions, and diagnostics.
 - `Nymeria.Formats.O3d.Tests`, GPU-independent tests for the O3D header,
@@ -220,7 +234,8 @@ contains `Nymeria.Core`, `src/formats/` contains `Nymeria.Formats.Obj`,
 `Nymeria.Formats.Wav`, `examples/` contains `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
 `HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, `HelloPicking`,
-`HelloAudio`, and `HelloBenchmark`, and `tests/` contains `Nymeria.Core.Tests`,
+`HelloAudio`, `HelloAnimation`, and `HelloBenchmark`, and `tests/` contains
+`Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
 `Nymeria.Formats.DirectX.Tests`, `Nymeria.Formats.Png.Tests`,
 `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
@@ -234,8 +249,10 @@ described in [MODEL_DATA.md](MODEL_DATA.md), the minimal scene data described in
 [LOD.md](LOD.md), the spatially bounded scene-chunk streaming layer described in
 [STREAMING.md](STREAMING.md), the headless raycasting and object-picking layer
 described in [PICKING.md](PICKING.md), the material and texture data
-described in [MATERIALS.md](MATERIALS.md), and the headless audio clip, listener,
-and spatial math described in [AUDIO.md](AUDIO.md). It references
+described in [MATERIALS.md](MATERIALS.md), the headless audio clip, listener,
+and spatial math described in [AUDIO.md](AUDIO.md), and the headless transform
+animation tracks, clips, and playback controller described in
+[ANIMATION.md](ANIMATION.md). It references
 `System.Numerics` and the base class library only. The camera lives in `Nymeria.Graphics` rather than
 in `Nymeria.Core`: it is reusable 3D rendering math with no SDL, window, or GPU
 dependency, and the model-loading foundation is the first demonstrated need for
@@ -831,8 +848,8 @@ authoritative contract.
   renderer has released its claim.
 - `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
   `HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloLOD`,
-  `HelloStreaming`, `HelloPicking`, and `HelloAudio` own their `Camera`
-  instances and share the `FlyCameraControls` implementation.
+  `HelloStreaming`, `HelloPicking`, `HelloAudio`, and `HelloAnimation` own their
+  `Camera` instances and share the `FlyCameraControls` implementation.
   `HelloBenchmark` owns a fixed `Camera` and does not use input controls. The
   camera has no unmanaged resources. The input mapping disables relative mouse
   mode and discards pending mouse motion during disposal, before the window is
@@ -856,6 +873,12 @@ authoritative contract.
   never disposes or stops audio. An application's chunk release callback stops
   and disposes the voices it owns and disposes clips that no other chunk shares;
   a still-shared clip is protected by the reference count.
+- `TransformAnimationClip` and its tracks own immutable managed keyframe arrays.
+  An `AnimationPlayer` owns only its playback state and a reference to one target
+  transform; it has no native handle and no `Dispose`. The player writes ordinary
+  `Transform` properties and never releases or mutates meshes, materials,
+  textures, or GPU resources. Removing a scene object does not invalidate the
+  player; the application stops and drops players when it unloads their objects.
 - No renderer creates per-frame GPU resources. The scene and material renderers
   upload newly referenced meshes and textures once and reuse them; command
   buffers and swapchain textures are owned and recycled by SDL. Pruning is an
@@ -881,6 +904,11 @@ Limitations in this version:
   streaming, audio capture, microphone input, effects chain, or audio graph.
   Device loss stops all voices and requires explicit recreation; there is no
   automatic device reopen.
+- Transform animation is keyframe-based and per-object. There is no skeletal
+  animation, bone hierarchy, blending, additive layer, state machine, animation
+  graph, reverse playback, animation event, morph target, or animation import.
+  Multiple players on one transform resolve by update order, and pivots must come
+  from the authored mesh origin because the scene has no hierarchy.
 - There is no scene hierarchy, ECS, serialization, editor, shadow, physics
   simulation, or collision response, and no engine-level input system. The scene
   layer holds flat objects only. Collision is limited to box and sphere overlap
@@ -1030,7 +1058,9 @@ references `Nymeria.Core` for scene, collision, mesh, and material data,
 window; `HelloAudio`
 references `Nymeria.Audio` for playback, `Nymeria.Core` for scene, camera-math,
 and audio-math data, `Nymeria.Graphics` for the device and camera, and
-`Nymeria.Platform` for the window; `HelloBenchmark`
+`Nymeria.Platform` for the window; `HelloAnimation` references `Nymeria.Core`
+for scene, animation, and material data, `Nymeria.Graphics` for the device and
+camera, and `Nymeria.Platform` for the window; `HelloBenchmark`
 references `Nymeria.Core` for scene, LOD, mesh, material, and timing data,
 `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for the
 window; `HelloTriangle` does not need the core or formats projects.
@@ -1041,8 +1071,9 @@ No engine project references an example. `Nymeria.Core.Tests`,
 `Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Bmp.Tests`,
 `Nymeria.Formats.Textures.Tests`, `Nymeria.Formats.Wav.Tests`,
 `Nymeria.Audio.Tests`, and `Nymeria.Platform.Tests` reference their project or
-projects under test. No interfaces or abstractions are created to enforce the
-future direction. Adding them speculatively would violate YAGNI.
+projects under test; the animation tests live in `Nymeria.Core.Tests`. No
+interfaces or abstractions are created to enforce the future direction. Adding
+them speculatively would violate YAGNI.
 
 ## Technical choices
 
@@ -1125,6 +1156,15 @@ The following choices are implemented:
   RIFF and chunk sizes, ordering, padding, format fields, frame alignment, and
   input, frame, and decoded-payload limits before allocating. [AUDIO.md](AUDIO.md)
   documents the subset and limits.
+- **Transform animation:** `Nymeria.Core.Animation` stores immutable,
+  time-ordered translation, rotation, and scale tracks with validated keyframes.
+  Clips sample any subset of channels at an explicit time; vectors interpolate
+  linearly and quaternions use shortest-path spherical interpolation. The
+  `AnimationPlayer` controller advances from explicit frame deltas, supports
+  play/pause/resume/stop/restart, looping, completion, and a nonnegative speed,
+  and writes ordinary `SceneObject.Transform` values. It is deterministic,
+  headless, and independent of rendering visibility. [ANIMATION.md](ANIMATION.md)
+  is the authoritative contract.
 - **Audio playback:** `Nymeria.Audio` owns one SDL3 playback stream and a bounded
   managed float32 stereo mixer. It supports shared clips, overlapping 2D and
   spatial voices, pause/resume/stop, looping, per-source and master gain, linear

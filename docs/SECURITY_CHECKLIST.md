@@ -201,6 +201,21 @@ not a guarantee.
 - [ ] Any reported metric is labeled as CPU, process, managed, or GPU according
       to what was actually measured; no GPU timing or memory is fabricated.
 
+## Transform animation data
+
+- [ ] Keyframe times are finite, nonnegative, strictly increasing, and within the
+      documented limit; duplicate or decreasing timestamps fail.
+- [ ] Vector values are finite; quaternions are finite, nonzero length, and
+      normalized before use. Invalid scales follow the `Transform` policy.
+- [ ] Track keyframe counts and clip durations are bounded, and every track ends
+      within the clip duration.
+- [ ] Playback deltas and speeds are finite and nonnegative; looping wraps in
+      constant work rather than iterating once per loop.
+- [ ] A player holds managed references only, writes only the target transform,
+      and never disposes or mutates mesh, material, texture, or GPU resources.
+- [ ] Removing or unloading a scene target leaves the player safe and the
+      application owns stopping it; no stale native handle remains.
+
 ## Tests and verification
 
 - [ ] Negative tests cover each new rejection path.

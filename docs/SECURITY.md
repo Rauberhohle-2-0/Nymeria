@@ -201,8 +201,31 @@ These are practical viewer limits. A service that accepts untrusted audio should
 lower them or isolate decoding in a memory-limited process. Linear resampling to
 the mixer rate can multiply the sample count by up to 24, so the playback layer
 rejects a resampled payload above 32 MiB instead of allocating it. Nymeria plays
-audio only; it does not open a recording device, request microphone access, send
-telemetry, or contact a network service for playback.
+audio only; it does not open a recording device, request microphone access, sendtelemetry, or contact a network
+service for playback.
+
+## Animation data
+
+`Nymeria.Core.Animation` consumes application-supplied clips, not files. It must
+still validate boundaries because a clip is ordinary mutable input until it is
+constructed:
+
+- Track keyframe times must be finite, nonnegative, strictly increasing, and no
+  greater than 86,400 seconds. Duplicate timestamps fail instead of being
+  resolved implicitly.
+- Vector keyframes and quaternions must contain only finite components;
+  quaternions must have nonzero length and are normalized before use. Zero and
+  negative scales are allowed because `Transform` accepts them.
+- A track holds at most 100,000 keyframes, and a clip's duration must cover every
+  track endpoint. There is no per-frame allocation or unbounded loop in sampling
+  or playback; looping uses one floating-point modulo.
+- Playback deltas and speeds must be finite and nonnegative. Invalid values throw
+  instead of corrupting time or the target transform.
+- A player holds only managed references. It has no native handle, does not touch
+  GPU caches, and writes only the target transform's animated channels.
+
+Animation never creates a device, opens a file, resolves a path, or contacts a
+service. [ANIMATION.md](ANIMATION.md) is the authoritative contract.
 
 ## Mesh bounds and visibility culling
 

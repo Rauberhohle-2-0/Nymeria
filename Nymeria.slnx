@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/examples/">
+    <Project Path="examples/HelloAnimation/HelloAnimation.csproj" />
     <Project Path="examples/HelloAudio/HelloAudio.csproj" />
     <Project Path="examples/HelloBenchmark/HelloBenchmark.csproj" />
     <Project Path="examples/HelloCollision/HelloCollision.csproj" />

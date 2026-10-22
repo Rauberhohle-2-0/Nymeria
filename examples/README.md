@@ -28,7 +28,8 @@ viewport-picking layer in `Nymeria.Core.Raycasting`.
 `HelloBenchmark` reuses the shared material renderer with a fixed camera and the
 bounded timing helpers in `Nymeria.Core.Diagnostics`. `HelloAudio` uses
 `Nymeria.Audio` for 2D and spatial playback and `Nymeria.Core.Audio` for its
-listener and spatial status math.
+listener and spatial status math. `HelloAnimation` uses the keyframe tracks and
+playback controller in `Nymeria.Core.Animation` to drive three scene transforms.
 
 All examples use SDL3's GPU API with the Metal backend and Metal Shading
 Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
@@ -50,6 +51,7 @@ dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloCollision/HelloCollision.csproj
 dotnet run --project examples/HelloAudio/HelloAudio.csproj
+dotnet run --project examples/HelloAnimation/HelloAnimation.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj -- --no-streaming
@@ -102,9 +104,9 @@ renders continuously, and targets about 16 ms per frame.
 ### Controls
 
 `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloAudio`, `HelloLOD`,
-`HelloStreaming`, and `HelloPicking` share
-`examples/Shared/FlyCameraControls.cs`, so these controls apply to all thirteen
+`HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloAudio`, `HelloAnimation`,
+`HelloLOD`, `HelloStreaming`, and `HelloPicking` share
+`examples/Shared/FlyCameraControls.cs`, so these controls apply to all fourteen
 interactive examples.
 
 | Input | Action |
@@ -673,6 +675,38 @@ two spatial sources; the camera is the listener.
   and clips are disposed last. The example demonstrates the explicit policy for
   stopping a voice instead of destroying a shared clip.
 
+## HelloAnimation
+
+`HelloAnimation` demonstrates keyframe transform animation on the flat scene
+layer. It creates three independent clips and players:
+
+- **Door:** a slab mesh authored with its local origin at the hinge. A
+  four-keyframe rotation clip opens the door, holds it, and closes it, so the
+  object transform itself is the pivot and no parent object is needed.
+- **Wiper:** a thin mesh authored with its local origin at the base. A
+  three-keyframe rotation clip sweeps it about the Z axis and loops seamlessly.
+- **Mover:** one cube with translation and scale tracks that lift, enlarge, and
+  return it every three seconds.
+
+Static door posts and yellow pivot markers show the hinge and base positions.
+The camera starts looking at the three motions. Controls: `P` pauses or resumes
+all animations, `R` restarts them at time zero, `L` toggles looping, `-`/`=`
+change the playback speed multiplier, and the common camera controls still apply.
+The console prints one line per second with each player's state and time, the
+door and wiper angles, the mover scale, speed, looping, pause state, frame rate,
+and visible instances.
+
+- Scope: translation, rotation, and scale tracks sampled at an explicit clip
+  time. There is no skeletal animation, blending, state machine, animation
+  import, reverse playback, or event system. See
+  [../docs/ANIMATION.md](../docs/ANIMATION.md).
+- Pivots: the mesh local origin is the rotation pivot. Nymeria has no
+  parent-child hierarchy, so an arbitrary pivot offset outside the mesh would
+  require authoring the geometry around that offset.
+- Scene interaction: animation writes `SceneObject.Transform`; culling, LOD,
+  picking, and collision read the current transform on their next query. It does
+  not move meshes between scenes or release shared resources.
+
 ## HelloBenchmark
 
 `HelloBenchmark` is a deterministic, auto-exiting CPU benchmark for the scene and
@@ -716,7 +750,7 @@ dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
 
 ## Platform limits
 
-All fifteen examples are macOS-only for now. They require SDL's Metal backend and
+All sixteen examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
 formats. `HelloAudio` additionally uses the SDL3 audio device, which is verified
 on macOS CoreAudio only. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
@@ -739,7 +773,9 @@ and deterministic pair queries; it has no triangle-mesh collision, contact
 manifold, response, rigid body, physics solver, or broad phase. `HelloAudio`
 adds decoded PCM playback, 2D and basic stereo spatialization, gain, and
 looping; it has no HRTF, occlusion, reverb, Doppler, surround output, compressed
-formats, audio capture, or effects graph. No example has
+formats, audio capture, or effects graph. `HelloAnimation` adds keyframe
+transform animation for translation, rotation, and scale; it has no skeletal
+animation, blending, animation graph, or imported tracks. No example has
 shadows, specular or PBR shading, an object hierarchy, or a physics simulation. GPU output, texture sampling,
 compressed-format capability, lighting, frustum culling, LOD selection, distance
 culling, collision feedback, audio playback, and input behavior are validated

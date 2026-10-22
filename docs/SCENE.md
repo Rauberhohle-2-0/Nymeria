@@ -4,10 +4,12 @@ This document is the authoritative description of Nymeria's minimal,
 format-independent scene layer. It covers transforms, scene objects, shared mesh
 and material references, optional scene lighting, resource ownership, and the
 `HelloScene`, `HelloMaterials`, `HelloLighting`, `HelloLOD`,
-`HelloStreaming`, and `HelloCollision` examples. Related contracts are
+`HelloStreaming`, `HelloCollision`, and `HelloAnimation` examples. Related
+contracts are
 [MODEL_DATA.md](MODEL_DATA.md), [MATERIALS.md](MATERIALS.md),
 [LIGHTING.md](LIGHTING.md), [STREAMING.md](STREAMING.md),
-[COLLISION.md](COLLISION.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
+[COLLISION.md](COLLISION.md), [ANIMATION.md](ANIMATION.md),
+[ARCHITECTURE.md](ARCHITECTURE.md), and
 [MODEL_DATA.md's coordinate conventions](MODEL_DATA.md#coordinate-and-index-conventions).
 
 ## Purpose and non-goals
@@ -19,12 +21,15 @@ format-independent, and uses only `System.Numerics` and the base class library.
 There is no `Nymeria.Scene` project.
 
 The scene layer contains no ECS, parent-child hierarchy, physics simulation,
-collision response, animation, serialization, editor, material parser, GPU
-handle, SDL3, Metal, window, or file-format logic. Collision detection is a
-separate headless query helper; a scene object may carry an optional local
-collision shape, but the scene does not resolve contacts. [COLLISION.md](COLLISION.md)
-is the authoritative collision contract. Materials and lighting are references to
-format-independent CPU data, not a rendering pipeline. The scene layer carries
+collision response, serialization, editor, material parser, GPU handle, SDL3,
+Metal, window, or file-format logic. It also stores no animation data; transform
+animation is a separate headless helper in `Nymeria.Core.Animation` that writes
+ordinary `Transform` values, documented in [ANIMATION.md](ANIMATION.md).
+Collision detection is a separate headless query helper; a scene object may carry
+an optional local collision shape, but the scene does not resolve contacts.
+[COLLISION.md](COLLISION.md) is the authoritative collision contract. Materials
+and lighting are references to format-independent CPU data, not a rendering
+pipeline. The scene layer carries
 one optional ambient-plus-directional lighting configuration; it does not
 calculate shading. [LIGHTING.md](LIGHTING.md) is the authoritative lighting
 contract. It also carries an optional explicit mesh level-of-detail reference;
