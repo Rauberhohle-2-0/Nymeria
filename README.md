@@ -465,6 +465,7 @@ tests/          Headless unit tests for audio, core, formats, and platform
 - [Windows HLSL and DXIL shaders](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md)
 - [Windows DXC toolchain provisioning](docs/WINDOWS_03_1_DXC_PROVISIONING.md)
 - [Windows Direct3D 12 rendering compatibility](docs/WINDOWS_04_RENDERING_COMPATIBILITY.md)
+- [Windows engine feature compatibility](docs/WINDOWS_05_ENGINE_FEATURE_COMPATIBILITY.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)
 - [Agent instructions](AGENTS.md)

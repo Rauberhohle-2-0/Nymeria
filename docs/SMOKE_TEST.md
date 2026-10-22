@@ -131,11 +131,67 @@ Setup:
    equivalents (`Alt+F4`, display scaling, Task Manager). The rendering checks
    themselves apply unchanged to Direct3D 12.
 
-Record the Windows version, CPU architecture, date, and the driver
-`GpuDevice.DriverName` reports with the result.
+### Windows engine feature checks
 
-**Not claimed:** this section does not validate input mapping, hi-DPI drawable
-sizing, GPU-side frame timing, or audio on Windows.
+These checks cover the features W05 verifies. They run the existing examples; no
+extra tooling or SDK is needed. Record the Windows version, CPU architecture, GPU,
+driver (OS driver and `GpuDevice.DriverName`), audio playback device, and date
+with each result, and use `PASS` / `FAIL` / `NOT RUN` rather than prose.
+
+1. **Headless suite.** From the repository root run
+   `dotnet test Nymeria.slnx --configuration Release`. Expect **1120 passed, 2
+   skipped, 0 failed**; the two skips are the device-dependent audio integration
+   tests, which are skipped on every platform. A failure here is a W05 finding.
+2. **Scene and transforms.** `dotnet run --project examples/HelloScene` — four
+   cubes with distinct transforms and correct depth, and working `E`/`Q`/`R`.
+3. **Animation.** `dotnet run --project examples/HelloAnimation` — three
+   independent clips advance, and `P`, `L`, `-`/`=`, and `R` behave as their
+   checklist describes.
+4. **Picking.** `dotnet run --project examples/HelloPicking` — cursor click,
+   empty-space miss, `V` center mode, and `G` ghost eligibility print exactly one
+   line per click, not one per frame.
+5. **Collision.** `dotnet run --project examples/HelloCollision` — 6 colliders,
+   15 tested pairs, highlights on the current overlaps, and working arrow keys,
+   `P`, and `R`.
+6. **LOD and culling.** `dotnet run --project examples/HelloLOD` and
+   `dotnet run --project examples/HelloCulling` — the toggles change the image and
+   the counters together, `submitted + culled = tested`, and draw calls equal the
+   drawn instances.
+7. **World streaming.** `dotnet run --project examples/HelloStreaming` — the
+   starting demand set fills to about 9 of 25 chunks, `T` unloads and reloads
+   without duplicate objects, `S` freezes streaming, `C` changes only culled
+   counts, and `pruned` rises after an unload.
+8. **Audio.** `dotnet run --project examples/HelloAudio` — the console reports a
+   live device at `48000 Hz stereo` (or the configured rate), the 2D loop and two
+   spatial sources play, panning and attenuation change as the listener moves,
+   `,`/`.`/`T` change the stereo strength, and closing the window exits with
+   status `0` without a stuck audio thread. **A successful build is not playback
+   validation.**
+   - Source sample-rate handling is verified by `PcmAudioDataTests`
+     (`Resample_*`), the `AudioMixer.CreateClip` rate guard, and code inspection:
+     `AudioSystem.LoadWav` resamples every decoded WAV to the mixer rate, so a
+     non-48 kHz source is not assumed. The examples generate their WAVs at
+     48 kHz, so no example exercises a non-48 kHz file on a real device.
+9. **Input and window lifecycle.** `dotnet run --project examples/HelloWindow --
+   --smoke`, then resize, minimize/restore, hold and release the right mouse
+   button, and close with `Alt+F4`; the process exits `0` and the cursor is
+   restored.
+10. **Performance diagnostics.** `dotnet run --project
+    examples/HelloBenchmark -- --instances 128 --warmup 10 --frames 60` exits `0`
+    and prints its timing, draw-call, triangle, and managed-allocation lines.
+    Record the numbers; do not compare them with results from other hardware.
+11. **Formats.** `HelloOBJ`, `HelloO3D`, and `HelloX` render their fixtures and an
+    explicitly supplied path; `HelloMaterials` renders the generated checkerboard
+    and the PNG, JPEG, TGA, BMP, RGBA DDS, and BC1 DDS assets under
+    `examples/HelloMaterials/Assets/`.
+
+[WINDOWS_05_ENGINE_FEATURE_COMPATIBILITY.md](WINDOWS_05_ENGINE_FEATURE_COMPATIBILITY.md)
+records the feature matrix, the macOS evidence, and which Windows cells are still
+open.
+
+**Not claimed:** this section does not validate hi-DPI drawable sizing or GPU-side
+frame timing against a reference, and it asserts no cross-platform performance
+parity.
 
 ## HelloTriangle checks
 
