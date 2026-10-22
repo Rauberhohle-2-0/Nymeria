@@ -331,11 +331,14 @@ installation, manual download, DLL copying, or machine-wide `PATH` change is
 involved.
 
 The macOS native runtime and Metal GPU path are validated on macOS. The Windows
-native runtime deploys for windowing, and `examples/HelloWindow` is the
-supported window-only path there, but no Windows GPU backend exists yet. CI
-compiles and runs the headless tests on Windows and Linux as well, but does not
-launch a GUI on any platform. Linux remains unsupported and has no native
-package here.
+native runtime deploys for windowing, and the Windows GPU path selects
+Direct3D 12 with DXIL; every shader family ships both MSL and build-generated DXIL
+assets, so Windows is no longer limited to `examples/HelloWindow` and
+`examples/HelloTriangle`. Windows GPU behavior on real hardware is still
+unverified: no task in this repository has been run on a Windows machine with a
+Direct3D 12 device. CI compiles and runs the headless tests on Windows and Linux
+as well, but does not launch a GUI on any platform. Linux remains unsupported and
+has no native package here.
 
 [WINDOWS_01_NATIVE_SDL3.md](WINDOWS_01_NATIVE_SDL3.md) records the native-package
 deployment, the window-only smoke test, and which checks were actually executed.
@@ -470,6 +473,13 @@ another backend's bytes, and a missing resource names the format, the resource,
 and the assembly. The mapping is pure data, so it is unit-tested without a device;
 see [WINDOWS_03_HLSL_DXIL_SHADERS.md](WINDOWS_03_HLSL_DXIL_SHADERS.md).
 
+All four shader families – Triangle, Cube, the shared Model shader, and the shared
+Material shader – resolve through that mapping, so every GPU example asks for its
+assets by family name and none of them mentions a backend or a file extension. The
+MSL sources are unchanged, and a Windows build compiles each family's HLSL to DXIL
+and embeds it next to the MSL source. See
+[WINDOWS_04_RENDERING_COMPATIBILITY.md](WINDOWS_04_RENDERING_COMPATIBILITY.md).
+
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
 `examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloX`,
 `examples/HelloScene`, `examples/HelloMaterials`, `examples/HelloLighting`,
@@ -585,11 +595,13 @@ geometry for each draw with its own model matrix. The central cube keeps the
 previous milestone's rotation; the other cubes stay fixed so camera movement and
 perspective are easy to judge.
 
-The cube shader asset is `examples/HelloCube/Shaders/Cube.metal`, embedded under
-`HelloCube.Shaders.Cube.metal`. The vertex shader declares one uniform buffer at
-slot 0; the example passes `uniformBufferCount: 1` to `CreateShader` and pushes
-one 64-byte model-view-projection matrix before each cube's draw call. The
-fragment shader passes the interpolated face color through.
+The cube shader assets are `examples/HelloCube/Shaders/Cube.metal`, embedded under
+`HelloCube.Shaders.Cube.metal`, and `Shaders/Cube.hlsl`, which a Windows build
+compiles to `Cube.vert.dxil` and `Cube.frag.dxil` and embeds as
+`HelloCube.Shaders.Cube.vert.dxil` and `.frag.dxil`. The vertex shader declares one
+uniform buffer at slot 0; the example passes `uniformBufferCount: 1` to
+`CreateShader` and pushes one 64-byte model-view-projection matrix before each
+cube's draw call. The fragment shader passes the interpolated face color through.
 
 The camera comes from `Nymeria.Graphics.Camera`. Its position, yaw, and pitch
 define a right-handed view with +Y up and -Z forward at zero rotation.
@@ -649,7 +661,9 @@ colors and every other label uses a neutral color. That mapping is example
 presentation only, not a material system. The shader is
 `examples/Shared/Shaders/Model.metal`, embedded under
 `Nymeria.Examples.Shaders.Model.metal`, with the same matrix convention and one
-uniform buffer as the cube shader. `ModelViewerApp` owns the window, camera,
+uniform buffer as the cube shader; `examples/Shared/Shaders/Model.hlsl` is its
+Direct3D 12 equivalent, built and embedded by `examples/Shared/ModelShaders.targets`
+in every example that uses it. `ModelViewerApp` owns the window, camera,
 frame loop, and startup error handling. The format-specific `Program.cs` files
 only handle arguments, parse the file, and report load errors.
 
@@ -763,7 +777,7 @@ while the example keeps running. A compressed DDS format the GPU cannot sample i
 reported and also falls back, using `GpuDevice.SupportsTextureFormat` before a
 frame is recorded.
 
-The example uses the existing position/normal/UV layout, MSL shader embedding,
+The example uses the existing position/normal/UV layout, shader asset selection,
 depth target, resize, minimize, frame budget, and shutdown rules. It is not a
 material pipeline: it does not parse MTL, map O3D material names, stream or
 reload textures, generate mipmaps, decompress BC blocks, or sort transparent
@@ -984,14 +998,16 @@ authoritative contract.
 
 Limitations in this version:
 
-- GPU rendering is implemented on macOS only. Windows selects Direct3D 12 and
-  can create a DXIL device, but no DXIL shader assets exist yet, so every GPU
-  example there fails at shader creation. Linux will need Vulkan with SPIR-V;
-  that backend has no policy and is rejected explicitly.
+- GPU rendering is implemented for macOS and, through SDL3's Direct3D 12 backend,
+  for Windows. Every shader family ships MSL and build-generated DXIL, so no GPU
+  example stops at shader creation on either platform. macOS rendering is verified
+  on macOS hardware; Windows rendering is unverified because no task has run it on
+  Windows hardware, so device creation, shader acceptance, and visual output there
+  remain open acceptance items. Linux will need Vulkan with SPIR-V; that backend
+  has no policy and is rejected explicitly.
 - Windowing works on Windows. The `SDL3-CS.Windows` package deploys `SDL3.dll`
-  for `win-x64`, `win-arm64`, and `win-x86`, and `examples/HelloWindow` is the
-  supported window-only path there. No Windows GPU behavior is verified: device
-  creation and rendering remain unconfirmed on Windows hardware.
+  for `win-x64`, `win-arm64`, and `win-x86`, and `examples/HelloWindow` isolates
+  the window-only path there.
 - Apple Silicon and Intel Macs both use Metal. The macOS native package contains
   both architectures.
 - Audio playback is verified on macOS through CoreAudio. Windows and Linux audio
@@ -1194,12 +1210,13 @@ The following choices are implemented:
   chosen from the shader format the platform provides: Metal with MSL source on
   macOS and Direct3D 12 with DXIL on Windows. `Nymeria.Graphics` provides the
   reusable `GpuDevice`, including buffer, RGBA and block-compressed texture,
-  sampler, and shader creation; the
-  examples embed their own `.metal` files; `HelloOBJ` and `HelloO3D` share
-  `examples/Shared/Shaders/Model.metal`, and `HelloMaterials` and `HelloLighting`
-  share `examples/Shared/Shaders/Material.metal`, compiled by SDL at runtime. No
-  direct Metal or Direct3D 12 interop and no shader compiler are used. Windows
-  DXIL shader assets are not implemented yet.
+  sampler, and shader creation, and `ShaderProgram` maps a family name to the
+  assets the device's format needs. Every example embeds its MSL source, which SDL
+  compiles at startup; `HelloOBJ`, `HelloO3D`, `HelloX`, and `HelloScene` share
+  `examples/Shared/Shaders/Model.metal`, and the material examples share
+  `examples/Shared/Shaders/Material.metal`. A Windows build compiles each family's
+  HLSL to DXIL with the provisioned DirectX Shader Compiler, so no shader is
+  compiled at runtime. No direct Metal or Direct3D 12 interop is used.
 - **Math:** `System.Numerics` vectors, quaternions, and matrices, with no custom
   math library. `Camera` uses it for yaw/pitch view and projection math.
   `Transform` uses it for normalized quaternion rotation and row-vector
@@ -1333,10 +1350,11 @@ The following choices are implemented:
 
 The following choices remain open:
 
-- **Additional platforms and backends:** Windows and Linux rendering, their
-  native SDL3 packages, and the shader formats those backends require are not
-  implemented. Audio playback uses SDL3's portable API but has only been verified
-  on macOS; Windows and Linux audio device testing remains open.
+- **Additional platforms and backends:** Linux rendering, its native SDL3
+  package, and Vulkan/SPIR-V shaders are not implemented. Windows rendering is
+  implemented but unverified on Windows hardware. Audio playback uses SDL3's
+  portable API but has only been verified on macOS; Windows and Linux audio device
+  testing remains open.
 - **Further O3D features:** scrambled vertices, bones, animation, and material
   rendering are not implemented and require a separate decision.
 

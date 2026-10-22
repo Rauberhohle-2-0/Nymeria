@@ -36,21 +36,25 @@ The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/HelloCube/Shaders/Cube.metal`, the shared
 `examples/Shared/Shaders/Model.metal`, and the shared
 `examples/Shared/Shaders/Material.metal`. The model shader is embedded in
-`HelloOBJ`, `HelloO3D`, and `HelloScene` as
+`HelloOBJ`, `HelloO3D`, `HelloX`, and `HelloScene` as
 `Nymeria.Examples.Shaders.Model.metal`; the material shader is embedded in
 `HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloLOD`,
-`HelloStreaming`, `HelloPicking`, `HelloAudio`, and `HelloAnimation` as
-`Nymeria.Examples.Shaders.Material.metal`. Shaders are
-embedded in their examples and compiled by SDL's Metal backend at startup, so
-there is no shader compiler step and no external shader file to deploy.
+`HelloStreaming`, `HelloPicking`, `HelloAudio`, `HelloAnimation`, and
+`HelloBenchmark` as `Nymeria.Examples.Shaders.Material.metal`. On macOS those MSL
+sources are embedded in their examples and compiled by SDL's Metal backend at
+startup, so there is no shader compiler step and no external shader file to
+deploy.
 
-`HelloTriangle` is the one exception to that description. It also ships
-`Shaders/Triangle.hlsl`, which a **Windows** build compiles to DXIL with the
-DirectX Shader Compiler and embeds as `HelloTriangle.Shaders.Triangle.vert.dxil`
-and `.frag.dxil`. That compiler runs only on Windows, requires `dxc` on `PATH` or
-`-p:DxcPath=<path to dxc.exe>`, and produces no committed artifact. macOS still
+Each family also ships an HLSL equivalent (`Triangle.hlsl`, `Cube.hlsl`,
+`Shared/Shaders/Model.hlsl`, and `Shared/Shaders/Material.hlsl`). A **Windows**
+build compiles them to DXIL with the provisioned DirectX Shader Compiler and
+embeds one `.vert.dxil` and one `.frag.dxil` per family, so every GPU example has
+bytecode for Direct3D 12. That compiler runs only on Windows, uses the
+checksum-verified compiler the build provisions (or `dxc` on `PATH`, or
+`-p:DxcPath=<path to dxc.exe>`), and produces no committed artifact. macOS still
 needs no shader compiler. See
-[WINDOWS_03_HLSL_DXIL_SHADERS.md](WINDOWS_03_HLSL_DXIL_SHADERS.md).
+[WINDOWS_03_HLSL_DXIL_SHADERS.md](WINDOWS_03_HLSL_DXIL_SHADERS.md) and
+[WINDOWS_04_RENDERING_COMPATIBILITY.md](WINDOWS_04_RENDERING_COMPATIBILITY.md).
 
 Run each interactive example checklist separately. The failure-path checks at
 the end apply to all fourteen interactive examples; `HelloBenchmark` has its own
@@ -58,11 +62,17 @@ automated checks below.
 
 ## Windows smoke test
 
-This section validates native SDL3 deployment, window creation, and the one
-render path that exists on Windows. `GpuDevice` selects Direct3D 12 with DXIL, and
-`HelloTriangle` supplies DXIL generated from HLSL at build time, so it is expected
-to draw. Every other GPU example still ships MSL only and is expected to create
-its device and then stop at shader creation.
+This section validates native SDL3 deployment, window creation, and the Windows
+render path. `GpuDevice` selects Direct3D 12 with DXIL, and every shader family
+supplies DXIL generated from HLSL at build time, so every GPU example is expected
+to draw.
+
+**Windows rendering is unverified by the repository's own tasks.** No task has run
+a GPU example on Windows hardware, and no HLSL in this repository has been
+compiled to DXIL by a real DirectX Shader Compiler during task verification.
+[WINDOWS_04_RENDERING_COMPATIBILITY.md](WINDOWS_04_RENDERING_COMPATIBILITY.md)
+records exactly what was and was not executed. Treat the checks below as the
+expected behavior to confirm, not as a recorded result.
 
 Setup:
 
@@ -109,16 +119,23 @@ Setup:
    proportional, and closing the window exits with status code `0` and no error
    output. A failure naming DXIL at shader creation is the W03 integration point
    to report, not the expected state.
-3. **Other GPU examples stop at shader creation.** Any other GPU example, for
-   example `HelloCube`, should create its device and then fail at shader creation
-   with a message naming the `direct3d12` driver, DXIL, and MSL. That is expected
-   until its HLSL port lands.
+3. **Every other GPU example reaches its render loop.** Run `HelloCube`,
+   `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
+   `HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, `HelloPicking`,
+   `HelloCollision`, `HelloAnimation`, `HelloAudio`, and `HelloBenchmark`. None
+   may fail at shader or pipeline creation, and each must show the geometry its
+   section of this document describes. A message naming `direct3d12`, DXIL, or a
+   rejected shader is the W04 integration point to report.
+4. **Run the per-example checklists below on Windows.** They use macOS-specific
+   key names in a few places (`Cmd+Q`, Retina, Activity Monitor); use the Windows
+   equivalents (`Alt+F4`, display scaling, Task Manager). The rendering checks
+   themselves apply unchanged to Direct3D 12.
 
 Record the Windows version, CPU architecture, date, and the driver
 `GpuDevice.DriverName` reports with the result.
 
-**Not claimed:** this section does not validate any other GPU example, input
-mapping, hi-DPI drawable sizing, GPU-side frame timing, or audio on Windows.
+**Not claimed:** this section does not validate input mapping, hi-DPI drawable
+sizing, GPU-side frame timing, or audio on Windows.
 
 ## HelloTriangle checks
 

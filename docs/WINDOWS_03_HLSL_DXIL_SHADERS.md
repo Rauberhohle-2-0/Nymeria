@@ -259,10 +259,11 @@ locations line up with `TEXCOORD0`/`TEXCOORD1`.
 
 ## Known limitations
 
-- Only `HelloTriangle` is ported. `Cube`, `Model`, `Material`, and every other
-  shader family remain MSL-only, so on Windows those examples create their device
-  and then fail at `SDL_CreateGPUShader` with the W02 format-mismatch message. This
-  is expected until W04.
+- Only `HelloTriangle` was ported by W03. The `Cube`, `Model`, and `Material`
+  families were still MSL-only at this point, so on Windows those examples created
+  their device and then failed at `SDL_CreateGPUShader` with the W02
+  format-mismatch message. **W04 has since ported them**; see
+  [WINDOWS_04_RENDERING_COMPATIBILITY.md](WINDOWS_04_RENDERING_COMPATIBILITY.md).
 - `HelloTriangle` on Windows has no uniform buffers or textures, so the documented
   `(b[n], space1)`/`(b[n], space3)` register mapping is recorded but not exercised.
 - DXIL generation is limited to Windows builds. macOS never runs dxc, and a
@@ -289,8 +290,10 @@ locations line up with `TEXCOORD0`/`TEXCOORD1`.
 DXIL embedding, the format-to-asset selection, and the first Direct3D 12 shader
 path. **W04** owns porting the remaining shader families – `Cube`, the shared
 `Model` and `Material` shaders, and every example that uses them – including their
-uniform buffers and the register spaces above, and it may lift the MSBuild target
-into a shared `.targets` file once more than one project needs it.
+uniform buffers and the register spaces above. W04 did that in
+[WINDOWS_04_RENDERING_COMPATIBILITY.md](WINDOWS_04_RENDERING_COMPATIBILITY.md),
+reusing `DxilShaders.targets` and adding one small `.targets` file per shared
+family.
 
 ## No shader compiler was introduced for macOS or for shader authoring
 

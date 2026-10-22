@@ -62,8 +62,10 @@ macOS:
 Windows:
 
 - Windows 10 or newer on x64, x86, or arm64, with a Direct3D 12-capable graphics
-  driver for the GPU examples. `HelloTriangle` renders through Direct3D 12 with
-  DXIL; the other GPU examples are still MSL only.
+  driver for the GPU examples. Every GPU example ships Direct3D 12 DXIL bytecode
+  generated from HLSL at build time, but Windows rendering has not yet been run on
+  Windows hardware; see
+  [docs/WINDOWS_04_RENDERING_COMPATIBILITY.md](docs/WINDOWS_04_RENDERING_COMPATIBILITY.md).
 - No shader compiler installation is required. The first Windows build that
   compiles HLSL downloads a pinned, checksum-verified DirectX Shader Compiler into
   `%LOCALAPPDATA%\Nymeria\dxc` and reuses it afterwards; an installed `dxc` on
@@ -220,9 +222,11 @@ LOD comparison and CPU timing baseline described in
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/HelloCube/Shaders/Cube.metal`, the shared
 `examples/Shared/Shaders/Model.metal`, and
-`examples/Shared/Shaders/Material.metal`. They are embedded into their
-examples and compiled from Metal Shading Language source by SDL at startup. No
-shader compiler or Xcode build step is required.
+`examples/Shared/Shaders/Material.metal`. On macOS they are embedded into their
+examples and compiled from Metal Shading Language source by SDL at startup, so no
+shader compiler or Xcode build step is required. Each family also has an HLSL
+equivalent that a Windows build compiles to DXIL; see
+[docs/WINDOWS_04_RENDERING_COMPATIBILITY.md](docs/WINDOWS_04_RENDERING_COMPATIBILITY.md).
 
 `HelloTriangle` draws a frame, then waits up to 100 ms for window events before
 drawing again, so idle redraws stay near ten per second. It renders in a centered
@@ -357,16 +361,17 @@ All fourteen interactive examples skip rendering while minimized and recover
 when a drawable is available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
-The GPU path renders on macOS through Metal. On Windows, `HelloTriangle` renders
-through Direct3D 12 with DXIL generated from HLSL during the build; every other
-GPU example still ships MSL only, so it creates its device and stops at shader
-creation there until its HLSL port lands. Windows also deploys the native
-`SDL3.dll` and runs the window-only `HelloWindow` example without a shader
+The GPU path renders on macOS through Metal. On Windows it requests Direct3D 12
+with DXIL for every shader family, generated from HLSL during the build, so no
+GPU example is limited to macOS by a missing shader. Windows rendering itself is
+unverified: no task has run it on Windows hardware. Windows also deploys the
+native `SDL3.dll` and runs the window-only `HelloWindow` example without a shader
 compiler. Linux is unsupported and ships no native package. See
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/WINDOWS_01_NATIVE_SDL3.md](docs/WINDOWS_01_NATIVE_SDL3.md),
-[docs/WINDOWS_02_D3D12_BACKEND.md](docs/WINDOWS_02_D3D12_BACKEND.md), and
-[docs/WINDOWS_03_HLSL_DXIL_SHADERS.md](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md).
+[docs/WINDOWS_02_D3D12_BACKEND.md](docs/WINDOWS_02_D3D12_BACKEND.md),
+[docs/WINDOWS_03_HLSL_DXIL_SHADERS.md](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md), and
+[docs/WINDOWS_04_RENDERING_COMPATIBILITY.md](docs/WINDOWS_04_RENDERING_COMPATIBILITY.md).
 GPU output is validated manually with [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md),
 not in CI.
 
@@ -459,6 +464,7 @@ tests/          Headless unit tests for audio, core, formats, and platform
 - [Windows Direct3D 12 backend selection](docs/WINDOWS_02_D3D12_BACKEND.md)
 - [Windows HLSL and DXIL shaders](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md)
 - [Windows DXC toolchain provisioning](docs/WINDOWS_03_1_DXC_PROVISIONING.md)
+- [Windows Direct3D 12 rendering compatibility](docs/WINDOWS_04_RENDERING_COMPATIBILITY.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)
 - [Agent instructions](AGENTS.md)
