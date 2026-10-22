@@ -43,4 +43,112 @@ public sealed class MaterialTests
         new Vector3(-0.01f, 0.0f, 0.0f),
         new Vector3(0.0f, 1.01f, 0.0f),
     };
+
+    [Fact]
+    public void Defaults_AreOpaqueAndUnmodified()
+    {
+        var material = new Material(Vector3.One);
+
+        Assert.Equal(MaterialTransparency.Opaque, material.Transparency);
+        Assert.Equal(Material.DefaultAlphaCutoff, material.AlphaCutoff);
+        Assert.Equal(1.0f, material.Alpha);
+        Assert.False(material.RequiresBlendOrdering);
+        Assert.Equal(MaterialTransparency.Opaque, Material.Default.Transparency);
+    }
+
+    [Theory]
+    [InlineData(MaterialTransparency.Opaque, false)]
+    [InlineData(MaterialTransparency.Mask, false)]
+    [InlineData(MaterialTransparency.Blend, true)]
+    public void Transparency_SelectsBlendOrdering(
+        MaterialTransparency transparency,
+        bool requiresBlending)
+    {
+        var material = new Material(Vector3.One, transparency: transparency);
+
+        Assert.Equal(transparency, material.Transparency);
+        Assert.Equal(requiresBlending, material.RequiresBlendOrdering);
+    }
+
+    [Theory]
+    [InlineData(0.0f)]
+    [InlineData(0.5f)]
+    [InlineData(1.0f)]
+    public void Constructor_AcceptsBoundaryAlphaCutoffs(float cutoff)
+    {
+        var material = new Material(
+            Vector3.One,
+            transparency: MaterialTransparency.Mask,
+            alphaCutoff: cutoff);
+
+        Assert.Equal(cutoff, material.AlphaCutoff);
+    }
+
+    [Theory]
+    [InlineData(-0.001f)]
+    [InlineData(1.001f)]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    public void Constructor_RejectsInvalidAlphaCutoff(float cutoff)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Material(
+            Vector3.One,
+            transparency: MaterialTransparency.Mask,
+            alphaCutoff: cutoff));
+    }
+
+    [Theory]
+    [InlineData(0.0f)]
+    [InlineData(0.25f)]
+    [InlineData(1.0f)]
+    public void Constructor_AcceptsBoundaryAlpha(float alpha)
+    {
+        var material = new Material(
+            Vector3.One,
+            transparency: MaterialTransparency.Blend,
+            alpha: alpha);
+
+        Assert.Equal(alpha, material.Alpha);
+    }
+
+    [Theory]
+    [InlineData(-0.001f)]
+    [InlineData(1.001f)]
+    [InlineData(float.NaN)]
+    [InlineData(float.NegativeInfinity)]
+    public void Constructor_RejectsInvalidAlpha(float alpha)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Material(
+            Vector3.One,
+            transparency: MaterialTransparency.Blend,
+            alpha: alpha));
+    }
+
+    [Fact]
+    public void Constructor_RejectsAnUndefinedTransparencyMode()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Material(
+            Vector3.One,
+            transparency: (MaterialTransparency)3));
+    }
+
+    [Fact]
+    public void Constructor_KeepsTextureAndTransparencyIndependent()
+    {
+        var texture = new TextureData(1, 1, new byte[] { 10, 20, 30, 64 });
+        var material = new Material(
+            Vector3.One,
+            texture,
+            "masked",
+            MaterialTransparency.Mask,
+            alphaCutoff: 0.25f,
+            alpha: 0.75f);
+
+        Assert.Same(texture, material.BaseColorTexture);
+        Assert.True(material.HasTexture);
+        Assert.Equal("masked", material.Name);
+        Assert.Equal(MaterialTransparency.Mask, material.Transparency);
+        Assert.Equal(0.25f, material.AlphaCutoff);
+        Assert.Equal(0.75f, material.Alpha);
+    }
 }
