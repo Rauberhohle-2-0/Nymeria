@@ -265,6 +265,73 @@ public sealed class FrustumTests
         Assert.True(frustum.Intersects(default));
     }
 
+    [Fact]
+    public void RandomBoxesContainingVisiblePoints_AreNeverCulled()
+    {
+        // Hand-picked boxes can miss a convention or sign error that a
+        // cross-check against clip space exposes. For a seeded set of random
+        // cameras, a box that encloses a point inside the clip volume must be
+        // reported visible: the cull is conservative by contract.
+        var random = new Random(1902);
+
+        for (int cameraIndex = 0; cameraIndex < 24; cameraIndex++)
+        {
+            Vector3 eye = RandomVector(random, 10.0f);
+            Vector3 target = eye + RandomVector(random, 1.0f);
+
+            if (target == eye)
+            {
+                target = eye + Vector3.UnitZ;
+            }
+
+            Matrix4x4 viewProjection = CreateViewProjection(eye, target);
+            Frustum frustum = Frustum.Create(viewProjection);
+
+            for (int boxIndex = 0; boxIndex < 16; boxIndex++)
+            {
+                Vector3 center = RandomVector(random, 20.0f);
+                Vector3 extent = new(
+                    (float)random.NextDouble(),
+                    (float)random.NextDouble(),
+                    (float)random.NextDouble());
+                var box = new BoundingBox(center - extent, center + extent);
+
+                if (frustum.Intersects(box))
+                {
+                    continue;
+                }
+
+                for (int sample = 0; sample < 200; sample++)
+                {
+                    Vector3 point = center + new Vector3(
+                        ((float)random.NextDouble() * 2.0f - 1.0f) * extent.X,
+                        ((float)random.NextDouble() * 2.0f - 1.0f) * extent.Y,
+                        ((float)random.NextDouble() * 2.0f - 1.0f) * extent.Z);
+                    Vector4 clip = Vector4.Transform(new Vector4(point, 1.0f), viewProjection);
+
+                    if (clip.W > 0.0f &&
+                        MathF.Abs(clip.X) <= clip.W &&
+                        MathF.Abs(clip.Y) <= clip.W &&
+                        clip.Z >= 0.0f &&
+                        clip.Z <= clip.W)
+                    {
+                        Assert.Fail(
+                            $"The frustum culled a box around in-frustum point {point} " +
+                            $"(clip {clip}) for camera {eye}.");
+                    }
+                }
+            }
+        }
+    }
+
+    private static Vector3 RandomVector(Random random, float scale)
+    {
+        return new Vector3(
+            (float)((random.NextDouble() * 2.0 - 1.0) * scale),
+            (float)((random.NextDouble() * 2.0 - 1.0) * scale),
+            (float)((random.NextDouble() * 2.0 - 1.0) * scale));
+    }
+
     private static Frustum CreateFrustum(Vector3 position, Vector3 target)
     {
         return Frustum.Create(CreateViewProjection(position, target));
