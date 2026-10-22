@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+      # The Windows Direct3D 12 work is developed on its own branch, so pushes
+      # to it must run the same checks, including the Windows job that compiles
+      # the HLSL with the provisioned DirectX Shader Compiler.
+      - Windows_DirectX
+      - Windows
   pull_request:
     branches:
       - main
