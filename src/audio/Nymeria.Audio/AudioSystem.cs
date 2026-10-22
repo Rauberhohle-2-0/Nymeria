@@ -119,6 +119,45 @@ public sealed class AudioSystem : IDisposable
     }
 
     /// <summary>
+    /// Gets or sets the positional stereo effect strength applied to spatial
+    /// voices, from 0 through 1. The default is 1.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>1</c> keeps the full left/right separation, <c>0</c> centers a
+    /// positional source in the stereo output, and intermediate values scale the
+    /// pan toward the center. The control scales only the positional pan: it does
+    /// not change distance attenuation, voice or master gain, playback speed, or
+    /// listener orientation.
+    /// </para>
+    /// <para>
+    /// The change applies to the next mix block, so it is safe to adjust while
+    /// sounds play; no device is reopened and no voice is restarted. The setting
+    /// is global to this system; there is no per-voice override. It does not
+    /// alter the left/right content of a stereo clip, which is not a stereo-width
+    /// or downmix control.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">The system has been disposed.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The value is not finite or is outside 0 through 1.
+    /// </exception>
+    public float StereoEffectStrength
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _mixer.StereoEffectStrength;
+        }
+
+        set
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _mixer.StereoEffectStrength = value;
+        }
+    }
+
+    /// <summary>
     /// Gets whether the stream lost its audio device or the audio callback failed.
     /// </summary>
     /// <remarks>
@@ -361,7 +400,8 @@ public sealed class AudioSystem : IDisposable
     /// </summary>
     /// <remarks>
     /// This is basic spatialization: linear distance attenuation and equal-power
-    /// stereo panning against the listener. It is not HRTF, occlusion, reverb, or
+    /// stereo panning against the listener, with the pan scaled by
+    /// <see cref="StereoEffectStrength"/>. It is not HRTF, occlusion, reverb, or
     /// surround sound. The voice's position can be updated every frame without
     /// creating a new device or decoding the clip again.
     /// </remarks>

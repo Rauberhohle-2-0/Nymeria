@@ -13,9 +13,11 @@ namespace Nymeria.Audio;
 /// <see cref="SampleRate"/>. Mono clips are copied to both channels; stereo
 /// clips keep their channels. Each voice contributes
 /// <c>sample × voice gain × master gain</c>, multiplied by distance attenuation
-/// and equal-power pan gains when the voice is spatial. Contributions are
-/// accumulated and the final mix is hard-clipped to <c>[-1, 1]</c>; there is no
-/// limiter or compressor.
+/// and equal-power pan gains when the voice is spatial. The pan is scaled by
+/// <see cref="StereoEffectStrength"/> before the equal-power law, so <c>0</c>
+/// centers positional sources and <c>1</c> preserves the full separation.
+/// Contributions are accumulated and the final mix is hard-clipped to
+/// <c>[-1, 1]</c>; there is no limiter or compressor.
 /// </para>
 /// <para>
 /// One lock protects the voice slots, clip reference counts, listener, and
@@ -31,6 +33,7 @@ internal sealed class AudioMixer
     private readonly AudioListener _listener = new();
 
     private float _masterGain = 1.0f;
+    private float _stereoEffectStrength = 1.0f;
     private bool _closed;
 
     public AudioMixer(int maxVoices, int sampleRate)
@@ -72,6 +75,38 @@ internal sealed class AudioMixer
             lock (_sync)
             {
                 _masterGain = value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the positional stereo effect strength applied to spatial
+    /// voices, from 0 through 1.
+    /// </summary>
+    /// <remarks>
+    /// <c>1</c> keeps the full left/right separation, <c>0</c> centers a
+    /// positional source in the stereo output, and intermediate values scale the
+    /// pan toward the center. The change applies on the next mix block without
+    /// restarting a voice. Stereo clips keep their own channel content; this is
+    /// not a stereo-width or downmix control.
+    /// </remarks>
+    public float StereoEffectStrength
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _stereoEffectStrength;
+            }
+        }
+
+        set
+        {
+            ValidateStereoEffectStrength(value);
+
+            lock (_sync)
+            {
+                _stereoEffectStrength = value;
             }
         }
     }
@@ -159,6 +194,7 @@ internal sealed class AudioMixer
             }
 
             float masterGain = _masterGain;
+            float stereoEffectStrength = _stereoEffectStrength;
             Vector3 listenerPosition = _listener.Position;
             Vector3 listenerRight = _listener.Right;
 
@@ -188,7 +224,9 @@ internal sealed class AudioMixer
                         listenerPosition,
                         listenerRight,
                         voice.PositionValue);
-                    (float leftPan, float rightPan) = AudioMath.EqualPowerGains(pan);
+                    (float leftPan, float rightPan) = AudioMath.SpatialGains(
+                        pan,
+                        stereoEffectStrength);
 
                     leftGain *= attenuation * leftPan;
                     rightGain *= attenuation * rightPan;
@@ -671,6 +709,17 @@ internal sealed class AudioMixer
         if (!ReferenceEquals(mixer, this))
         {
             throw new ArgumentException("The object belongs to a different audio system.");
+        }
+    }
+
+    private static void ValidateStereoEffectStrength(float strength)
+    {
+        if (!float.IsFinite(strength) || strength is < 0.0f or > 1.0f)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(strength),
+                strength,
+                "The stereo effect strength must be finite and between 0 and 1.");
         }
     }
 

@@ -3,8 +3,8 @@ using System.Numerics;
 namespace Nymeria.Core.Audio;
 
 /// <summary>
-/// Headless distance-attenuation and stereo-panning math for basic spatial
-/// audio.
+/// Headless distance-attenuation, stereo-panning, and positional stereo
+/// strength math for basic spatial audio.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -136,6 +136,46 @@ public static class AudioMath
             (MathF.Sqrt(distanceSquared) * MathF.Sqrt(rightLengthSquared));
 
         return Math.Clamp(projection, -1.0f, 1.0f);
+    }
+
+    /// <summary>
+    /// Converts a pan value to equal-power left and right gains, scaled by a
+    /// positional stereo effect strength.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A strength of <c>1</c> produces exactly
+    /// <see cref="EqualPowerGains(float)"/> for <paramref name="pan"/>: the full
+    /// positional separation. A strength of <c>0</c> produces the centered gains
+    /// for either channel, so a positional source has no left/right separation.
+    /// Intermediate values scale the pan toward the center, which keeps the
+    /// equal-power law and therefore constant power at every strength.
+    /// </para>
+    /// <para>
+    /// This is a positional-stereo control only. It does not alter a stereo
+    /// clip's channel content, distance attenuation, source gain, or listener
+    /// orientation. A non-finite pan is centered; a non-finite strength yields
+    /// the centered gains. Out-of-range values are clamped.
+    /// </para>
+    /// </remarks>
+    /// <param name="pan">The pan in <c>[-1, 1]</c>, where <c>-1</c> is fully left.</param>
+    /// <param name="stereoEffectStrength">
+    /// The positional stereo effect strength in <c>[0, 1]</c>, where <c>1</c>
+    /// preserves the full pan.
+    /// </param>
+    /// <returns>The left and right gains in <c>[0, 1]</c>.</returns>
+    public static (float Left, float Right) SpatialGains(
+        float pan,
+        float stereoEffectStrength)
+    {
+        if (!float.IsFinite(stereoEffectStrength))
+        {
+            return EqualPowerGains(0.0f);
+        }
+
+        float strength = Math.Clamp(stereoEffectStrength, 0.0f, 1.0f);
+
+        return EqualPowerGains(pan * strength);
     }
 
     /// <summary>

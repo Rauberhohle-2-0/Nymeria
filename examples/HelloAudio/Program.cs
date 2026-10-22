@@ -120,6 +120,10 @@ internal static class Program
         bool wasMasterUpKeyDown = false;
         bool wasSourceADownKeyDown = false;
         bool wasSourceAUpKeyDown = false;
+        bool wasStereoDownKeyDown = false;
+        bool wasStereoUpKeyDown = false;
+        bool wasStereoPresetKeyDown = false;
+        bool wasSweepKeyDown = false;
         bool wasResetKeyDown = false;
         bool reportedDeviceLoss = false;
 
@@ -140,6 +144,11 @@ internal static class Program
 
             controls.Update(deltaSeconds);
             demo?.Update(camera, deltaSeconds);
+
+            if (demo is not null)
+            {
+                scene.SetSourceAPosition(demo.SourceAPosition);
+            }
 
             ReadOnlySpan<bool> keys = SDL.GetKeyboardState(out _);
 
@@ -176,6 +185,26 @@ internal static class Program
             if (Pressed(keys, SDL.Scancode.Equals, ref wasSourceAUpKeyDown))
             {
                 demo?.AdjustSourceAGain(0.1f);
+            }
+
+            if (Pressed(keys, SDL.Scancode.Comma, ref wasStereoDownKeyDown))
+            {
+                demo?.AdjustStereoEffectStrength(-0.1f);
+            }
+
+            if (Pressed(keys, SDL.Scancode.Period, ref wasStereoUpKeyDown))
+            {
+                demo?.AdjustStereoEffectStrength(0.1f);
+            }
+
+            if (Pressed(keys, SDL.Scancode.T, ref wasStereoPresetKeyDown))
+            {
+                demo?.CycleStereoEffectPreset();
+            }
+
+            if (Pressed(keys, SDL.Scancode.S, ref wasSweepKeyDown))
+            {
+                demo?.ToggleSweep();
             }
 
             if (Pressed(keys, SDL.Scancode.R, ref wasResetKeyDown))
@@ -258,6 +287,11 @@ internal static class Program
             "[ / ] change master gain. - / = change source A gain. R resets the " +
             "listener. Walk between and around the two markers to hear distance " +
             "attenuation and left/right panning.");
+        Console.WriteLine(
+            ", / . change the positional stereo effect strength by 10%. T cycles " +
+            "it through 0%, 50%, and 100%. S starts or stops moving source A left " +
+            "to right around the listener at a fixed distance; compare 0%, 50%, " +
+            "and 100% while it sweeps.");
         Console.WriteLine(
             "Spatialization is basic: linear distance attenuation and stereo " +
             "panning, not HRTF, occlusion, reverb, or surround sound.");

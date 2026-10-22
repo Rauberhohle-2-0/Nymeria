@@ -172,6 +172,146 @@ public sealed class AudioMathTests
         Assert.Equal(1.0f, right, 5);
     }
 
+    [Theory]
+    [InlineData(-1.0f, 0.0f, 0.70710677f, 0.70710677f)]
+    [InlineData(-1.0f, 0.5f, 0.9238795f, 0.38268343f)]
+    [InlineData(-1.0f, 1.0f, 1.0f, 0.0f)]
+    [InlineData(1.0f, 0.0f, 0.70710677f, 0.70710677f)]
+    [InlineData(1.0f, 0.5f, 0.38268343f, 0.9238795f)]
+    [InlineData(1.0f, 1.0f, 0.0f, 1.0f)]
+    [InlineData(0.0f, 0.0f, 0.70710677f, 0.70710677f)]
+    [InlineData(0.0f, 0.5f, 0.70710677f, 0.70710677f)]
+    [InlineData(0.0f, 1.0f, 0.70710677f, 0.70710677f)]
+    public void SpatialGains_InterpolateBetweenCenteredAndFullPan(
+        float pan,
+        float strength,
+        float expectedLeft,
+        float expectedRight)
+    {
+        (float left, float right) = AudioMath.SpatialGains(pan, strength);
+
+        Assert.InRange(MathF.Abs(left - expectedLeft), 0.0f, Tolerance);
+        Assert.InRange(MathF.Abs(right - expectedRight), 0.0f, Tolerance);
+    }
+
+    [Fact]
+    public void SpatialGains_ApplyToPositionsLeftRightAndCenter()
+    {
+        Vector3 listener = Vector3.Zero;
+        Vector3 right = Vector3.UnitX;
+        Vector3 leftPosition = new(-5.0f, 0.0f, 0.0f);
+        Vector3 rightPosition = new(5.0f, 0.0f, 0.0f);
+        Vector3 centerPosition = new(0.0f, 0.0f, -5.0f);
+        Vector3 behindPosition = new(0.0f, 0.0f, 5.0f);
+        float centered = MathF.Sqrt(0.5f);
+
+        foreach (float strength in new[] { 0.0f, 0.5f, 1.0f })
+        {
+            foreach (Vector3 centeredPosition in new[]
+            {
+                centerPosition,
+                behindPosition,
+                listener,
+            })
+            {
+                (float centeredLeft, float centeredRight) = AudioMath.SpatialGains(
+                    AudioMath.StereoPan(listener, right, centeredPosition),
+                    strength);
+                Assert.Equal(centered, centeredLeft, 5);
+                Assert.Equal(centered, centeredRight, 5);
+            }
+
+            (float left, float rightGain) = AudioMath.SpatialGains(
+                AudioMath.StereoPan(listener, right, leftPosition),
+                strength);
+            Assert.Equal(
+                AudioMath.SpatialGains(-1.0f, strength).Left,
+                left,
+                5);
+            Assert.Equal(
+                AudioMath.SpatialGains(-1.0f, strength).Right,
+                rightGain,
+                5);
+
+            (left, rightGain) = AudioMath.SpatialGains(
+                AudioMath.StereoPan(listener, right, rightPosition),
+                strength);
+            Assert.Equal(
+                AudioMath.SpatialGains(1.0f, strength).Left,
+                left,
+                5);
+            Assert.Equal(
+                AudioMath.SpatialGains(1.0f, strength).Right,
+                rightGain,
+                5);
+        }
+    }
+
+    [Fact]
+    public void SpatialGains_AreSymmetricAndConstantPower()
+    {
+        foreach (float strength in new[] { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
+        {
+            (float leftLeft, float leftRight) = AudioMath.SpatialGains(-0.7f, strength);
+            (float rightLeft, float rightRight) = AudioMath.SpatialGains(0.7f, strength);
+
+            Assert.Equal(leftLeft, rightRight, 5);
+            Assert.Equal(leftRight, rightLeft, 5);
+            Assert.Equal(
+                1.0f,
+                (leftLeft * leftLeft) + (leftRight * leftRight),
+                5);
+        }
+    }
+
+    [Fact]
+    public void SpatialGains_InterpolateMonotonicallyWithStrength()
+    {
+        float previousLeft = 0.0f;
+        float previousRight = 1.0f;
+
+        for (int step = 0; step <= 10; step++)
+        {
+            (float left, float right) = AudioMath.SpatialGains(-1.0f, step / 10.0f);
+
+            Assert.True(left >= previousLeft);
+            Assert.True(right <= previousRight);
+            Assert.InRange(left + right, 0.0f, MathF.Sqrt(2.0f));
+
+            previousLeft = left;
+            previousRight = right;
+        }
+
+        Assert.Equal(1.0f, previousLeft, 5);
+        Assert.Equal(0.0f, previousRight, 5);
+    }
+
+    [Fact]
+    public void SpatialGains_ClampAndCenterInvalidInput()
+    {
+        (float centeredLeft, float centeredRight) = AudioMath.SpatialGains(0.0f, 1.0f);
+
+        Assert.Equal(centeredLeft, AudioMath.SpatialGains(-1.0f, float.NaN).Left, 5);
+        Assert.Equal(centeredRight, AudioMath.SpatialGains(-1.0f, float.PositiveInfinity).Right, 5);
+        Assert.Equal(centeredLeft, AudioMath.SpatialGains(-1.0f, float.NegativeInfinity).Left, 5);
+        Assert.Equal(centeredLeft, AudioMath.SpatialGains(float.NaN, 1.0f).Left, 5);
+        Assert.Equal(1.0f, AudioMath.SpatialGains(-1.0f, 2.0f).Left, 5);
+        Assert.Equal(centeredLeft, AudioMath.SpatialGains(-1.0f, -1.0f).Left, 5);
+
+        foreach (float pan in new[] { float.MaxValue, float.MinValue, float.PositiveInfinity, float.NegativeInfinity, float.NaN })
+        {
+            (float left, float right) = AudioMath.SpatialGains(pan, 0.5f);
+
+            Assert.True(float.IsFinite(left));
+            Assert.True(float.IsFinite(right));
+
+            // The equal-power law can produce a negligible negative cosine at
+            // the full pan endpoint; the value is finite and bounded.
+            Assert.InRange(left, -Tolerance, 1.0f);
+            Assert.InRange(right, -Tolerance, 1.0f);
+        }
+    }
+
     [Fact]
     public void EqualPowerGains_ClampsAndCentersInvalidInput()
     {

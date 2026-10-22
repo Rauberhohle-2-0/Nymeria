@@ -22,7 +22,9 @@ namespace Nymeria.Audio;
 /// A non-spatial voice ignores <see cref="Position"/>, <see cref="MinDistance"/>,
 /// and <see cref="MaxDistance"/>; the properties remain available so generic
 /// update code can set them on every voice. Gain is a linear amplitude
-/// multiplier from 0 through 1, not decibels.
+/// multiplier from 0 through 1, not decibels. The positional stereo effect
+/// strength is a property of the owning <see cref="AudioSystem"/> and applies to
+/// every spatial voice; there is no per-voice override.
 /// </para>
 /// </remarks>
 public sealed class AudioVoice : IDisposable

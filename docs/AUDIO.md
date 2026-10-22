@@ -7,9 +7,9 @@ limitations. It describes what is implemented; it is not a plan for a larger
 audio engine.
 
 The scope is deliberately basic: decoded PCM playback, independent overlapping
-voices, linear distance attenuation, and left/right stereo panning. It does not
-include HRTF, binaural rendering, reverb, occlusion, Doppler, surround sound, or
-an audio graph.
+voices, linear distance attenuation, left/right stereo panning, and a
+configurable positional stereo strength. It does not include HRTF, binaural
+rendering, reverb, occlusion, Doppler, surround sound, or an audio graph.
 
 ## Projects and dependency direction
 
@@ -49,6 +49,7 @@ using AudioVoice spatial = audio.PlaySpatial(
 audio.Listener.Position = camera.Position;
 audio.Listener.Forward = camera.Forward;
 audio.MasterGain = 0.8f;
+audio.StereoEffectStrength = 0.5f;   // 0 centers, 1 is the default full pan
 audio.Update(deltaSeconds);
 ```
 
@@ -74,6 +75,7 @@ audio.Update(deltaSeconds);
 | --- | --- |
 | `AudioSystem.Listener` | The `AudioListener` used by spatial voices. |
 | `AudioSystem.MasterGain` | Linear master amplitude, `0` through `1`. Default `1`. |
+| `AudioSystem.StereoEffectStrength` | Positional stereo effect strength, `0` through `1`. Default `1`. See below. |
 | `AudioSystem.Update(float)` | Per-frame housekeeping: reaps finished voices and observes device loss. It does not feed samples. |
 | `AudioSystem.ActiveVoiceCount` | Voice slots in use, including finished voices not yet reaped. |
 | `AudioSystem.IsDeviceLost` | True after SDL reports no bound device or the callback fails. |
@@ -236,6 +238,58 @@ The audible source gain is
 voices are summed and the final stereo bus is hard-clipped to `[-1, 1]`. There is
 no compressor or limiter.
 
+### Positional stereo effect strength
+
+`AudioSystem.StereoEffectStrength` scales how strongly a positional source is
+separated left and right. It is normalized to `0` through `1` and defaults to
+`1`.
+
+```text
+effectivePan = pan * stereoEffectStrength
+leftGain     = cos((effectivePan + 1) * pi / 4)
+rightGain    = sin((effectivePan + 1) * pi / 4)
+```
+
+- `1` is the full positional pan described above. The default preserves the
+  existing behavior exactly.
+- `0` makes `effectivePan` zero for every source, so a mono positional source is
+  centered at `1/sqrt(2)` in both channels. It has no position-dependent
+  left/right separation, while distance attenuation, voice and master gain,
+  frame position, looping, and listener orientation are unchanged.
+- Intermediate values move the pan toward the center. Scaling the pan keeps the
+  equal-power law, so total power stays constant at every strength and there is
+  no loudness jump when the setting changes.
+
+The property can change at any time, including while voices play. The mixer
+reads it once per mix block; the change does not reopen the device, restart a
+voice, reset its frame position, or allocate. Values that are non-finite or
+outside `0` through `1` are rejected with `ArgumentOutOfRangeException`, matching
+`MasterGain` and `AudioVoice.Gain`. The pure `AudioMath.SpatialGains` helper
+clamps and centers instead, like `EqualPowerGains`, so defensive runtime math
+cannot produce NaN or infinity.
+
+The setting is global to one audio system. There is no per-voice override: the
+system already owns the one listener and master gain, and the strength follows
+that ownership instead of adding a second configuration hierarchy.
+
+### Positional panning versus stereo-file width
+
+These are different operations, and Nymeria implements only the first:
+
+- **Positional panning** derives one pan from the source position relative to
+  the listener and applies it to the voice. Mono clips copy their sample to both
+  mixer channels. Stereo clips keep their own left and right content, and each
+  channel is multiplied by its side's positional gain. `StereoEffectStrength`
+  scales only that positional gain pair.
+- **Stereo-file width** would change the left/right content of a stereo clip
+  itself, for example by mixing its channels toward or away from mono. Nymeria
+  has no such width control, channel matrix, or spatial downmix.
+
+Setting `StereoEffectStrength` to `0` centers a positional source's placement;
+it does not merge a stereo clip's channels into mono. The clip keeps its distinct
+channel content, scaled by the centered gain. An OMSI-style stereo-width control
+would be a separate future feature and is not conflated with this setting.
+
 ### What is not modeled
 
 Distance and panning are the whole spatial model. There is no HRTF or binaural
@@ -243,6 +297,10 @@ filter, interaural time delay, occlusion, obstruction, reverb, environmental
 acoustics, Doppler shift, air absorption, propagation delay, surround or height
 channel, or physics-driven acoustics. Voices are audible even when their source
 object is outside the camera frustum.
+
+The mixer always produces float32 stereo and has no mono output mode. If the
+backend or SDL's device conversion reduces the stream to mono, positional
+separation cannot be heard; Nymeria does not pretend to spatialize a mono bus.
 
 ## Mixing and threading
 
@@ -296,13 +354,21 @@ Controls:
 - `O` pauses or resumes spatial source A.
 - `X` stops source A and starts a new voice on the same clip.
 - `[` and `]` change master gain. `-` and `=` change source A gain.
+- `,` and `.` change the positional stereo effect strength by 10%.
+- `T` cycles the strength through 0%, 50%, and 100%.
+- `S` starts or stops the sweep: source A circles the listener on a horizontal
+  ring at a constant 4-unit radius, so its pan moves from left to right while
+  distance, attenuation, and gains stay fixed. Leave the camera still for a
+  repeatable stationary-listener demonstration.
 - `R` resets the listener position and orientation.
 
 The console prints a status line once per second with the listener transform,
-device state, voice count, master gain, and each voice's state, position,
-distance, attenuation, pan, and gain. If no audio device is available, the
-example prints the diagnostic and keeps rendering with an `audio unavailable`
-status.
+device state, voice count, master gain, the current positional stereo strength,
+and each voice's state, position, distance, attenuation, pan, pan gains, and
+gain. Pressing `T` while the sweep runs makes the difference between 0%, 50%,
+and 100% visible in both the reported gains and the stereo output. If no audio
+device is available, the example prints the diagnostic and keeps rendering with
+an `audio unavailable` status.
 
 ## Integration with scene transforms
 
@@ -336,6 +402,10 @@ Headless tests cover:
 
 - attenuation at zero, inside, at, and beyond the range, and NaN/infinite input;
 - panning left, right, center, coincident, and with a rotated listener;
+- positional stereo strength at 0, 0.5, and 1 for left, right, and center
+  sources, left/right symmetry, constant power, monotonic interpolation,
+  clamping and centering of invalid input, independence from distance and gain,
+  runtime changes while a voice plays, and unchanged stereo clip channels;
 - WAV PCM and float decoding, truncation, malformed chunks, unsupported
   formats, size overflow, inconsistent rates and alignments, duplicate or
   missing chunks, trailing bytes, and every documented limit;
@@ -379,7 +449,8 @@ and the headless tests run there.
 ## Known limitations
 
 - Basic stereo panning and linear attenuation only; no HRTF, occlusion, reverb,
-  Doppler, surround, or propagation.
+  Doppler, surround, or propagation. Positional stereo strength is global; there
+  is no per-voice override, mono mixing mode, or stereo-file width control.
 - No compressed formats, resampling filters, audio capture, microphone input,
   network streaming, mixing graph, effects, or per-voice filters.
 - No streaming of clip samples from disk; a loaded clip is fully decoded and

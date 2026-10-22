@@ -750,7 +750,15 @@ Expected: `0`.
    from the beginning without an error or a device change.
 8. **Gain controls work.** `[` and `]` change master gain; `-` and `=` change
    source A gain. The audible level and the printed percentages change together.
-9. **Missing device is graceful.** Quit, then run the example with an invalid
+9. **Positional stereo strength works.** Press `S` to start the sweep and leave
+   the listener still; source A circles it at a constant distance, so attenuation
+   and gain stay fixed while the pan moves left to right. Press `T` to select 0%,
+   50%, and 100%. At 0% the reported left and right pan gains are equal
+   (`L 0.71 / R 0.71`) and the tone is centered; at 100% the gains separate fully;
+   50% sits between them. The tone must not change level or restart, and the
+   stereo gain columns must agree with what is heard. `,` and `.` adjust the
+   strength by 10%.
+10. **Missing device is graceful.** Quit, then run the example with an invalid
    SDL audio driver:
 
    ```bash
@@ -761,7 +769,7 @@ Expected: `0`.
    Expected: the terminal prints `Audio unavailable:` with the SDL failure and
    the window still opens and renders with an `audio unavailable` status. The
    process must not crash or exit with status `1`.
-10. **Close exits cleanly.** Close with the button and with `Cmd+Q`. Both exit
+11. **Close exits cleanly.** Close with the button and with `Cmd+Q`. Both exit
     with status `0`, release the cursor, and leave no orphan process.
 
 ## HelloAnimation checks

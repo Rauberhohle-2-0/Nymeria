@@ -558,6 +558,209 @@ public sealed class AudioMixerTests
         Assert.Equal(0, allocated);
     }
 
+    [Fact]
+    public void StereoEffectStrength_DefaultsToFullPositionalSeparating()
+    {
+        var mixer = new AudioMixer(8, Rate);
+        AudioClip clip = MonoClip(mixer, 0.5f);
+
+        Assert.Equal(1.0f, mixer.StereoEffectStrength);
+
+        using AudioVoice voice = mixer.PlaySpatial(
+            clip,
+            new Vector3(3.0f, 0.0f, 0.0f),
+            minDistance: 1.0f,
+            maxDistance: 5.0f);
+
+        float[] output = Mix(mixer, 1);
+
+        // Distance attenuation 0.5 and a source fully on the right axis.
+        Assert.Equal(0.0f, output[0], 6);
+        Assert.Equal(0.25f, output[1], 6);
+    }
+
+    [Theory]
+    [InlineData(0.0f, 0.1767767f, 0.1767767f)]
+    [InlineData(0.5f, 0.09567086f, 0.23096987f)]
+    [InlineData(1.0f, 0.0f, 0.25f)]
+    public void StereoEffectStrength_BlendsPositionalPanning(
+        float strength,
+        float expectedLeft,
+        float expectedRight)
+    {
+        var mixer = new AudioMixer(8, Rate) { StereoEffectStrength = strength };
+        AudioClip clip = MonoClip(mixer, 0.5f);
+
+        using AudioVoice voice = mixer.PlaySpatial(
+            clip,
+            new Vector3(3.0f, 0.0f, 0.0f),
+            minDistance: 1.0f,
+            maxDistance: 5.0f);
+
+        float[] output = Mix(mixer, 1);
+
+        Assert.Equal(expectedLeft, output[0], 6);
+        Assert.Equal(expectedRight, output[1], 6);
+    }
+
+    [Fact]
+    public void StereoEffectStrength_IsSymmetricForLeftAndRightSources()
+    {
+        var mixer = new AudioMixer(8, Rate) { StereoEffectStrength = 0.5f };
+        AudioClip clip = MonoClip(mixer, 0.5f);
+
+        using AudioVoice right = mixer.PlaySpatial(
+            clip,
+            new Vector3(3.0f, 0.0f, 0.0f),
+            minDistance: 1.0f,
+            maxDistance: 5.0f);
+
+        float[] rightOutput = Mix(mixer, 1);
+
+        right.Stop();
+
+        using AudioVoice left = mixer.PlaySpatial(
+            clip,
+            new Vector3(-3.0f, 0.0f, 0.0f),
+            minDistance: 1.0f,
+            maxDistance: 5.0f);
+
+        float[] leftOutput = Mix(mixer, 1);
+
+        Assert.Equal(rightOutput[0], leftOutput[1], 6);
+        Assert.Equal(rightOutput[1], leftOutput[0], 6);
+        Assert.True(leftOutput[0] > leftOutput[1]);
+    }
+
+    [Fact]
+    public void StereoEffectStrength_CentersCoincidentSources()
+    {
+        var mixer = new AudioMixer(8, Rate) { StereoEffectStrength = 0.0f };
+        AudioClip clip = MonoClip(mixer, 0.5f);
+
+        using AudioVoice voice = mixer.PlaySpatial(
+            clip,
+            Vector3.Zero,
+            minDistance: 1.0f,
+            maxDistance: 5.0f);
+
+        float[] output = Mix(mixer, 1);
+        float expected = 0.5f * MathF.Sqrt(0.5f);
+
+        Assert.Equal(expected, output[0], 6);
+        Assert.Equal(expected, output[1], 6);
+    }
+
+    [Fact]
+    public void StereoEffectStrength_UpdatesApplyWithoutRestartingTheVoice()
+    {
+        var mixer = new AudioMixer(8, Rate);
+        AudioClip clip = MonoClip(mixer, 0.5f);
+
+        using AudioVoice voice = mixer.PlaySpatial(
+            clip,
+            new Vector3(3.0f, 0.0f, 0.0f),
+            minDistance: 1.0f,
+            maxDistance: 5.0f,
+            loop: true);
+
+        Assert.Equal(0.0f, Mix(mixer, 1)[0], 6);
+
+        mixer.StereoEffectStrength = 0.0f;
+        float[] centered = Mix(mixer, 1);
+
+        Assert.Equal(0.1767767f, centered[0], 6);
+        Assert.Equal(0.1767767f, centered[1], 6);
+        Assert.Equal(AudioVoiceState.Playing, voice.State);
+
+        mixer.StereoEffectStrength = 0.5f;
+        float[] half = Mix(mixer, 1);
+
+        Assert.Equal(0.09567086f, half[0], 6);
+        Assert.Equal(0.23096987f, half[1], 6);
+
+        mixer.StereoEffectStrength = 1.0f;
+        float[] full = Mix(mixer, 1);
+
+        Assert.Equal(0.0f, full[0], 6);
+        Assert.Equal(0.25f, full[1], 6);
+        Assert.Equal(AudioVoiceState.Playing, voice.State);
+    }
+
+    [Fact]
+    public void StereoEffectStrength_IsIndependentOfDistanceAndGain()
+    {
+        var mixer = new AudioMixer(8, Rate) { StereoEffectStrength = 0.0f };
+        mixer.MasterGain = 0.5f;
+        AudioClip clip = MonoClip(mixer, 0.5f);
+
+        using AudioVoice voice = mixer.PlaySpatial(
+            clip,
+            new Vector3(3.0f, 0.0f, 0.0f),
+            minDistance: 1.0f,
+            maxDistance: 5.0f,
+            loop: true);
+        voice.Gain = 0.5f;
+
+        float[] nearOutput = Mix(mixer, 1);
+        float expectedNear = 0.5f * 0.5f * 0.5f * 0.5f * MathF.Sqrt(0.5f);
+
+        Assert.Equal(expectedNear, nearOutput[0], 6);
+        Assert.Equal(expectedNear, nearOutput[1], 6);
+
+        voice.Position = new Vector3(1.0f, 0.0f, 0.0f);
+        float[] closerOutput = Mix(mixer, 1);
+        float expectedCloser = expectedNear * 2.0f;
+
+        Assert.Equal(expectedCloser, closerOutput[0], 6);
+        Assert.Equal(expectedCloser, closerOutput[1], 6);
+    }
+
+    [Fact]
+    public void StereoEffectStrength_KeepsStereoClipChannels()
+    {
+        var mixer = new AudioMixer(8, Rate);
+        AudioClip clip = mixer.CreateClip(
+            new PcmAudioData([0.25f, -0.25f], Rate, 2));
+
+        using AudioVoice voice = mixer.PlaySpatial(
+            clip,
+            new Vector3(3.0f, 0.0f, 0.0f),
+            minDistance: 1.0f,
+            maxDistance: 5.0f,
+            loop: true);
+
+        Assert.Equal(0.0f, Mix(mixer, 1)[0], 6);
+
+        mixer.StereoEffectStrength = 0.0f;
+        float[] centered = Mix(mixer, 1);
+
+        // Both source channels are still present and distinct: the left and
+        // right content is multiplied by the same positional gain, not mixed.
+        Assert.Equal(0.08838835f, centered[0], 6);
+        Assert.Equal(-0.08838835f, centered[1], 6);
+    }
+
+    [Fact]
+    public void StereoEffectStrength_RejectsInvalidValues()
+    {
+        var mixer = new AudioMixer(8, Rate);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => mixer.StereoEffectStrength = -0.1f);
+        Assert.Throws<ArgumentOutOfRangeException>(() => mixer.StereoEffectStrength = 1.1f);
+        Assert.Throws<ArgumentOutOfRangeException>(() => mixer.StereoEffectStrength = float.NaN);
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => mixer.StereoEffectStrength = float.PositiveInfinity);
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => mixer.StereoEffectStrength = float.NegativeInfinity);
+
+        Assert.Equal(1.0f, mixer.StereoEffectStrength);
+        mixer.StereoEffectStrength = 0.0f;
+        Assert.Equal(0.0f, mixer.StereoEffectStrength);
+        mixer.StereoEffectStrength = 1.0f;
+        Assert.Equal(1.0f, mixer.StereoEffectStrength);
+    }
+
     private static AudioClip MonoClip(AudioMixer mixer, params float[] samples) =>
         mixer.CreateClip(new PcmAudioData(samples, Rate, 1));
 

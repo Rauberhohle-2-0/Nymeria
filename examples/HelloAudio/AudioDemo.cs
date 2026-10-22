@@ -17,6 +17,8 @@ internal sealed class AudioDemo : IDisposable
     private const float SourceAMaxDistance = 24.0f;
     private const float SourceBMinDistance = 2.0f;
     private const float SourceBMaxDistance = 32.0f;
+    private const float SweepRadius = 4.0f;
+    private const float SweepRadiansPerSecond = 0.6f;
 
     private readonly AudioSystem _audio;
     private readonly AudioClip _ambientClip;
@@ -27,6 +29,9 @@ internal sealed class AudioDemo : IDisposable
     private AudioVoice? _sourceB;
     private float _sourceAGain = 0.8f;
     private float _sourceBGain = 0.7f;
+    private Vector3 _sourceAPosition = AudioDemoScene.SourceAPosition;
+    private float _sweepAngle;
+    private bool _sweepEnabled;
     private bool _disposed;
 
     private AudioDemo(
@@ -48,6 +53,12 @@ internal sealed class AudioDemo : IDisposable
     }
 
     public bool IsDeviceLost => _audio.IsDeviceLost;
+
+    /// <summary>
+    /// Gets the current world-space position of spatial source A. It is fixed
+    /// unless the left-to-right sweep is enabled.
+    /// </summary>
+    public Vector3 SourceAPosition => _sourceAPosition;
 
     public static AudioDemo? TryCreate(out string message)
     {
@@ -137,7 +148,41 @@ internal sealed class AudioDemo : IDisposable
         _audio.Listener.Position = camera.Position;
         _audio.Listener.Forward = camera.Forward;
         _audio.Listener.Up = Vector3.UnitY;
+        UpdateSweep(deltaSeconds);
         _audio.Update(deltaSeconds);
+    }
+
+    /// <summary>
+    /// Moves source A around the listener on a horizontal circle at a constant
+    /// radius, so the left/right pan changes while distance and gains stay put.
+    /// </summary>
+    private void UpdateSweep(float deltaSeconds)
+    {
+        if (!_sweepEnabled)
+        {
+            return;
+        }
+
+        _sweepAngle = (_sweepAngle + (deltaSeconds * SweepRadiansPerSecond)) % MathF.Tau;
+
+        Vector3 right = _audio.Listener.Right;
+
+        if (right.LengthSquared() <= 1e-12f)
+        {
+            right = Vector3.UnitX;
+        }
+
+        Vector3 forward = _audio.Listener.Forward;
+
+        _sourceAPosition =
+            _audio.Listener.Position +
+            (SweepRadius * MathF.Sin(_sweepAngle) * right) +
+            (SweepRadius * MathF.Cos(_sweepAngle) * forward);
+
+        if (_sourceA is not null)
+        {
+            _sourceA.Position = _sourceAPosition;
+        }
     }
 
     public void ToggleAmbientPause()
@@ -197,11 +242,59 @@ internal sealed class AudioDemo : IDisposable
         _sourceA?.Dispose();
         _sourceA = _audio.PlaySpatial(
             _sourceAClip,
-            AudioDemoScene.SourceAPosition,
+            _sourceAPosition,
             SourceAMinDistance,
             SourceAMaxDistance,
             loop: true);
         _sourceA.Gain = _sourceAGain;
+    }
+
+    /// <summary>
+    /// Adjusts the global positional stereo effect strength by <paramref name="delta"/>.
+    /// It is applied to the next mix block without restarting any voice.
+    /// </summary>
+    public void AdjustStereoEffectStrength(float delta)
+    {
+        _audio.StereoEffectStrength = Math.Clamp(
+            _audio.StereoEffectStrength + delta,
+            0.0f,
+            1.0f);
+    }
+
+    /// <summary>
+    /// Cycles the positional stereo effect strength through 0%, 50%, and 100%,
+    /// which makes the three documented settings easy to compare by ear.
+    /// </summary>
+    public void CycleStereoEffectPreset()
+    {
+        float current = _audio.StereoEffectStrength;
+
+        _audio.StereoEffectStrength = current switch
+        {
+            < 0.25f => 0.5f,
+            < 0.75f => 1.0f,
+            _ => 0.0f,
+        };
+    }
+
+    /// <summary>
+    /// Starts or stops moving source A left to right around the listener.
+    /// </summary>
+    public void ToggleSweep()
+    {
+        _sweepEnabled = !_sweepEnabled;
+
+        if (!_sweepEnabled)
+        {
+            _sweepAngle = 0.0f;
+            _sourceAPosition = AudioDemoScene.SourceAPosition;
+        }
+
+        if (_sourceA is not null &&
+            _sourceA.State is AudioVoiceState.Playing or AudioVoiceState.Paused)
+        {
+            _sourceA.Position = _sourceAPosition;
+        }
     }
 
     public void AdjustMasterGain(float delta)
@@ -228,14 +321,16 @@ internal sealed class AudioDemo : IDisposable
             $"audio: {_audio.SampleRate} Hz stereo, " +
             $"{_audio.ActiveVoiceCount}/{_audio.MaxVoices} voices, " +
             $"master {Percent(_audio.MasterGain)}, " +
+            $"positional stereo {Percent(_audio.StereoEffectStrength)} " +
+            $"(0% centers, 100% full pan), " +
             $"device {(_audio.IsDeviceLost ? "lost" : "ok")}");
         builder.AppendLine();
         builder.AppendLine(
             $"ambient (2D loop): {DescribeVoice(_ambient, AmbientGain)}");
         builder.AppendLine(
-            $"source A (3D loop): {DescribeSpatialVoice(
+            $"source A (3D loop{(_sweepEnabled ? ", sweeping" : "")}): {DescribeSpatialVoice(
                 _sourceA,
-                AudioDemoScene.SourceAPosition,
+                _sourceAPosition,
                 SourceAMinDistance,
                 SourceAMaxDistance,
                 _sourceAGain)}");
@@ -295,12 +390,16 @@ internal sealed class AudioDemo : IDisposable
             listenerPosition,
             _audio.Listener.Right,
             position);
+        (float left, float right) = AudioMath.SpatialGains(
+            pan,
+            _audio.StereoEffectStrength);
 
         return
             $"{DescribeState(voice.State)}, " +
             $"pos ({position.X:0.0}, {position.Y:0.0}, {position.Z:0.0}), " +
             $"distance {distance:0.0}, attenuation {attenuation:0.00}, " +
-            $"pan {FormatPan(pan)}, gain {Percent(gain)}";
+            $"pan {FormatPan(pan)} (L {left:0.00} / R {right:0.00}), " +
+            $"gain {Percent(gain)}";
     }
 
     private static string DescribeVoice(AudioVoice voice, float gain) =>

@@ -15,6 +15,8 @@ internal sealed class AudioDemoScene
 
     public static readonly Vector3 SourceBPosition = new(5.0f, 1.0f, -4.0f);
 
+    private readonly SceneObject _sourceAMarker;
+
     public AudioDemoScene()
     {
         MeshData cube = CreateCubeMesh();
@@ -40,13 +42,14 @@ internal sealed class AudioDemoScene
                 Quaternion.Identity,
                 new Vector3(30.0f, 0.05f, 30.0f)),
             groundMaterial));
-        Scene.Add(new SceneObject(
+        _sourceAMarker = new SceneObject(
             cube,
             new Transform(
                 SourceAPosition,
                 Quaternion.Identity,
                 new Vector3(0.9f, 0.9f, 0.9f)),
-            sourceAMaterial));
+            sourceAMaterial);
+        Scene.Add(_sourceAMarker);
         Scene.Add(new SceneObject(
             cube,
             new Transform(
@@ -57,6 +60,12 @@ internal sealed class AudioDemoScene
     }
 
     public Scene Scene { get; }
+
+    /// <summary>
+    /// Moves the source A marker so the visual layout follows the sound source.
+    /// </summary>
+    public void SetSourceAPosition(Vector3 position) =>
+        _sourceAMarker.Transform.Position = position;
 
     private static MeshData CreateCubeMesh()
     {

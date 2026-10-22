@@ -60,11 +60,13 @@ extension is a direction, not a current feature.
   validated `PcmAudioData` and never opens a file or touches a device.
 - `Nymeria.Core.Audio`, validated interleaved PCM clip data with bounded linear
   resampling, a listener whose axes match the camera, and pure distance
-  attenuation, stereo panning, and equal-power gain math. It is headless and
-  contains no SDL3, GPU, window, or format dependency.
+  attenuation, stereo panning, configurable positional stereo strength, and
+  equal-power gain math. It is headless and contains no SDL3, GPU, window, or
+  format dependency.
 - `Nymeria.Audio`, an SDL3-backed playback system with a bounded managed stereo
   mixer, shared clips, independent 2D and spatial voices, pause/resume/stop,
-  looping, per-source and master gain, and explicit device and thread ownership.
+  looping, per-source and master gain, a runtime-adjustable positional stereo
+  effect strength, and explicit device and thread ownership.
 - `Nymeria.Core.Animation`, immutable keyframe tracks for translation, rotation,
   and scale, a validated transform clip with deterministic sampling, and a
   per-target playback controller. It is headless, writes ordinary scene
@@ -117,8 +119,10 @@ extension is a direction, not a current feature.
 - `examples/HelloAudio`, an interactive example with a generated looping 2D
   ambient sound and two generated spatial sources. The camera is the listener,
   source markers and a ground plane show the spatial layout, and the console
-  reports device state, distance, attenuation, pan, and gains. It keeps running
-  with an explicit status when no audio device is available.
+  reports device state, distance, attenuation, pan, positional stereo strength,
+  and gains. A stereo-strength control with 0/50/100% presets and an optional
+  constant-distance left-to-right source sweep demonstrate the setting. It keeps
+  running with an explicit status when no audio device is available.
 - `examples/HelloAnimation`, an interactive example with three independent
   transform clips: a door rotating around its authored hinge, a wiper sweeping
   around its base, and a cube that moves and scales. It demonstrates playback
@@ -150,10 +154,11 @@ extension is a direction, not a current feature.
   pair ordering, bounded frame-timing aggregation with warm-up exclusion and
   invalid samples, audio distance attenuation at and beyond the range with
   invalid values, stereo panning for rotated listeners and degenerate bases,
-  listener validation, PCM data validation and resampling, transform animation
-  track sampling and validation, quaternion shortest-path interpolation, clip
-  boundaries and limits, playback lifecycle, looping, delta partitioning, and
-  deterministic multi-player conflicts.
+  positional stereo strength interpolation, symmetry, constant power, and
+  invalid input, listener validation, PCM data validation and resampling,
+  transform animation track sampling and validation, quaternion shortest-path
+  interpolation, clip boundaries and limits, playback lifecycle, looping, delta
+  partitioning, and deterministic multi-player conflicts.
 - `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
   conversions, and diagnostics.
 - `Nymeria.Formats.O3d.Tests`, GPU-independent tests for the O3D header,
@@ -174,10 +179,10 @@ extension is a direction, not a current feature.
   truncated and malformed chunks, duplicate and missing chunks, unsupported
   formats, overflow, and input, frame, and payload limits.
 - `Nymeria.Audio.Tests`, device-independent tests for the bounded stereo mixer,
-  voice lifecycle, looping, overlapping voices, gain and clipping, shared clip
-  ownership, voice limits, concurrent mixing and control, zero allocation per
-  mix block, and options validation. Device checks are explicitly skipped with a
-  reason.
+  voice lifecycle, looping, overlapping voices, gain and clipping, positional
+  stereo strength, shared clip ownership, voice limits, concurrent mixing and
+  control, zero allocation per mix block, and options validation. Device checks
+  are explicitly skipped with a reason.
 - SDL3 windowing, audio playback, and GPU rendering through the pinned
   `SDL3-CS` and `SDL3-CS.MacOS` packages.
 - A `Repository checks` GitHub Actions workflow that validates repository
@@ -895,10 +900,11 @@ Limitations in this version:
   is not verified because the repository ships no native SDL3 package for those
   platforms. The headless audio projects still build and their tests run on all
   three CI platforms.
-- Spatial audio is basic stereo: linear distance attenuation and left/right
-  equal-power panning only. There is no HRTF, binaural filter, reverb, occlusion,
-  Doppler, propagation delay, surround or height output, or physics-driven
-  acoustics.
+- Spatial audio is basic stereo: linear distance attenuation, left/right
+  equal-power panning, and a global positional stereo strength (default full).
+  There is no HRTF, binaural filter, reverb, occlusion, Doppler, propagation
+  delay, surround or height output, physics-driven acoustics, per-voice stereo
+  override, mono mixing mode, or stereo-file width control.
 - Audio supports uncompressed mono/stereo WAV only, decoded fully into memory and
   resampled linearly to the mixer rate. There is no compressed format, sample
   streaming, audio capture, microphone input, effects chain, or audio graph.
@@ -1148,9 +1154,9 @@ The following choices are implemented:
 - **Audio data and spatial math:** `Nymeria.Core.Audio` contains validated
   interleaved `PcmAudioData`, bounded linear resampling, an `AudioListener` with
   camera-matching axes, and `AudioMath` distance attenuation, stereo panning,
-  and equal-power gains. It is headless, uses `System.Numerics` only, and
-  contains no SDL3, device, or GPU state. [AUDIO.md](AUDIO.md) is the
-  authoritative contract.
+  configurable positional stereo strength, and equal-power gains. It is
+  headless, uses `System.Numerics` only, and contains no SDL3, device, or GPU
+  state. [AUDIO.md](AUDIO.md) is the authoritative contract.
 - **WAV parsing:** `Nymeria.Formats.Wav` is a dependency-free decoder for mono
   or stereo 8/16/24/32-bit PCM and 32-bit float RIFF/WAVE input. It validates
   RIFF and chunk sizes, ordering, padding, format fields, frame alignment, and
@@ -1168,11 +1174,12 @@ The following choices are implemented:
 - **Audio playback:** `Nymeria.Audio` owns one SDL3 playback stream and a bounded
   managed float32 stereo mixer. It supports shared clips, overlapping 2D and
   spatial voices, pause/resume/stop, looping, per-source and master gain, linear
-  distance attenuation, and stereo panning. Mixing runs in SDL's callback with a
-  preallocated scratch buffer and one short lock; Nymeria's mixer allocates
-  nothing per block after warm-up and performs no I/O. Device creation is
-  explicit and never happens merely by loading the assembly. [AUDIO.md](AUDIO.md)
-  is the authoritative contract.
+  distance attenuation, stereo panning, and a runtime-adjustable positional
+  stereo effect strength. Mixing runs in SDL's callback with a preallocated
+  scratch buffer and one short lock; Nymeria's mixer allocates nothing per block
+  after warm-up and performs no I/O. Device creation is explicit and never
+  happens merely by loading the assembly. [AUDIO.md](AUDIO.md) is the
+  authoritative contract.
 - **Performance diagnostics:** `Nymeria.Core.Diagnostics.FrameTimingWindow` is a
   bounded, warm-up-aware rolling window for CPU frame durations. It rejects
   invalid samples, reports average, nearest-rank p95, maximum, and FPS from the
