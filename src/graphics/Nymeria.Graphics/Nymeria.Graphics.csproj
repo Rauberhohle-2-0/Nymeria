@@ -6,9 +6,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- The managed SDL3 binding. The native macOS runtime is supplied by
+    <!-- The managed SDL3 binding. The native runtime is supplied by
          Nymeria.Platform, which examples reference alongside this project. -->
     <PackageReference Include="SDL3-CS" Version="3.4.18" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- GpuBackendSelection is internal and GPU-free, so its policy decisions are
+         unit-tested without creating a device or loading a native library. -->
+    <InternalsVisibleTo Include="Nymeria.Graphics.Tests" />
   </ItemGroup>
 
 </Project>

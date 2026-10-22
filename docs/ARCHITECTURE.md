@@ -73,10 +73,16 @@ extension is a direction, not a current feature.
   transforms, and contains no SDL3, GPU, window, format, or scene-membership
   dependency.
 - `Nymeria.Graphics`, a class library that owns the SDL3 GPU device and window
-  presentation claim, provides reusable MSL shader, buffer, texture, and sampler
-  creation, and contains a reusable, SDL-independent free-fly `Camera`.
+  presentation claim, provides reusable shader, buffer, texture, and sampler
+  creation, reports the device's driver and shader format, and contains a
+  reusable, SDL-independent free-fly `Camera`.
 - `examples/HelloTriangle`, a console executable that opens the window and draws
   the triangle with example-owned shaders and geometry.
+- `examples/HelloWindow`, a window-only console executable that initializes SDL
+  video, shows a resizable window, pumps the event queue, and disposes on the
+  main thread. It creates no GPU device and loads no shader, so it isolates
+  native SDL3 deployment from the GPU backend. `--smoke` pumps a fixed number of
+  events and exits without user input.
 - `examples/HelloCube`, an interactive console executable that draws multiple
   fixed-position cubes with a free-fly camera, perspective projection, depth
   testing, example-owned shaders and geometry from a format-independent model,
@@ -189,10 +195,11 @@ extension is a direction, not a current feature.
   control, zero allocation per mix block, and options validation. Device checks
   are explicitly skipped with a reason.
 - SDL3 windowing, audio playback, and GPU rendering through the pinned
-  `SDL3-CS` and `SDL3-CS.MacOS` packages.
+  `SDL3-CS` binding, with the native runtimes supplied by the `SDL3-CS.MacOS`
+  and `SDL3-CS.Windows` packages.
 - A `Repository checks` GitHub Actions workflow that validates repository
   foundations and restores, builds, and tests the solution on macOS, Windows, and
-  Linux.
+  Linux, on `main` and on the Windows development branches.
 - Weekly Dependabot updates for GitHub Actions and NuGet, auto-merged only after
   repository checks pass.
 
@@ -241,8 +248,8 @@ contains `Nymeria.Core`, `src/formats/` contains `Nymeria.Formats.Obj`,
 `Nymeria.Formats.O3d`, `Nymeria.Formats.DirectX`, `Nymeria.Formats.Png`,
 `Nymeria.Formats.Tga`, `Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`,
 `Nymeria.Formats.Bmp`, `Nymeria.Formats.Textures`, and
-`Nymeria.Formats.Wav`, `examples/` contains `HelloTriangle`, `HelloCube`,
-`HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
+`Nymeria.Formats.Wav`, `examples/` contains `HelloTriangle`, `HelloWindow`,
+`HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
 `HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, `HelloPicking`,
 `HelloAudio`, `HelloAnimation`, and `HelloBenchmark`, and `tests/` contains
 `Nymeria.Core.Tests`,
@@ -301,20 +308,40 @@ small:
 - `Window.Dispose` destroys the window and shuts SDL down deterministically,
   including when creation fails after SDL initialization.
 
-Windowing uses SDL3 through two pinned NuGet packages:
+Windowing uses SDL3 through three pinned NuGet packages:
 
 | Package | Version | Purpose | License |
 | --- | --- | --- | --- |
 | `SDL3-CS` | 3.4.18 | Managed SDL3 binding | zlib |
 | `SDL3-CS.MacOS` | 3.4.18 | Native `libSDL3.dylib` for `osx-arm64` and `osx-x64` | zlib |
+| `SDL3-CS.Windows` | 3.4.18 | Native `SDL3.dll` for `win-x64`, `win-arm64`, and `win-x86` | zlib |
 
-`Nymeria.Platform.csproj` owns both package references, so examples receive the
-binding and native runtime transitively. NuGet restores the dylibs from
-nuget.org; no Homebrew installation, manual download, or custom Cocoa interop is
-involved. The macOS native runtime and Metal GPU path are validated on macOS. CI
-compiles and runs the headless tests on Windows and Linux as well, but does not
-launch a GUI there. Windows and Linux native packages are added only when those
-platforms are supported.
+`Nymeria.Platform.csproj` owns all three package references, so examples receive
+the binding and the native runtime transitively. `SDL3-CS` contains only the
+managed binding; every native binary comes from a platform package. A platform
+whose native package is missing has no `SDL3` library in its output at all, and
+the process fails at the first SDL call with `Unable to load DLL 'SDL3'`.
+
+Each native package contributes RID-scoped runtime assets, so they coexist in a
+portable build: `dotnet build` keeps every `runtimes/<rid>/native/` binary and
+the .NET host resolves the one matching the current process, while a
+RID-specific build such as `dotnet build -r win-x64` copies only that binary
+beside the executable. NuGet restores the binaries from nuget.org; no Homebrew
+installation, manual download, DLL copying, or machine-wide `PATH` change is
+involved.
+
+The macOS native runtime and Metal GPU path are validated on macOS. The Windows
+native runtime deploys for windowing, and the Windows GPU path selects
+Direct3D 12 with DXIL; every shader family ships both MSL and build-generated DXIL
+assets, so Windows is no longer limited to `examples/HelloWindow` and
+`examples/HelloTriangle`. Windows GPU behavior on real hardware is still
+unverified: no task in this repository has been run on a Windows machine with a
+Direct3D 12 device. CI compiles and runs the headless tests on Windows and Linux
+as well, but does not launch a GUI on any platform. Linux remains unsupported and
+has no native package here.
+
+[WINDOWS_01_NATIVE_SDL3.md](WINDOWS_01_NATIVE_SDL3.md) records the native-package
+deployment, the window-only smoke test, and which checks were actually executed.
 
 SDL initialization, window creation, event processing, and disposal must all run
 on the process main thread, as macOS requires for its native windowing APIs.
@@ -408,18 +435,50 @@ never mutates it. [CULLING.md](CULLING.md) is the authoritative culling contract
 
 `Nymeria.Graphics` contains reusable graphics infrastructure. `GpuDevice`
 creates and owns an SDL3 GPU device, claims a native window for presentation,
-reports the swapchain format, and creates MSL shaders, uploaded GPU buffers,
-2D RGBA textures, and samplers. It uses SDL3's GPU API through the same `SDL3-CS`
-binding; there is no direct Metal interop, native wrapper, second binding, or
-software fallback.
+reports the swapchain format, the selected driver, and the device's shader
+format, and creates shaders, uploaded GPU buffers, 2D RGBA textures, and
+samplers. It uses SDL3's GPU API through the same `SDL3-CS` binding; there is no
+direct Metal or Direct3D 12 interop, native wrapper, second binding, or software
+fallback.
 
 `GpuDevice.Create(IntPtr window)`:
 
 - requires the main thread and a non-zero native `SDL_Window*` handle from
   `Window.Handle`;
-- checks `SDL_GPUSupportsShaderFormats(MSL, "metal")`;
-- creates an SDL GPU device with `SDL_CreateGPUDevice(MSL, debug: false, "metal")`;
+- asks the internal `GpuBackendSelection` component for the platform's policy:
+  MSL shaders for SDL's `metal` driver on macOS, and DXIL shaders for SDL's
+  `direct3d12` driver on Windows. Linux and unknown platforms have no policy and
+  fail with an explicit message instead of selecting an untested backend;
+- checks `SDL_GPUSupportsShaderFormats` for that format with a null driver name,
+  so SDL selects the backend in its own order rather than from a hardcoded name;
+- creates an SDL GPU device with
+  `SDL_CreateGPUDevice(formats, debug: false, null)`;
+- verifies that `SDL_GetGPUDeviceDriver` reports the expected driver and that
+  `SDL_GetGPUShaderFormats` includes the policy format, destroying the device and
+  throwing an actionable error when either check fails;
 - claims the window for presentation and reads its swapchain format.
+
+The shader format is the only platform-specific input. `GpuDevice.ShaderFormat`
+reports the verified bytecode format, and `CreateShader` rejects bytes that do not
+match it instead of relabelling them. Backend policy is a set of pure functions,
+so it is unit-tested without a device or a native library; see
+[WINDOWS_02_D3D12_BACKEND.md](WINDOWS_02_D3D12_BACKEND.md).
+
+`ShaderProgram.Select` turns that format into the embedded assets a renderer loads:
+one Metal Shading Language resource for both stages on Metal, and one DXIL blob per
+stage on Direct3D 12, each with its own entry point. `ShaderAsset` carries the
+resource name, its bytecode format, and the entry point, and reads its bytes from
+the owning assembly. A format with no assets throws rather than falling back to
+another backend's bytes, and a missing resource names the format, the resource,
+and the assembly. The mapping is pure data, so it is unit-tested without a device;
+see [WINDOWS_03_HLSL_DXIL_SHADERS.md](WINDOWS_03_HLSL_DXIL_SHADERS.md).
+
+All four shader families – Triangle, Cube, the shared Model shader, and the shared
+Material shader – resolve through that mapping, so every GPU example asks for its
+assets by family name and none of them mentions a backend or a file extension. The
+MSL sources are unchanged, and a Windows build compiles each family's HLSL to DXIL
+and embeds it next to the MSL source. See
+[WINDOWS_04_RENDERING_COMPATIBILITY.md](WINDOWS_04_RENDERING_COMPATIBILITY.md).
 
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
 `examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloX`,
@@ -478,16 +537,32 @@ timing, and demo geometry remain in the example that uses it.
 
 ### HelloTriangle
 
-`TriangleRenderer` owns the triangle vertex data, the triangle shader resource,
-the vertex buffer, the graphics pipeline, and the draw calls.
+`TriangleRenderer` owns the triangle vertex data, the triangle shader resources,
+the vertex buffer, the graphics pipeline, and the draw calls. It asks
+`ShaderProgram` for the assets the device's shader format needs, so it has no
+platform branch of its own.
 
-The triangle shader asset is
-`examples/HelloTriangle/Shaders/Triangle.metal`. It is embedded in the
-`HelloTriangle` assembly under `HelloTriangle.Shaders.Triangle.metal` and
-compiled from MSL source by SDL when the two shader objects are created. No
-shader compiler, Xcode build step, or generated shader artifact is required. The
+The Metal assets are `examples/HelloTriangle/Shaders/Triangle.metal`, embedded in
+the `HelloTriangle` assembly under `HelloTriangle.Shaders.Triangle.metal` and
+compiled from MSL source by SDL when the two shader objects are created. The
 vertex shader uses `[[stage_in]]` with `[[attribute]]` inputs; the fragment
-shader interpolates per-vertex colors.
+shader interpolates per-vertex colors. macOS needs no shader compiler, Xcode build
+step, or generated shader artifact.
+
+The Direct3D 12 assets are generated. `examples/HelloTriangle/Shaders/Triangle.hlsl`
+holds `VSMain` and `PSMain`, and an MSBuild target in the example's project file
+compiles them to `obj/dxil/Triangle.vert.dxil` and `Triangle.frag.dxil` with
+Microsoft's DirectX Shader Compiler, then embeds them as
+`HelloTriangle.Shaders.Triangle.vert.dxil` and `.frag.dxil`. The target runs only
+on Windows builds and recompiles when the HLSL or either output changes. The
+compiler is resolved from `DxcPath`, then an already-provisioned cache, then
+`PATH`, and otherwise downloaded from one pinned URL and verified against a
+repository-pinned SHA-256 before extraction; the cache lives under
+`%LOCALAPPDATA%`, outside the repository. This is the only shader toolchain in the
+repository, and it produces no committed artifact. See
+[WINDOWS_03_1_DXC_PROVISIONING.md](WINDOWS_03_1_DXC_PROVISIONING.md). Its HLSL uses `TEXCOORD0`/`TEXCOORD1` vertex inputs and `SV_Position`
+outputs, matching SDL3's documented Direct3D 12 semantic convention for attribute
+locations 0 and 1.
 
 Geometry is three interleaved position/color vertices in one vertex buffer. The
 buffer is uploaded once at startup through a transfer buffer and a copy pass.
@@ -520,11 +595,13 @@ geometry for each draw with its own model matrix. The central cube keeps the
 previous milestone's rotation; the other cubes stay fixed so camera movement and
 perspective are easy to judge.
 
-The cube shader asset is `examples/HelloCube/Shaders/Cube.metal`, embedded under
-`HelloCube.Shaders.Cube.metal`. The vertex shader declares one uniform buffer at
-slot 0; the example passes `uniformBufferCount: 1` to `CreateShader` and pushes
-one 64-byte model-view-projection matrix before each cube's draw call. The
-fragment shader passes the interpolated face color through.
+The cube shader assets are `examples/HelloCube/Shaders/Cube.metal`, embedded under
+`HelloCube.Shaders.Cube.metal`, and `Shaders/Cube.hlsl`, which a Windows build
+compiles to `Cube.vert.dxil` and `Cube.frag.dxil` and embeds as
+`HelloCube.Shaders.Cube.vert.dxil` and `.frag.dxil`. The vertex shader declares one
+uniform buffer at slot 0; the example passes `uniformBufferCount: 1` to
+`CreateShader` and pushes one 64-byte model-view-projection matrix before each
+cube's draw call. The fragment shader passes the interpolated face color through.
 
 The camera comes from `Nymeria.Graphics.Camera`. Its position, yaw, and pitch
 define a right-handed view with +Y up and -Z forward at zero rotation.
@@ -584,7 +661,9 @@ colors and every other label uses a neutral color. That mapping is example
 presentation only, not a material system. The shader is
 `examples/Shared/Shaders/Model.metal`, embedded under
 `Nymeria.Examples.Shaders.Model.metal`, with the same matrix convention and one
-uniform buffer as the cube shader. `ModelViewerApp` owns the window, camera,
+uniform buffer as the cube shader; `examples/Shared/Shaders/Model.hlsl` is its
+Direct3D 12 equivalent, built and embedded by `examples/Shared/ModelShaders.targets`
+in every example that uses it. `ModelViewerApp` owns the window, camera,
 frame loop, and startup error handling. The format-specific `Program.cs` files
 only handle arguments, parse the file, and report load errors.
 
@@ -698,7 +777,7 @@ while the example keeps running. A compressed DDS format the GPU cannot sample i
 reported and also falls back, using `GpuDevice.SupportsTextureFormat` before a
 frame is recorded.
 
-The example uses the existing position/normal/UV layout, MSL shader embedding,
+The example uses the existing position/normal/UV layout, shader asset selection,
 depth target, resize, minimize, frame budget, and shutdown rules. It is not a
 material pipeline: it does not parse MTL, map O3D material names, stream or
 reload textures, generate mipmaps, decompress BC blocks, or sort transparent
@@ -919,9 +998,16 @@ authoritative contract.
 
 Limitations in this version:
 
-- GPU rendering is macOS-only. It requires SDL's Metal driver and MSL shader
-  source; Windows and Linux will need their own shader formats and native
-  packages, which are not implemented.
+- GPU rendering is implemented for macOS and, through SDL3's Direct3D 12 backend,
+  for Windows. Every shader family ships MSL and build-generated DXIL, so no GPU
+  example stops at shader creation on either platform. macOS rendering is verified
+  on macOS hardware; Windows rendering is unverified because no task has run it on
+  Windows hardware, so device creation, shader acceptance, and visual output there
+  remain open acceptance items. Linux will need Vulkan with SPIR-V; that backend
+  has no policy and is rejected explicitly.
+- Windowing works on Windows. The `SDL3-CS.Windows` package deploys `SDL3.dll`
+  for `win-x64`, `win-arm64`, and `win-x86`, and `examples/HelloWindow` isolates
+  the window-only path there.
 - Apple Silicon and Intel Macs both use Metal. The macOS native package contains
   both architectures.
 - Audio playback is verified on macOS through CoreAudio. Windows and Linux audio
@@ -1118,16 +1204,19 @@ The following choices are implemented:
 - **.NET SDK and target framework:** .NET 10, targeting `net10.0`. `global.json`
   pins SDK 10.0.402 with `latestPatch` roll-forward and no prerelease SDKs.
 - **Solution format:** `Nymeria.slnx`, built with the `dotnet` CLI.
-- **Windowing:** SDL3 3.4.18 through `SDL3-CS` 3.4.18 and the macOS native
-  package `SDL3-CS.MacOS` 3.4.18.
-- **GPU rendering:** SDL3's GPU API with the Metal backend and MSL shader source,
-  reached through `SDL3-CS`. `Nymeria.Graphics` provides the reusable
-  `GpuDevice`, including buffer, RGBA and block-compressed texture, sampler, and
-  shader creation; the
-  examples embed their own `.metal` files; `HelloOBJ` and `HelloO3D` share
-  `examples/Shared/Shaders/Model.metal`, and `HelloMaterials` and `HelloLighting`
-  share `examples/Shared/Shaders/Material.metal`, compiled by SDL at runtime. No
-  direct Metal interop or shader compiler is used.
+- **Windowing:** SDL3 3.4.18 through `SDL3-CS` 3.4.18 and the native packages
+  `SDL3-CS.MacOS` 3.4.18 and `SDL3-CS.Windows` 3.4.18.
+- **GPU rendering:** SDL3's GPU API reached through `SDL3-CS`, with the backend
+  chosen from the shader format the platform provides: Metal with MSL source on
+  macOS and Direct3D 12 with DXIL on Windows. `Nymeria.Graphics` provides the
+  reusable `GpuDevice`, including buffer, RGBA and block-compressed texture,
+  sampler, and shader creation, and `ShaderProgram` maps a family name to the
+  assets the device's format needs. Every example embeds its MSL source, which SDL
+  compiles at startup; `HelloOBJ`, `HelloO3D`, `HelloX`, and `HelloScene` share
+  `examples/Shared/Shaders/Model.metal`, and the material examples share
+  `examples/Shared/Shaders/Material.metal`. A Windows build compiles each family's
+  HLSL to DXIL with the provisioned DirectX Shader Compiler, so no shader is
+  compiled at runtime. No direct Metal or Direct3D 12 interop is used.
 - **Math:** `System.Numerics` vectors, quaternions, and matrices, with no custom
   math library. `Camera` uses it for yaw/pitch view and projection math.
   `Transform` uses it for normalized quaternion rotation and row-vector
@@ -1261,10 +1350,11 @@ The following choices are implemented:
 
 The following choices remain open:
 
-- **Additional platforms and backends:** Windows and Linux rendering, their
-  native SDL3 packages, and the shader formats those backends require are not
-  implemented. Audio playback uses SDL3's portable API but has only been verified
-  on macOS; Windows and Linux audio device testing remains open.
+- **Additional platforms and backends:** Linux rendering, its native SDL3
+  package, and Vulkan/SPIR-V shaders are not implemented. Windows rendering is
+  implemented but unverified on Windows hardware. Audio playback uses SDL3's
+  portable API but has only been verified on macOS; Windows and Linux audio device
+  testing remains open.
 - **Further O3D features:** scrambled vertices, bones, animation, and material
   rendering are not implemented and require a separate decision.
 
@@ -1285,8 +1375,9 @@ Nymeria follows KISS (Keep It Simple) and YAGNI (You Aren't Gonna Need It):
 
 ### Repository checks
 
-`.github/workflows/repository-checks.yml` runs on pushes and pull requests to
-`main` with two jobs:
+`.github/workflows/repository-checks.yml` runs on pushes to `main` and to the
+Windows development branches (`Windows_DirectX`, `Windows`), and on pull requests
+to `main`, with two jobs:
 
 - **Repository checks** on `ubuntu-latest` verifies required files and
   directories, ensures no `bin/` or `obj/` output is tracked, resolves relative
@@ -1294,7 +1385,10 @@ Nymeria follows KISS (Keep It Simple) and YAGNI (You Aren't Gonna Need It):
   and NuGet ecosystems.
 - **.NET** runs a `macos-latest`, `windows-latest`, and `ubuntu-latest` matrix.
   Each runner restores `Nymeria.slnx`, builds it in Release configuration, and
-  runs the headless unit tests. No GUI is launched in CI.
+  runs the headless unit tests. No GUI is launched in CI. The Windows build
+  provisions the pinned DirectX Shader Compiler and compiles the HLSL shader
+  families to DXIL; macOS and Linux never download it. See
+  [WINDOWS_06_CI_STABILIZATION.md](WINDOWS_06_CI_STABILIZATION.md).
 
 Both jobs use read-only repository permissions. The workflow is named
 `Repository checks`, so Dependabot auto-merge waits for every matrix leg and the

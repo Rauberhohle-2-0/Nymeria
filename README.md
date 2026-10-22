@@ -27,7 +27,7 @@ interactive, depth-tested cube scene.
   sampling and a per-object playback controller,
   ambient and single-directional lighting data with Lambert diffuse shading,
   `Nymeria.Graphics` with reusable
-  Metal GPU device infrastructure and camera math, `examples/HelloTriangle`, the
+  SDL3 GPU device infrastructure and camera math, `examples/HelloTriangle`, the
   interactive `examples/HelloCube`, the OBJ-rendering `examples/HelloOBJ`, the
   O3D-rendering `examples/HelloO3D`, the text-`.x`-rendering `examples/HelloX`,
   the scene-instancing `examples/HelloScene`, the textured and solid-material
@@ -38,6 +38,7 @@ interactive, depth-tested cube scene.
   `examples/HelloCollision`, the audio and spatial-sound `examples/HelloAudio`,
   the transform-animation `examples/HelloAnimation`,
   the CPU-profiling `examples/HelloBenchmark`,
+  the window-only `examples/HelloWindow`,
   bounded frame-timing diagnostics, headless mesh-bounds, visibility, LOD,
   streaming, raycasting, collision, audio, and animation helpers,
   platform-independent unit tests,
@@ -46,18 +47,41 @@ interactive, depth-tested cube scene.
   updates for GitHub Actions and NuGet.
 - **Planned later:** engine-level input, the engine loop, further O3D features
   (scrambled vertices, bones, animation, and material rendering), additional
-  graphics backends, and Windows/Linux rendering. See
+  graphics backends, and Linux/Vulkan rendering. Windows Direct3D 12 rendering is
+  implemented and its build and tests are verified in CI, while its visual
+  correctness is validated manually on Windows hardware. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the authoritative distinction.
 
-## Prerequisites (macOS)
+## Prerequisites
 
-- macOS 12 or newer on Apple Silicon or Intel.
 - [.NET SDK 10.0.402](https://dotnet.microsoft.com/download/dotnet/10.0).
   `global.json` pins this SDK with patch-level roll-forward.
 
+macOS:
+
+- macOS 12 or newer on Apple Silicon or Intel.
+
+Windows:
+
+- Windows 10 or newer on x64, x86, or arm64, with a Direct3D 12-capable graphics
+  driver for the GPU examples. Every GPU example ships Direct3D 12 DXIL bytecode
+  generated from HLSL at build time. A clean Windows restore, build, and headless
+  test run is verified in CI on every push to this branch; actual Direct3D 12
+  rendering still needs a Windows machine with a GPU and is validated manually. See
+  [docs/WINDOWS_04_RENDERING_COMPATIBILITY.md](docs/WINDOWS_04_RENDERING_COMPATIBILITY.md)
+  and [docs/WINDOWS_06_CI_STABILIZATION.md](docs/WINDOWS_06_CI_STABILIZATION.md).
+- No shader compiler installation is required. The first Windows build that
+  compiles HLSL downloads a pinned, checksum-verified DirectX Shader Compiler into
+  `%LOCALAPPDATA%\Nymeria\dxc` and reuses it afterwards; an installed `dxc` on
+  `PATH` is preferred when present, and `-p:DxcPath=<path to dxc.exe>` overrides
+  both. See
+  [docs/WINDOWS_03_HLSL_DXIL_SHADERS.md](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md)
+  and
+  [docs/WINDOWS_03_1_DXC_PROVISIONING.md](docs/WINDOWS_03_1_DXC_PROVISIONING.md).
+
 No Homebrew SDL installation, Xcode installation, or manual native-library
-download is required. NuGet restores the pinned SDL3 binding and its macOS native
-`libSDL3.dylib` for the current architecture.
+download is required. NuGet restores the pinned SDL3 binding and the native
+`libSDL3.dylib` or `SDL3.dll` for the current platform and architecture.
 
 Verify the SDK:
 
@@ -75,6 +99,8 @@ From the repository root:
 dotnet restore Nymeria.slnx
 dotnet build Nymeria.slnx
 dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
+dotnet run --project examples/HelloWindow/HelloWindow.csproj
+dotnet run --project examples/HelloWindow/HelloWindow.csproj -- --smoke
 dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
@@ -97,7 +123,10 @@ dotnet run --project examples/HelloPicking/HelloPicking.csproj
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj --configuration Release -- --instances 2048
 ```
 
-A resizable native window titled `Nymeria` opens at 960 × 540. `HelloTriangle`
+A resizable native window titled `Nymeria` opens at 960 × 540. `HelloWindow`
+opens only the window, prints its logical and drawable sizes, and pumps events
+without drawing anything; pass `--smoke` to pump a fixed number of events and
+exit without user input. `HelloTriangle`
 draws one red/green/blue triangle. `HelloCube` draws seven cubes at fixed
 positions with perspective projection and depth testing, plus a free-fly camera.
 `HelloOBJ` loads its checked-in cube fixture and renders it through the same
@@ -151,15 +180,20 @@ standard macOS quit shortcut (`Cmd+Q`). The command exits with status code `0`
 on a normal shutdown.
 
 The startup path prints an actionable error and exits with status code `1` if the
-native SDL3 library is missing or mismatched, SDL initialization fails, the Metal
-GPU backend is unavailable, the window cannot be created or claimed, a shader or
-pipeline cannot be created, or the OBJ/O3D/`.x` example cannot read or parse its
-file.
+native SDL3 library is missing or mismatched, SDL initialization fails, the GPU
+backend or its shader format is unavailable, the window cannot be created or
+claimed, a shader or pipeline cannot be created, or the OBJ/O3D/`.x` example
+cannot read or parse its file.
 
 ### GPU examples
 
-The GPU examples use SDL3's GPU API on the Metal backend. There is no direct
-Metal interop and no software fallback. `Nymeria.Graphics` provides the reusable
+The GPU examples use SDL3's GPU API. `GpuDevice` takes the shader format from the
+platform's backend policy and lets SDL select the driver, so macOS uses Metal
+with MSL source and Windows requests Direct3D 12 with DXIL. `ShaderProgram`
+then selects the embedded shader asset for the format the device reports, so a
+renderer never branches on the operating system. There is no direct Metal or
+Direct3D 12 interop and no software fallback. `Nymeria.Graphics`
+provides the reusable
 GPU device and the `Camera` math type; `Nymeria.Core` provides the model data
 used by `HelloCube` and the scene data used by `HelloScene`;
 `Nymeria.Formats.Obj` parses the file used by `HelloOBJ`,
@@ -192,9 +226,11 @@ LOD comparison and CPU timing baseline described in
 The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/HelloCube/Shaders/Cube.metal`, the shared
 `examples/Shared/Shaders/Model.metal`, and
-`examples/Shared/Shaders/Material.metal`. They are embedded into their
-examples and compiled from Metal Shading Language source by SDL at startup. No
-shader compiler or Xcode build step is required.
+`examples/Shared/Shaders/Material.metal`. On macOS they are embedded into their
+examples and compiled from Metal Shading Language source by SDL at startup, so no
+shader compiler or Xcode build step is required. Each family also has an HLSL
+equivalent that a Windows build compiles to DXIL; see
+[docs/WINDOWS_04_RENDERING_COMPATIBILITY.md](docs/WINDOWS_04_RENDERING_COMPATIBILITY.md).
 
 `HelloTriangle` draws a frame, then waits up to 100 ms for window events before
 drawing again, so idle redraws stay near ten per second. It renders in a centered
@@ -329,8 +365,17 @@ All fourteen interactive examples skip rendering while minimized and recover
 when a drawable is available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
-This path is macOS-only for now. Windows and Linux need their own native SDL3
-packages and shader formats; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The GPU path renders on macOS through Metal. On Windows it requests Direct3D 12
+with DXIL for every shader family, generated from HLSL during the build, so no
+GPU example is limited to macOS by a missing shader. Windows rendering itself is
+unverified: no task has run it on Windows hardware. Windows also deploys the
+native `SDL3.dll` and runs the window-only `HelloWindow` example without a shader
+compiler. Linux is unsupported and ships no native package. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
+[docs/WINDOWS_01_NATIVE_SDL3.md](docs/WINDOWS_01_NATIVE_SDL3.md),
+[docs/WINDOWS_02_D3D12_BACKEND.md](docs/WINDOWS_02_D3D12_BACKEND.md),
+[docs/WINDOWS_03_HLSL_DXIL_SHADERS.md](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md), and
+[docs/WINDOWS_04_RENDERING_COMPATIBILITY.md](docs/WINDOWS_04_RENDERING_COMPATIBILITY.md).
 GPU output is validated manually with [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md),
 not in CI.
 
@@ -387,10 +432,10 @@ src/formats/    Nymeria.Formats.Obj, O3d, DirectX, Png, Tga, Jpeg, Dds, Bmp,
                 Textures, and Wav
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
-examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloX, HelloScene,
-                HelloMaterials, HelloLighting, HelloCulling, HelloCollision,
-                HelloAudio, HelloAnimation, HelloLOD, HelloStreaming,
-                HelloPicking, and HelloBenchmark
+examples/       HelloTriangle, HelloWindow, HelloCube, HelloOBJ, HelloO3D, HelloX,
+                HelloScene, HelloMaterials, HelloLighting, HelloCulling,
+                HelloCollision, HelloAudio, HelloAnimation, HelloLOD,
+                HelloStreaming, HelloPicking, and HelloBenchmark
 tests/          Headless unit tests for audio, core, formats, and platform
                 projects
 ```
@@ -419,18 +464,29 @@ tests/          Headless unit tests for audio, core, formats, and platform
 - [Security checklist](docs/SECURITY_CHECKLIST.md)
 - [Security audit 01](docs/SECURITY_AUDIT_01.md)
 - [Security audit 02](docs/SECURITY_AUDIT_02.md)
+- [Windows native SDL3 deployment](docs/WINDOWS_01_NATIVE_SDL3.md)
+- [Windows Direct3D 12 backend selection](docs/WINDOWS_02_D3D12_BACKEND.md)
+- [Windows HLSL and DXIL shaders](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md)
+- [Windows DXC toolchain provisioning](docs/WINDOWS_03_1_DXC_PROVISIONING.md)
+- [Windows Direct3D 12 rendering compatibility](docs/WINDOWS_04_RENDERING_COMPATIBILITY.md)
+- [Windows engine feature compatibility](docs/WINDOWS_05_ENGINE_FEATURE_COMPATIBILITY.md)
+- [Windows CI and stabilization](docs/WINDOWS_06_CI_STABILIZATION.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)
 - [Agent instructions](AGENTS.md)
 
 ## Repository automation
 
-The `Repository checks` GitHub Actions workflow runs on pushes and pull requests
-to `main`. One job validates the repository foundation, including Markdown links,
-tracked build output, and Dependabot configuration. A second job restores, builds,
-and runs the headless unit tests on macOS, Windows, and Linux. GUI, GPU, and audio
-device output are not launched or validated in CI; window, GPU, and audio-device
-behavior is covered by the manual smoke test.
+The `Repository checks` GitHub Actions workflow runs on pushes to `main` and to
+the Windows development branches (`Windows_DirectX`, `Windows`), and on pull
+requests targeting `main`. One job validates the repository foundation, including
+Markdown links, tracked build output, and Dependabot configuration. A second job
+restores, builds, and runs the headless unit tests on macOS, Windows, and Linux;
+on Windows it also provisions the pinned DirectX Shader Compiler and compiles the
+HLSL to DXIL. GUI, GPU, and audio device output are not launched or validated in
+CI; window, GPU, and audio-device behavior is covered by the manual smoke test.
+[WINDOWS_06_CI_STABILIZATION.md](docs/WINDOWS_06_CI_STABILIZATION.md) records what
+the Windows job verifies and what still needs hardware.
 
 Dependabot checks GitHub Actions and NuGet weekly and opens update pull requests.
 The existing `Dependabot auto-merge` workflow squash-merges a Dependabot pull

@@ -7,10 +7,12 @@ namespace Nymeria.Graphics;
 /// Owns an SDL3 GPU device and the presentation claim for one native window.
 /// </summary>
 /// <remarks>
-/// Nymeria currently uses SDL's Metal backend and Metal Shading Language (MSL)
-/// source, which SDL compiles when shader objects are created. Creating, using,
-/// and disposing a device must happen on the process main thread. The window
-/// must outlive the device.
+/// The backend follows <see cref="GpuBackendSelection"/>: SDL's Metal driver with
+/// Metal Shading Language (MSL) source on macOS, and SDL's Direct3D 12 driver with
+/// DXIL bytecode on Windows. <see cref="DriverName"/> and
+/// <see cref="ShaderFormat"/> report what the created device actually uses rather
+/// than what was requested. Creating, using, and disposing a device must happen
+/// on the process main thread. The window must outlive the device.
 /// </remarks>
 public sealed class GpuDevice : IDisposable
 {
@@ -33,11 +35,18 @@ public sealed class GpuDevice : IDisposable
     private readonly IntPtr _handle;
     private bool _disposed;
 
-    private GpuDevice(IntPtr window, IntPtr handle, SDL.GPUTextureFormat swapchainFormat)
+    private GpuDevice(
+        IntPtr window,
+        IntPtr handle,
+        SDL.GPUTextureFormat swapchainFormat,
+        string? driverName,
+        SDL.GPUShaderFormat shaderFormat)
     {
         _window = window;
         _handle = handle;
         SwapchainFormat = swapchainFormat;
+        DriverName = driverName;
+        ShaderFormat = shaderFormat;
     }
 
     /// <summary>
@@ -60,13 +69,35 @@ public sealed class GpuDevice : IDisposable
     public SDL.GPUTextureFormat SwapchainFormat { get; }
 
     /// <summary>
-    /// Creates a Metal GPU device and claims the window for presentation.
+    /// Gets the name of the SDL3 GPU driver that created this device, for example
+    /// <c>metal</c> or <c>direct3d12</c>.
+    /// </summary>
+    public string? DriverName { get; }
+
+    /// <summary>
+    /// Gets the shader format this device accepts and that shaders must be created
+    /// with: <see cref="SDL.GPUShaderFormat.MSL"/> on a Metal device and
+    /// <see cref="SDL.GPUShaderFormat.DXIL"/> on a Direct3D 12 device.
+    /// </summary>
+    /// <remarks>
+    /// This is the bytecode format validated against
+    /// <c>SDL_GetGPUShaderFormats</c> after creation, not merely the format that
+    /// was requested. Callers must supply shader bytes in this format;
+    /// <see cref="CreateShader(byte[], SDL.GPUShaderFormat, SDL.GPUShaderStage,
+    /// string, uint, uint)"/> rejects a mismatch instead of relabelling bytes.
+    /// </remarks>
+    public SDL.GPUShaderFormat ShaderFormat { get; }
+
+    /// <summary>
+    /// Creates a GPU device for the host platform and claims the window for
+    /// presentation.
     /// </summary>
     /// <param name="window">The native <c>SDL_Window*</c> handle to render into.</param>
     /// <exception cref="ArgumentException">The window handle is zero.</exception>
     /// <exception cref="InvalidOperationException">
-    /// The call is not on the main thread, the Metal backend is unavailable, or
-    /// device creation fails.
+    /// The call is not on the main thread, the platform has no implemented GPU
+    /// backend, no SDL3 GPU driver accepts the platform's shader format, device
+    /// creation fails, or the created device does not match the platform policy.
     /// </exception>
     public static GpuDevice Create(IntPtr window)
     {
@@ -82,20 +113,70 @@ public sealed class GpuDevice : IDisposable
                 "Call GpuDevice.Create from Main, not from a worker thread.");
         }
 
-        if (!SDL.GPUSupportsShaderFormats(SDL.GPUShaderFormat.MSL, "metal"))
+        GpuBackendSelection.HostPlatform platform = GpuBackendSelection.CurrentPlatform;
+
+        if (!GpuBackendSelection.TrySelectPolicy(
+                platform,
+                out GpuBackendSelection.GpuBackendPolicy policy))
         {
             throw new InvalidOperationException(
-                "The SDL3 Metal GPU backend is unavailable. Nymeria currently requires " +
-                "a Metal-capable Mac and the SDL3 Metal driver. " +
-                $"SDL error: {SDL.GetError()}");
+                GpuBackendSelection.CreateUnsupportedPlatformMessage(platform));
         }
 
-        IntPtr device = SDL.CreateGPUDevice(SDL.GPUShaderFormat.MSL, false, "metal");
+        // A null driver name asks SDL to choose the backend. The requested shader
+        // format then constrains that choice to the driver consuming it, so SDL
+        // selects Metal from MSL on macOS and Direct3D 12 from DXIL on Windows
+        // without Nymeria naming a driver. The result is verified below.
+        if (!SDL.GPUSupportsShaderFormats(policy.ShaderFormats, null!))
+        {
+            throw new InvalidOperationException(
+                GpuBackendSelection.CreateNoBackendMessage(
+                    platform,
+                    policy,
+                    DescribeAvailableDrivers(),
+                    SDL.GetError()));
+        }
+
+        IntPtr device = SDL.CreateGPUDevice(policy.ShaderFormats, false, null!);
 
         if (device == IntPtr.Zero)
         {
             throw new InvalidOperationException(
-                $"SDL could not create a Metal GPU device: {SDL.GetError()}");
+                GpuBackendSelection.CreateDeviceCreationFailureMessage(
+                    platform,
+                    policy,
+                    DescribeAvailableDrivers(),
+                    SDL.GetError()));
+        }
+
+        // Trust the created device, not the request or the operating system. A
+        // device reporting another driver, or lacking the policy format, is
+        // destroyed before it claims the window or builds any resource.
+        string? driverName = SDL.GetGPUDeviceDriver(device);
+        SDL.GPUShaderFormat deviceFormats = SDL.GetGPUShaderFormats(device);
+
+        if (!string.Equals(driverName, policy.DriverName, StringComparison.Ordinal))
+        {
+            SDL.DestroyGPUDevice(device);
+
+            throw new InvalidOperationException(
+                GpuBackendSelection.CreateDriverMismatchMessage(
+                    platform,
+                    policy,
+                    driverName,
+                    deviceFormats));
+        }
+
+        if (!GpuBackendSelection.Contains(deviceFormats, policy.ShaderFormat))
+        {
+            SDL.DestroyGPUDevice(device);
+
+            throw new InvalidOperationException(
+                GpuBackendSelection.CreateDeviceFormatMismatchMessage(
+                    platform,
+                    policy,
+                    driverName,
+                    deviceFormats));
         }
 
         bool isWindowClaimed = false;
@@ -113,7 +194,12 @@ public sealed class GpuDevice : IDisposable
             SDL.GPUTextureFormat swapchainFormat =
                 SDL.GetGPUSwapchainTextureFormat(device, window);
 
-            return new GpuDevice(window, device, swapchainFormat);
+            return new GpuDevice(
+                window,
+                device,
+                swapchainFormat,
+                driverName,
+                policy.ShaderFormat);
         }
         catch
         {
@@ -142,13 +228,63 @@ public sealed class GpuDevice : IDisposable
     /// count for fragment or vertex sampler bindings.
     /// </param>
     /// <returns>The native <c>SDL_GPUShader*</c> handle.</returns>
-    /// <exception cref="InvalidOperationException">Shader creation fails.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The device does not use the MSL shader format, or shader creation fails.
+    /// </exception>
+    /// <remarks>
+    /// The caller owns the returned shader and must release it before disposing
+    /// this device. This overload is the MSL convenience form of
+    /// <see cref="CreateShader(byte[], SDL.GPUShaderFormat, SDL.GPUShaderStage,
+    /// string, uint, uint)"/>.
+    /// </remarks>
+    public IntPtr CreateShader(
+        byte[] shaderCode,
+        SDL.GPUShaderStage stage,
+        string entryPoint,
+        uint uniformBufferCount = 0,
+        uint samplerCount = 0)
+    {
+        return CreateShader(
+            shaderCode,
+            SDL.GPUShaderFormat.MSL,
+            stage,
+            entryPoint,
+            uniformBufferCount,
+            samplerCount);
+    }
+
+    /// <summary>
+    /// Creates a shader from code in an explicitly declared shader format.
+    /// </summary>
+    /// <param name="shaderCode">
+    /// The shader bytes encoded in <paramref name="codeFormat"/>.
+    /// </param>
+    /// <param name="codeFormat">
+    /// The format the bytes are actually in. It must equal <see cref="ShaderFormat"/>
+    /// so that shader bytes are never relabelled to fit a device.
+    /// </param>
+    /// <param name="stage">The shader stage to create.</param>
+    /// <param name="entryPoint">The function name to use.</param>
+    /// <param name="uniformBufferCount">
+    /// The number of uniform buffers declared by the shader. SDL uses this
+    /// count to bind data pushed with <c>SDL_PushGPU*UniformData</c>.
+    /// </param>
+    /// <param name="samplerCount">
+    /// The number of texture samplers declared by the shader. SDL uses this
+    /// count for fragment or vertex sampler bindings.
+    /// </param>
+    /// <returns>The native <c>SDL_GPUShader*</c> handle.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The declared shader format does not match the device, or shader creation
+    /// fails.
+    /// </exception>
     /// <remarks>
     /// The caller owns the returned shader and must release it before disposing
     /// this device.
     /// </remarks>
     public IntPtr CreateShader(
         byte[] shaderCode,
+        SDL.GPUShaderFormat codeFormat,
         SDL.GPUShaderStage stage,
         string entryPoint,
         uint uniformBufferCount = 0,
@@ -158,11 +294,20 @@ public sealed class GpuDevice : IDisposable
         ArgumentNullException.ThrowIfNull(shaderCode);
         ArgumentException.ThrowIfNullOrEmpty(entryPoint);
 
+        if (!GpuBackendSelection.AcceptsShaderCode(ShaderFormat, codeFormat))
+        {
+            throw new InvalidOperationException(
+                GpuBackendSelection.CreateShaderCodeMismatchMessage(
+                    DriverName,
+                    ShaderFormat,
+                    codeFormat));
+        }
+
         IntPtr shader = SDL.CreateGPUShader(
             _handle,
             new SDL.GPUShaderCreateInfo
             {
-                Format = SDL.GPUShaderFormat.MSL,
+                Format = codeFormat,
                 Stage = stage,
                 NumUniformBuffers = uniformBufferCount,
                 NumSamplers = samplerCount,
@@ -173,10 +318,35 @@ public sealed class GpuDevice : IDisposable
         if (shader == IntPtr.Zero)
         {
             throw new InvalidOperationException(
-                $"SDL could not create the {stage} shader '{entryPoint}': {SDL.GetError()}");
+                $"SDL could not create the {stage} " +
+                $"{GpuBackendSelection.DescribeFormat(codeFormat)} shader " +
+                $"'{entryPoint}' on the '{DriverName ?? "unknown"}' backend: " +
+                SDL.GetError());
         }
 
         return shader;
+    }
+
+    /// <summary>
+    /// Lists the SDL3 GPU drivers compiled into the loaded SDL library, for the
+    /// failure diagnostics above.
+    /// </summary>
+    private static IReadOnlyList<string> DescribeAvailableDrivers()
+    {
+        var drivers = new List<string>();
+        int driverCount = SDL.GetNumGPUDrivers();
+
+        for (int index = 0; index < driverCount; index++)
+        {
+            string? driver = SDL.GetGPUDriver(index);
+
+            if (!string.IsNullOrWhiteSpace(driver))
+            {
+                drivers.Add(driver);
+            }
+        }
+
+        return drivers;
     }
 
     /// <summary>

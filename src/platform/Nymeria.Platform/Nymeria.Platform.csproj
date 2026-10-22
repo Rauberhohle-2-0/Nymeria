@@ -6,10 +6,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Task 02 ships and validates only the macOS native SDL3 runtime.
-         Windows and Linux native packages are added when those platforms are supported. -->
+    <!-- The managed SDL3 binding and the native runtimes. SDL3-CS itself ships
+         no native binary, so each supported platform needs its own native
+         package; without one the process fails at the first SDL call with
+         "Unable to load DLL 'SDL3'". The native packages are RID-scoped runtime
+         assets, so they coexist in a portable build and the host resolves the
+         matching one. Linux is still unsupported and has no native package here. -->
     <PackageReference Include="SDL3-CS" Version="3.4.18" />
     <PackageReference Include="SDL3-CS.MacOS" Version="3.4.18" />
+    <PackageReference Include="SDL3-CS.Windows" Version="3.4.18" />
   </ItemGroup>
 
 </Project>

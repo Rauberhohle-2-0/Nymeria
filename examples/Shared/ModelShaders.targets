@@ -1,0 +1,49 @@
+<Project>
+
+  <!--
+    DXIL assets for the shared model shader family
+    (examples/Shared/Shaders/Model.hlsl).
+
+    Every example that draws with ModelRenderer or SceneRenderer embeds this one
+    family under the logical prefix `Nymeria.Examples.Shaders.Model`, so import
+    this file at the end of the example's project file instead of repeating the
+    DXIL items:
+
+      <Import Project="../Shared/ModelShaders.targets" />
+
+    The MSL source (`Shaders/Model.metal`) is declared by each example and is
+    unchanged; this file adds only the generated Direct3D 12 bytecode and the
+    compile steps that produce it. See docs/WINDOWS_04_RENDERING_COMPATIBILITY.md.
+
+    DXIL generation is gated on a Windows build, so a macOS build declares no
+    DXIL resource and runs no shader compiler. Output goes to the project's own
+    intermediate directory and is never committed.
+  -->
+
+  <PropertyGroup>
+    <DxilShaderOutputDirectory Condition="'$(DxilShaderOutputDirectory)' == ''">$([System.IO.Path]::Combine('$(BaseIntermediateOutputPath)', 'dxil'))</DxilShaderOutputDirectory>
+    <DxilShadersEnabled Condition="'$(DxilShadersEnabled)' == '' and '$(OS)' == 'Windows_NT' and '$(DesignTimeBuild)' != 'true'">true</DxilShadersEnabled>
+    <DxilShadersEnabled Condition="'$(DxilShadersEnabled)' == ''">false</DxilShadersEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(DxilShadersEnabled)' == 'true'">
+    <EmbeddedResource Include="$(DxilShaderOutputDirectory)/Model.vert.dxil"
+                      LogicalName="Nymeria.Examples.Shaders.Model.vert.dxil" />
+    <EmbeddedResource Include="$(DxilShaderOutputDirectory)/Model.frag.dxil"
+                      LogicalName="Nymeria.Examples.Shaders.Model.frag.dxil" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(DxilShadersEnabled)' == 'true'">
+    <NymeriaHlslShader Include="$(MSBuildThisFileDirectory)Shaders/Model.hlsl"
+                       Profile="vs_6_0"
+                       EntryPoint="VSMain"
+                       OutputName="Model.vert.dxil" />
+    <NymeriaHlslShader Include="$(MSBuildThisFileDirectory)Shaders/Model.hlsl"
+                       Profile="ps_6_0"
+                       EntryPoint="PSMain"
+                       OutputName="Model.frag.dxil" />
+  </ItemGroup>
+
+  <Import Project="$(MSBuildThisFileDirectory)DxilShaders.targets" />
+
+</Project>

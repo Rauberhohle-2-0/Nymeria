@@ -1,8 +1,10 @@
-# macOS Manual Smoke Test: Window, GPU, and Audio Examples
+# Manual Smoke Test: Window, GPU, and Audio Examples
 
-This checklist validates behavior that headless CI cannot verify. Run it on a
-macOS machine after the solution builds. Record the macOS version, CPU
-architecture, GPU model, audio output device, and date with the result.
+This checklist validates behavior that headless CI cannot verify. Run the macOS
+sections on a macOS machine and the
+[Windows section](#windows-smoke-test) on a Windows machine. Record the macOS
+version, CPU architecture, GPU model, audio output device, and date with the
+result.
 
 ## Setup
 
@@ -34,17 +36,165 @@ The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `examples/HelloCube/Shaders/Cube.metal`, the shared
 `examples/Shared/Shaders/Model.metal`, and the shared
 `examples/Shared/Shaders/Material.metal`. The model shader is embedded in
-`HelloOBJ`, `HelloO3D`, and `HelloScene` as
+`HelloOBJ`, `HelloO3D`, `HelloX`, and `HelloScene` as
 `Nymeria.Examples.Shaders.Model.metal`; the material shader is embedded in
 `HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloLOD`,
-`HelloStreaming`, `HelloPicking`, `HelloAudio`, and `HelloAnimation` as
-`Nymeria.Examples.Shaders.Material.metal`. Shaders are
-embedded in their examples and compiled by SDL's Metal backend at startup, so
-there is no shader compiler step and no external shader file to deploy.
+`HelloStreaming`, `HelloPicking`, `HelloAudio`, `HelloAnimation`, and
+`HelloBenchmark` as `Nymeria.Examples.Shaders.Material.metal`. On macOS those MSL
+sources are embedded in their examples and compiled by SDL's Metal backend at
+startup, so there is no shader compiler step and no external shader file to
+deploy.
+
+Each family also ships an HLSL equivalent (`Triangle.hlsl`, `Cube.hlsl`,
+`Shared/Shaders/Model.hlsl`, and `Shared/Shaders/Material.hlsl`). A **Windows**
+build compiles them to DXIL with the provisioned DirectX Shader Compiler and
+embeds one `.vert.dxil` and one `.frag.dxil` per family, so every GPU example has
+bytecode for Direct3D 12. That compiler runs only on Windows, uses the
+checksum-verified compiler the build provisions (or `dxc` on `PATH`, or
+`-p:DxcPath=<path to dxc.exe>`), and produces no committed artifact. macOS still
+needs no shader compiler. See
+[WINDOWS_03_HLSL_DXIL_SHADERS.md](WINDOWS_03_HLSL_DXIL_SHADERS.md) and
+[WINDOWS_04_RENDERING_COMPATIBILITY.md](WINDOWS_04_RENDERING_COMPATIBILITY.md).
 
 Run each interactive example checklist separately. The failure-path checks at
 the end apply to all fourteen interactive examples; `HelloBenchmark` has its own
 automated checks below.
+
+## Windows smoke test
+
+This section validates native SDL3 deployment, window creation, and the Windows
+render path. `GpuDevice` selects Direct3D 12 with DXIL, and every shader family
+supplies DXIL generated from HLSL at build time, so every GPU example is expected
+to draw.
+
+**The Windows build and headless tests are verified in CI; Windows rendering is
+not.** The `windows-latest` job restores, builds, and tests the solution, which
+provisions the pinned DirectX Shader Compiler and compiles every HLSL shader
+family to DXIL. No task has yet run a GPU example on Windows hardware, so shader
+acceptance by the driver, visual output, audio playback, and input remain manual
+checks. [WINDOWS_04_RENDERING_COMPATIBILITY.md](WINDOWS_04_RENDERING_COMPATIBILITY.md)
+and [WINDOWS_06_CI_STABILIZATION.md](WINDOWS_06_CI_STABILIZATION.md) record
+exactly what was and was not executed. Treat the rendering checks below as the
+expected behavior to confirm, not as a recorded result.
+
+Setup:
+
+1. **Build.** From the repository root run `dotnet build Nymeria.slnx`. It must
+   report no warnings and no errors. The build compiles
+   `examples/HelloTriangle/Shaders/Triangle.hlsl` to DXIL; on a machine without a
+   shader compiler it downloads a pinned, checksum-verified DirectX Shader
+   Compiler once (about 32 MB) and prints a `Nymeria:` line naming the compiler it
+   used. Later builds reuse the cache. An installed `dxc` on `PATH` or
+   `-p:DxcPath=<path to dxc.exe>` takes precedence; see
+   [WINDOWS_03_1_DXC_PROVISIONING.md](WINDOWS_03_1_DXC_PROVISIONING.md) if the
+   download is blocked.
+2. **Native library is deployed.** Confirm that
+   `examples/HelloWindow/bin/Debug/net10.0/runtimes/win-x64/native/SDL3.dll`
+   exists (use `win-arm64` or `win-x86` on those architectures), or that
+   `SDL3.dll` sits beside `HelloWindow.exe` after
+   `dotnet build -r win-x64`.
+3. **Run the checks below.**
+
+### HelloWindow checks
+
+1. **Smoke run passes.** Run
+   `dotnet run --project examples/HelloWindow/HelloWindow.csproj -- --smoke`.
+   The console prints one `host:` line, one `window:` line, `event pump: 30
+   cycles`, and `window smoke test passed`. No `DllNotFoundException` or
+   `BadImageFormatException` appears, and a normal exit reports status code `0`.
+2. **Reported sizes are plausible.** The `window:` line shows `960x540 logical`
+   and a drawable size of 960 × 540 at 100% display scaling, or a larger value
+   at higher scaling.
+3. **Interactive run works.** Run the example with no arguments. The window
+   appears, resizes, and stays responsive. Closing it prints
+   `window closed by the user` and exits with status code `0`.
+4. **No native copy is required.** Run the example from a clean build without
+   placing any DLL in the output directory by hand.
+
+### HelloTriangle checks on Windows
+
+1. **The device uses Direct3D 12 with DXIL.** Running
+   `dotnet run --project examples/HelloTriangle/HelloTriangle.csproj` must not
+   report a Metal, driver, format, or device-creation failure.
+2. **The triangle renders.** A window opens containing one triangle with a red top
+   corner and green and blue bottom corners on the dark clear color. There is no
+   shader or pipeline creation error. Resizing keeps the triangle centered and
+   proportional, and closing the window exits with status code `0` and no error
+   output. A failure naming DXIL at shader creation is the W03 integration point
+   to report, not the expected state.
+3. **Every other GPU example reaches its render loop.** Run `HelloCube`,
+   `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
+   `HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, `HelloPicking`,
+   `HelloCollision`, `HelloAnimation`, `HelloAudio`, and `HelloBenchmark`. None
+   may fail at shader or pipeline creation, and each must show the geometry its
+   section of this document describes. A message naming `direct3d12`, DXIL, or a
+   rejected shader is the W04 integration point to report.
+4. **Run the per-example checklists below on Windows.** They use macOS-specific
+   key names in a few places (`Cmd+Q`, Retina, Activity Monitor); use the Windows
+   equivalents (`Alt+F4`, display scaling, Task Manager). The rendering checks
+   themselves apply unchanged to Direct3D 12.
+
+### Windows engine feature checks
+
+These checks cover the features W05 verifies. They run the existing examples; no
+extra tooling or SDK is needed. Record the Windows version, CPU architecture, GPU,
+driver (OS driver and `GpuDevice.DriverName`), audio playback device, and date
+with each result, and use `PASS` / `FAIL` / `NOT RUN` rather than prose.
+
+1. **Headless suite.** From the repository root run
+   `dotnet test Nymeria.slnx --configuration Release`. Expect **1120 passed, 2
+   skipped, 0 failed**; the two skips are the device-dependent audio integration
+   tests, which are skipped on every platform. A failure here is a W05 finding.
+2. **Scene and transforms.** `dotnet run --project examples/HelloScene` — four
+   cubes with distinct transforms and correct depth, and working `E`/`Q`/`R`.
+3. **Animation.** `dotnet run --project examples/HelloAnimation` — three
+   independent clips advance, and `P`, `L`, `-`/`=`, and `R` behave as their
+   checklist describes.
+4. **Picking.** `dotnet run --project examples/HelloPicking` — cursor click,
+   empty-space miss, `V` center mode, and `G` ghost eligibility print exactly one
+   line per click, not one per frame.
+5. **Collision.** `dotnet run --project examples/HelloCollision` — 6 colliders,
+   15 tested pairs, highlights on the current overlaps, and working arrow keys,
+   `P`, and `R`.
+6. **LOD and culling.** `dotnet run --project examples/HelloLOD` and
+   `dotnet run --project examples/HelloCulling` — the toggles change the image and
+   the counters together, `submitted + culled = tested`, and draw calls equal the
+   drawn instances.
+7. **World streaming.** `dotnet run --project examples/HelloStreaming` — the
+   starting demand set fills to about 9 of 25 chunks, `T` unloads and reloads
+   without duplicate objects, `S` freezes streaming, `C` changes only culled
+   counts, and `pruned` rises after an unload.
+8. **Audio.** `dotnet run --project examples/HelloAudio` — the console reports a
+   live device at `48000 Hz stereo` (or the configured rate), the 2D loop and two
+   spatial sources play, panning and attenuation change as the listener moves,
+   `,`/`.`/`T` change the stereo strength, and closing the window exits with
+   status `0` without a stuck audio thread. **A successful build is not playback
+   validation.**
+   - Source sample-rate handling is verified by `PcmAudioDataTests`
+     (`Resample_*`), the `AudioMixer.CreateClip` rate guard, and code inspection:
+     `AudioSystem.LoadWav` resamples every decoded WAV to the mixer rate, so a
+     non-48 kHz source is not assumed. The examples generate their WAVs at
+     48 kHz, so no example exercises a non-48 kHz file on a real device.
+9. **Input and window lifecycle.** `dotnet run --project examples/HelloWindow --
+   --smoke`, then resize, minimize/restore, hold and release the right mouse
+   button, and close with `Alt+F4`; the process exits `0` and the cursor is
+   restored.
+10. **Performance diagnostics.** `dotnet run --project
+    examples/HelloBenchmark -- --instances 128 --warmup 10 --frames 60` exits `0`
+    and prints its timing, draw-call, triangle, and managed-allocation lines.
+    Record the numbers; do not compare them with results from other hardware.
+11. **Formats.** `HelloOBJ`, `HelloO3D`, and `HelloX` render their fixtures and an
+    explicitly supplied path; `HelloMaterials` renders the generated checkerboard
+    and the PNG, JPEG, TGA, BMP, RGBA DDS, and BC1 DDS assets under
+    `examples/HelloMaterials/Assets/`.
+
+[WINDOWS_05_ENGINE_FEATURE_COMPATIBILITY.md](WINDOWS_05_ENGINE_FEATURE_COMPATIBILITY.md)
+records the feature matrix, the macOS evidence, and which Windows cells are still
+open.
+
+**Not claimed:** this section does not validate hi-DPI drawable sizing or GPU-side
+frame timing against a reference, and it asserts no cross-platform performance
+parity.
 
 ## HelloTriangle checks
 

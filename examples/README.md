@@ -1,8 +1,10 @@
 # Nymeria examples
 
-The examples are small, runnable programs that demonstrate the engine on macOS.
-They are intentionally separate from the reusable projects: they own their
-pipelines, input mapping, and frame loop. `Nymeria.Graphics` provides the
+The examples are small, runnable programs that demonstrate the engine. All of
+them except `HelloWindow` use the GPU path, which renders through Metal on macOS
+and through Direct3D 12 on Windows. `HelloWindow` exercises only native SDL3
+windowing, so it runs wherever a native SDL3 runtime is deployed. They are intentionally separate from the reusable projects: they own
+their pipelines, input mapping, and frame loop. `Nymeria.Graphics` provides the
 GPU device, the window presentation claim, shader and buffer creation, the
 swapchain format, and the reusable camera math. `Nymeria.Core` provides the
 format-independent model data used by `HelloCube`, `Nymeria.Formats.Obj`
@@ -31,9 +33,17 @@ bounded timing helpers in `Nymeria.Core.Diagnostics`. `HelloAudio` uses
 listener and spatial status math. `HelloAnimation` uses the keyframe tracks and
 playback controller in `Nymeria.Core.Animation` to drive three scene transforms.
 
-All examples use SDL3's GPU API with the Metal backend and Metal Shading
-Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
-created, so there is no Xcode build step and no generated shader artifact.
+All examples except `HelloWindow` use SDL3's GPU API. On macOS they embed Metal
+Shading Language (MSL) source, which SDL compiles when the shaders are created, so
+there is no Xcode build step and no generated shader artifact. A Windows build
+instead compiles each family's HLSL to DXIL during the build and embeds it, using
+the provisioned DirectX Shader Compiler. `GpuDevice` takes the backend from the
+platform policy, so these examples render on macOS through Metal and request
+Direct3D 12 with DXIL on Windows, and no renderer branches on either. Windows
+rendering has not been run on Windows hardware yet; see
+[../docs/WINDOWS_04_RENDERING_COMPATIBILITY.md](../docs/WINDOWS_04_RENDERING_COMPATIBILITY.md).
+`HelloWindow` creates a window and pumps events only, so it needs no GPU device and
+no shader.
 
 From the repository root:
 
@@ -41,6 +51,8 @@ From the repository root:
 dotnet restore Nymeria.slnx
 dotnet build Nymeria.slnx
 dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
+dotnet run --project examples/HelloWindow/HelloWindow.csproj
+dotnet run --project examples/HelloWindow/HelloWindow.csproj -- --smoke
 dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
@@ -59,6 +71,31 @@ dotnet run --project examples/HelloPicking/HelloPicking.csproj
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj -- --instances 2048
 ```
 
+## HelloWindow
+
+`HelloWindow` is the minimal native-runtime example. It initializes SDL video
+through `Nymeria.Platform`, shows a resizable 960 × 540 window, prints the
+logical and drawable sizes SDL reports, and pumps the event queue on the process
+main thread. It creates no GPU device, loads no shader, and presents no frames,
+so a failure isolates native SDL3 deployment rather than the GPU backend.
+
+```bash
+dotnet run --project examples/HelloWindow/HelloWindow.csproj
+dotnet run --project examples/HelloWindow/HelloWindow.csproj -- --smoke
+```
+
+- Default mode shows the window until it is closed and exits with status code
+  `0`. The standard platform quit shortcut also works.
+- `--smoke` pumps a fixed 30 event cycles with a 10 ms wait and exits without
+  user input, which makes it usable for an unattended runtime check.
+- Output is one `host:` line, one `window:` line with the logical and drawable
+  sizes, and either `window closed by the user` or `window smoke test passed`.
+- A missing native library prints Windows error `0x8007007E` guidance and the
+  original exception, then exits with status code `1`. An architecture mismatch
+  (`BadImageFormatException`) reports the expected RID.
+- Scope: window creation, event pumping, and disposal only. There is no renderer,
+  no input mapping, and no second window per process.
+
 ## HelloTriangle
 
 `HelloTriangle` is the minimal regression example. It draws one static triangle
@@ -67,7 +104,24 @@ for events between frames, so idle redraws stay near ten per second.
 
 - Geometry: three interleaved position/color vertices in one vertex buffer.
 - Shader: `HelloTriangle/Shaders/Triangle.metal`, embedded as
-  `HelloTriangle.Shaders.Triangle.metal`.
+  `HelloTriangle.Shaders.Triangle.metal` and compiled by SDL's Metal backend at
+  startup. On Windows the same triangle uses
+  `HelloTriangle/Shaders/Triangle.hlsl`, which the build compiles to DXIL with the
+  DirectX Shader Compiler and embeds as
+  `HelloTriangle.Shaders.Triangle.vert.dxil` and `.frag.dxil`. That build step
+  applies to Windows only. The build provisions a pinned, checksum-verified
+  compiler itself when one is not already available, so no manual installation is
+  needed; `-p:DxcPath=<path to dxc.exe>` overrides it. See
+  [../docs/WINDOWS_03_HLSL_DXIL_SHADERS.md](../docs/WINDOWS_03_HLSL_DXIL_SHADERS.md)
+  and
+  [../docs/WINDOWS_03_1_DXC_PROVISIONING.md](../docs/WINDOWS_03_1_DXC_PROVISIONING.md).
+  `HelloCube`, the shared model shader, and the shared material shader follow the
+  same pattern with `Cube.hlsl`, `Shared/Shaders/Model.hlsl`, and
+  `Shared/Shaders/Material.hlsl`; the shared families are declared once in
+  `Shared/ModelShaders.targets` and `Shared/MaterialShaders.targets`.
+- Shader asset selection: `ShaderProgram` picks the MSL or DXIL asset from the
+  format the GPU device reports, so the renderer and its pipeline are identical on
+  both platforms.
 - Coordinates: vertices are already in clip space. There is no matrix, camera,
   or depth buffer.
 - Viewport: a centered square derived from the swapchain's physical pixels, so
@@ -183,7 +237,9 @@ The 64 bytes are uploaded unchanged. `System.Numerics` stores matrices
 row-major, while MSL stores `float4x4` column-major. Uploading the row-major
 bytes and multiplying `mvp * position` in MSL is therefore correct: MSL reads
 the bytes as the transpose, which matches `position * mvp` in C#. Do not
-transpose the matrix again in C#.
+transpose the matrix again in C#. The HLSL cbuffers declare their matrices
+`column_major` for the same reason, so `mul(mvp, position)` reads the same bytes
+the same way.
 
 SDL3 GPU clip space has lower-left `(-1, -1)`, upper-right `(1, 1)`, and depth
 `[0, 1]` with the near plane at 0. `CreatePerspectiveFieldOfView` already
@@ -756,9 +812,13 @@ dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
 
 ## Platform limits
 
-All sixteen examples are macOS-only for now. They require SDL's Metal backend and
-MSL source; Windows and Linux need their own native SDL3 packages and shader
-formats. `HelloAudio` additionally uses the SDL3 audio device, which is verified
+All GPU examples except `HelloWindow` render on macOS through Metal and carry
+Direct3D 12 DXIL for Windows, so none of them is limited by a missing shader.
+macOS rendering is verified; Windows rendering has not been run on Windows
+hardware, so it remains unverified rather than known-good. Linux has no backend at
+all. `HelloWindow` needs only a native SDL3 runtime; it runs on macOS and on
+Windows, where the `SDL3-CS.Windows` package deploys `SDL3.dll`. `HelloAudio`
+additionally uses the SDL3 audio device, which is verified
 on macOS CoreAudio only. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
 general material or scene importers. `HelloO3D` accepts only unscrambled static meshes
 and rejects bones and animation. `HelloCube` still constructs its model data in
