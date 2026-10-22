@@ -24,4 +24,8 @@
                       LogicalName="Nymeria.Examples.Shaders.Material.metal" />
   </ItemGroup>
 
+  <!-- Adds the build-generated Direct3D 12 bytecode for the shared material
+       shader family; macOS is unaffected. -->
+  <Import Project="../Shared/MaterialShaders.targets" />
+
 </Project>

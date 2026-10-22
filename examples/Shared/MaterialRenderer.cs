@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Nymeria.Core.Culling;
 using Nymeria.Core.Lighting;
@@ -18,10 +19,14 @@ namespace Nymeria.Examples;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This example uses SDL's Metal backend and Metal Shading Language (MSL)
-/// source, which SDL compiles when the shaders are created. It must be created,
-/// used, and disposed on the process main thread. The window must outlive the
-/// renderer.
+/// The shader assets follow the format the device reports: Metal takes Metal
+/// Shading Language source, which SDL compiles when the shaders are created, and
+/// Direct3D 12 takes build-generated DXIL bytecode. Neither format is used in
+/// place of the other.
+/// </para>
+/// <para>
+/// It must be created, used, and disposed on the process main thread. The window
+/// must outlive the renderer.
 /// </para>
 /// <para>
 /// <see cref="Scene.Lighting"/> is optional. When it is null the renderer is
@@ -78,9 +83,7 @@ namespace Nymeria.Examples;
 /// </remarks>
 public sealed class MaterialRenderer : IDisposable
 {
-    private const string ShaderResourceName = "Nymeria.Examples.Shaders.Material.metal";
-    private const string VertexEntryPoint = "vertex_main";
-    private const string FragmentEntryPoint = "fragment_main";
+    private const string ShaderResourcePrefix = "Nymeria.Examples.Shaders.Material";
     private const int VertexStride = 8 * sizeof(float);
 
     private readonly IntPtr _window;
@@ -138,8 +141,9 @@ public sealed class MaterialRenderer : IDisposable
     /// <param name="window">The native <c>SDL_Window*</c> handle to render into.</param>
     /// <exception cref="ArgumentException">The window handle is zero.</exception>
     /// <exception cref="InvalidOperationException">
-    /// The call is not on the main thread, the Metal backend is unavailable, or
-    /// GPU resource creation fails.
+    /// The call is not on the main thread, the platform GPU backend is
+    /// unavailable, no shader assets exist for the device's shader format, or GPU
+    /// resource creation fails.
     /// </exception>
     public static MaterialRenderer Create(IntPtr window)
     {
@@ -160,16 +164,26 @@ public sealed class MaterialRenderer : IDisposable
         try
         {
             device = GpuDevice.Create(window);
-            byte[] shaderCode = ReadShaderSource();
+            Assembly assembly = typeof(MaterialRenderer).Assembly;
+            ShaderProgram program = ShaderProgram.Select(ShaderResourcePrefix, device.ShaderFormat);
+            byte[] vertexCode = program.Vertex.ReadBytes(assembly);
+
+            // Metal keeps both stages in one source resource, so read it once.
+            byte[] fragmentCode = program.Fragment.ResourceName == program.Vertex.ResourceName
+                ? vertexCode
+                : program.Fragment.ReadBytes(assembly);
+
             vertexShader = device.CreateShader(
-                shaderCode,
+                vertexCode,
+                program.Vertex.Format,
                 SDL.GPUShaderStage.Vertex,
-                VertexEntryPoint,
+                program.Vertex.EntryPoint,
                 uniformBufferCount: 1);
             fragmentShader = device.CreateShader(
-                shaderCode,
+                fragmentCode,
+                program.Fragment.Format,
                 SDL.GPUShaderStage.Fragment,
-                FragmentEntryPoint,
+                program.Fragment.EntryPoint,
                 uniformBufferCount: 1,
                 samplerCount: 1);
             sampler = CreateSampler(device.Handle, useMipmaps: false);
@@ -1155,23 +1169,6 @@ public sealed class MaterialRenderer : IDisposable
         }
 
         return handle;
-    }
-
-    private static byte[] ReadShaderSource()
-    {
-        using Stream? stream = typeof(MaterialRenderer).Assembly
-            .GetManifestResourceStream(ShaderResourceName);
-
-        if (stream is null)
-        {
-            throw new InvalidOperationException(
-                $"The embedded shader '{ShaderResourceName}' is missing. " +
-                "Rebuild HelloMaterials so Shaders/Material.metal is embedded.");
-        }
-
-        using var memory = new MemoryStream();
-        stream.CopyTo(memory);
-        return memory.ToArray();
     }
 
     private static IntPtr CreateSampler(IntPtr device, bool useMipmaps)

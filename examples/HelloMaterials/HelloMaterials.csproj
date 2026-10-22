@@ -28,4 +28,8 @@
     <Content Include="Assets/**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- Adds the build-generated Direct3D 12 bytecode for the shared material
+       shader family; macOS is unaffected. -->
+  <Import Project="../Shared/MaterialShaders.targets" />
+
 </Project>
