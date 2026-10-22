@@ -464,5 +464,5 @@ decoder is not fuzzed; a valid file at its limits can still request 32 MiB of
 decoded float samples per clip, and loaded clips remain in memory until disposed.
 The audio callback's lock is short and allocation-free by design, but real-time
 scheduling and device behavior remain the platform's responsibility. Device
-creation, playback, and hot-unplug handling are verified manually and are not
-claimed as a CI result.
+creation and playback are verified manually and are not claimed as a CI result;
+hot-unplug follows the documented device-loss path but was not exercised.
