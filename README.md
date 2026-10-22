@@ -47,7 +47,9 @@ interactive, depth-tested cube scene.
   updates for GitHub Actions and NuGet.
 - **Planned later:** engine-level input, the engine loop, further O3D features
   (scrambled vertices, bones, animation, and material rendering), additional
-  graphics backends, and Windows/Linux rendering. See
+  graphics backends, and Linux/Vulkan rendering. Windows Direct3D 12 rendering is
+  implemented and its build and tests are verified in CI, while its visual
+  correctness is validated manually on Windows hardware. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the authoritative distinction.
 
 ## Prerequisites
@@ -63,9 +65,11 @@ Windows:
 
 - Windows 10 or newer on x64, x86, or arm64, with a Direct3D 12-capable graphics
   driver for the GPU examples. Every GPU example ships Direct3D 12 DXIL bytecode
-  generated from HLSL at build time, but Windows rendering has not yet been run on
-  Windows hardware; see
-  [docs/WINDOWS_04_RENDERING_COMPATIBILITY.md](docs/WINDOWS_04_RENDERING_COMPATIBILITY.md).
+  generated from HLSL at build time. A clean Windows restore, build, and headless
+  test run is verified in CI on every push to this branch; actual Direct3D 12
+  rendering still needs a Windows machine with a GPU and is validated manually. See
+  [docs/WINDOWS_04_RENDERING_COMPATIBILITY.md](docs/WINDOWS_04_RENDERING_COMPATIBILITY.md)
+  and [docs/WINDOWS_06_CI_STABILIZATION.md](docs/WINDOWS_06_CI_STABILIZATION.md).
 - No shader compiler installation is required. The first Windows build that
   compiles HLSL downloads a pinned, checksum-verified DirectX Shader Compiler into
   `%LOCALAPPDATA%\Nymeria\dxc` and reuses it afterwards; an installed `dxc` on
@@ -466,18 +470,23 @@ tests/          Headless unit tests for audio, core, formats, and platform
 - [Windows DXC toolchain provisioning](docs/WINDOWS_03_1_DXC_PROVISIONING.md)
 - [Windows Direct3D 12 rendering compatibility](docs/WINDOWS_04_RENDERING_COMPATIBILITY.md)
 - [Windows engine feature compatibility](docs/WINDOWS_05_ENGINE_FEATURE_COMPATIBILITY.md)
+- [Windows CI and stabilization](docs/WINDOWS_06_CI_STABILIZATION.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)
 - [Agent instructions](AGENTS.md)
 
 ## Repository automation
 
-The `Repository checks` GitHub Actions workflow runs on pushes and pull requests
-to `main`. One job validates the repository foundation, including Markdown links,
-tracked build output, and Dependabot configuration. A second job restores, builds,
-and runs the headless unit tests on macOS, Windows, and Linux. GUI, GPU, and audio
-device output are not launched or validated in CI; window, GPU, and audio-device
-behavior is covered by the manual smoke test.
+The `Repository checks` GitHub Actions workflow runs on pushes to `main` and to
+the Windows development branches (`Windows_DirectX`, `Windows`), and on pull
+requests targeting `main`. One job validates the repository foundation, including
+Markdown links, tracked build output, and Dependabot configuration. A second job
+restores, builds, and runs the headless unit tests on macOS, Windows, and Linux;
+on Windows it also provisions the pinned DirectX Shader Compiler and compiles the
+HLSL to DXIL. GUI, GPU, and audio device output are not launched or validated in
+CI; window, GPU, and audio-device behavior is covered by the manual smoke test.
+[WINDOWS_06_CI_STABILIZATION.md](docs/WINDOWS_06_CI_STABILIZATION.md) records what
+the Windows job verifies and what still needs hardware.
 
 Dependabot checks GitHub Actions and NuGet weekly and opens update pull requests.
 The existing `Dependabot auto-merge` workflow squash-merges a Dependabot pull

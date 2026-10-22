@@ -188,6 +188,24 @@ same MSBuild tasks on another platform, with the host-specific pieces substitute
 | Whole solution | `dotnet build Nymeria.slnx -c Release --no-incremental` | **0 warnings, 0 errors** |
 | Tests | `dotnet test Nymeria.slnx -c Release --no-build` | **1115 passed, 2 skipped, 0 failed** |
 
+### Verified later in CI
+
+W06 extended the workflow trigger to the Windows development branch and observed a
+successful `windows-latest` run (39831068582) in which the build downloaded
+`dxc_2026_09_29.zip`, accepted its SHA-256, extracted it, and used it:
+
+```text
+Nymeria: downloading the DirectX Shader Compiler 1.9.2609 ... into C:\Users\runneradmin\AppData\Local\Nymeria\dxc.
+Nymeria: compiling DXIL shaders with 'C:\Users\runneradmin\AppData\Local\Nymeria\dxc\1.9.2609\<guid>\bin\x64\dxc.exe' (from download; pinned DirectX Shader Compiler 1.9.2609).
+Nymeria: compiling DXIL shaders with '...\<guid>\bin\x64\dxc.exe' (from cache; pinned DirectX Shader Compiler 1.9.2609).
+```
+
+That run also closes the extraction-layout question below. Because the build runs
+projects in parallel, six extraction directories were created and the archive was
+downloaded more than once before later projects reused the cache; the job still
+finished in under two minutes. See
+[WINDOWS_06_CI_STABILIZATION.md](WINDOWS_06_CI_STABILIZATION.md).
+
 ### Not verified here
 
 - **The Windows extraction layout.** The archive stores entry names with
@@ -195,14 +213,16 @@ same MSBuild tasks on another platform, with the host-specific pieces substitute
   `Unzip` produces `bin\x64\dxc.exe` as nested directories; on this host the same
   names stayed literal single files, which is why the layout check above refused
   and removed the extraction. That check is therefore proven to gate on the real
-  file, but the Windows success path itself was not observed.
+  file. The Windows success path was not observed here, but W06's CI run did
+  observe it (above).
 - **A real `dxc` invocation.** No Windows machine or DXC binary was executed
   here; the compiler calls were exercised with a stand-in that accepts the same
   arguments.
 - **Two builds provisioning at once.** The guid-per-run design was reviewed, not
   raced on real hardware.
-- **Windows CI.** `windows-latest` should now provision automatically on its first
-  shader build. That was not run, and no workflow was changed.
+- **Windows CI.** `windows-latest` provisions automatically on its first shader
+  build. W06 verified this in run 39831068582 after extending the workflow trigger
+  to the Windows branch; the original W03.1 push did not run it.
 
 ## macOS and Metal
 

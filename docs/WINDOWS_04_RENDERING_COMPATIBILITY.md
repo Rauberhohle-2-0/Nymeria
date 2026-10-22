@@ -12,6 +12,13 @@ so no HLSL was compiled to DXIL, no DXIL was submitted to SDL, and no example wa
 looked at on Windows. W04 is therefore **partially verified**, not complete. The
 evidence and the remaining acceptance steps are listed below.
 
+**Update (W06).** The pinned DirectX Shader Compiler now compiles this HLSL on the
+`windows-latest` CI job, which builds and tests the whole solution on every push to
+this branch. That closes the "HLSL has never been compiled" gap below, but it does
+not render anything: shader acceptance by a driver and every visual check still
+need Windows hardware. See
+[WINDOWS_06_CI_STABILIZATION.md](WINDOWS_06_CI_STABILIZATION.md).
+
 ## Baseline
 
 | Item | Value |
@@ -269,6 +276,11 @@ This host has no usable HLSL compiler: DXC publishes no macOS binary for 1.9.260
 and the HLSL front-end in this host's clang cannot parse the sources without DXC's
 standard-library headers, which the release archive does not contain.
 
+**Superseded by W06 for compilation only:** the CI run 39831068582 downloaded the
+pinned DXC and compiled all four families on `windows-latest` with no compiler
+diagnostic, so the HLSL is known to compile and produce DXIL. SDL's acceptance of
+that bytecode and Direct3D 12 pipeline creation remain unverified.
+
 ## Windows manual smoke test — NOT RUN
 
 No Windows machine and no Direct3D 12 device were available, and no HLSL was
@@ -349,20 +361,19 @@ not by a new visual comparison.
 ## Limitations and deferred work
 
 - **Windows rendering is unverified.** Every manual Windows row above is open.
-- **The HLSL has never been compiled.** DXIL generation, SDL's acceptance of the
-  bytecode, and Direct3D 12 pipeline creation are unverified. The HLSL mirrors
-  the MSL line by line, but that is a review argument, not a measurement.
+- **Direct3D 12 still has not rendered anything.** W06's CI run proves the HLSL
+  compiles and the DXIL is generated with the pinned compiler; SDL's acceptance of
+  the bytecode and Direct3D 12 pipeline creation remain unverified, as does every
+  visual check. The HLSL mirrors the MSL line by line, but that is a review
+  argument, not a measurement.
 - **The pinned DXC download path is unchanged and still unverified on Windows.**
   W03.1's provisioning was not exercised against a real download here.
 - **DXIL generation stays Windows-only.** A Windows binary cross-built on macOS or
   Linux embeds no DXIL.
-- **CI is unchanged and produced no run for this branch.**
-  `.github/workflows/repository-checks.yml` runs on pushes to `main` and on pull
-  requests targeting `main`, so a push to `Windows_DirectX` triggers nothing, and
-  no pull request was opened. The `windows-latest` job builds and tests headlessly,
-  so a future run on `main` would compile this HLSL with the real compiler and
-  reveal a compile error, but it would not prove rendering. No workflow was
-  modified.
+- **CI was extended later, by W06.** At the time of W04 the workflow ran only on
+  `main`, so this branch produced no run. W06 added the Windows development branch
+  to the push trigger; the resulting job compiles this HLSL with the real compiler
+  and runs the headless tests, but it does not prove rendering.
 - **Linux/Vulkan/SPIR-V** remains unsupported and out of scope, as does any new
   graphics abstraction, renderer, or platform project.
 - **Next step:** run the Windows matrix above on a Direct3D 12 machine. A clean

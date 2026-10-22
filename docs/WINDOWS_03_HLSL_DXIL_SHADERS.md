@@ -142,10 +142,12 @@ DXC release that supports shader model 6.0. The pin and the reproducible
 acquisition procedure are recorded in
 [WINDOWS_03_1_DXC_PROVISIONING.md](WINDOWS_03_1_DXC_PROVISIONING.md).
 
-**CI.** A `windows-latest` job now provisions DXC on its first shader build, so
-it no longer depends on `dxc` being on `PATH`. That path is unverified, and
-[.github/workflows/repository-checks.yml](../.github/workflows/repository-checks.yml)
-was not changed by W03 or W03.1.
+**CI.** A `windows-latest` job provisions DXC on its first shader build, so it
+does not depend on `dxc` being on `PATH`. That path was unverified when W03
+landed; W06 later extended the workflow trigger to the Windows development branch
+and observed a successful run that downloaded the pinned compiler and compiled
+this HLSL (run 39831068582). See
+[WINDOWS_06_CI_STABILIZATION.md](WINDOWS_06_CI_STABILIZATION.md).
 
 ## Runtime shader selection
 
@@ -269,17 +271,20 @@ locations line up with `TEXCOORD0`/`TEXCOORD1`.
 - DXIL generation is limited to Windows builds. macOS never runs dxc, and a
   Windows binary cross-built on another platform will not embed DXIL.
 - The `windows-latest` CI job builds the solution. Since W03.1 the build
-  provisions DXC itself when it is not already available, so the job no longer
-  needs a manual install; the first run downloads about 32 MB. That CI path is
-  unverified and no workflow was changed.
+  provisions DXC itself when it is not already available, so the job needs no
+  manual install; the first run downloads about 32 MB. W06 verified that path in
+  CI; see [WINDOWS_06_CI_STABILIZATION.md](WINDOWS_06_CI_STABILIZATION.md).
 
 ## Open items
 
-- **CI on `windows-latest`.** Provisioning removes the manual-install dependency,
-  but the job itself was not run, and caching `NymeriaDxcCacheRoot` between runs
-  would be a workflow-policy change that needs maintainer approval.
+- **CI on `windows-latest`.** Provisioning removes the manual-install dependency
+  and W06 verified the job (run 39831068582). Caching `NymeriaDxcCacheRoot`
+  between runs would still be a workflow-policy change that needs maintainer
+  approval.
 - **DXIL container acceptance by SDL.** Whether SDL's DXIL validation accepts the
-  container produced by the pinned dxc on Windows is unverified.
+  container produced by the pinned dxc on Windows was unverified here. W06 later
+  proved that the pinned dxc compiles this HLSL in CI; runtime acceptance still
+  needs a Direct3D 12 device.
 - **No `dxil.dll` dependency is assumed.** The pinned native library contains no
   reference to `dxcompiler`/`dxil.dll`; DXIL loading is expected to be
   self-contained. Untested on Windows.

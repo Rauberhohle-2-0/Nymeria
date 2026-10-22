@@ -67,11 +67,14 @@ render path. `GpuDevice` selects Direct3D 12 with DXIL, and every shader family
 supplies DXIL generated from HLSL at build time, so every GPU example is expected
 to draw.
 
-**Windows rendering is unverified by the repository's own tasks.** No task has run
-a GPU example on Windows hardware, and no HLSL in this repository has been
-compiled to DXIL by a real DirectX Shader Compiler during task verification.
-[WINDOWS_04_RENDERING_COMPATIBILITY.md](WINDOWS_04_RENDERING_COMPATIBILITY.md)
-records exactly what was and was not executed. Treat the checks below as the
+**The Windows build and headless tests are verified in CI; Windows rendering is
+not.** The `windows-latest` job restores, builds, and tests the solution, which
+provisions the pinned DirectX Shader Compiler and compiles every HLSL shader
+family to DXIL. No task has yet run a GPU example on Windows hardware, so shader
+acceptance by the driver, visual output, audio playback, and input remain manual
+checks. [WINDOWS_04_RENDERING_COMPATIBILITY.md](WINDOWS_04_RENDERING_COMPATIBILITY.md)
+and [WINDOWS_06_CI_STABILIZATION.md](WINDOWS_06_CI_STABILIZATION.md) record
+exactly what was and was not executed. Treat the rendering checks below as the
 expected behavior to confirm, not as a recorded result.
 
 Setup:

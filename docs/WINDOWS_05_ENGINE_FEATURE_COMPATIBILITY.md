@@ -4,12 +4,14 @@ This document maps Nymeria's existing features to their implementation, example,
 and automated tests, and records the verification evidence for each on the two
 supported backends. It is the W05 deliverable.
 
-**Windows results are not yet recorded.** This task ran on a macOS arm64 host, the
-maintainer runs the Windows checks separately, and no Windows machine or
-Direct3D 12 device was available here. Every Windows cell below therefore says
-**NOT RUN**, and the document gives the exact procedure and expected observations
-so those cells can be filled with evidence instead of assumptions. Nothing in this
-document claims Windows parity.
+**Interactive Windows results are not yet recorded.** This task ran on a macOS
+arm64 host, the maintainer runs the Windows checks separately, and no Windows
+machine or Direct3D 12 device was available here. Every interactive Windows cell
+below therefore says **NOT RUN**, and the document gives the exact procedure and
+expected observations so those cells can be filled with evidence instead of
+assumptions. The exception is the automated headless suite (row 12): W06's CI run
+executed it on `windows-latest` with the same result as macOS. Nothing in this
+document claims Windows rendering, audio, or input parity.
 
 No source code changed in W05: the audit and the headless suite found no
 demonstrable defect, and inventing platform-specific fixes from a macOS host would
@@ -37,7 +39,7 @@ Windows checks first, then the W05 checks below.
 
 | Evidence | What it proves |
 | --- | --- |
-| Headless test suite (macOS, `dotnet test Nymeria.slnx`) | Platform-independent logic: transforms, animation, raycasting, collision, LOD, culling, streaming, audio math, format decoding. These tests contain no SDL3 or GPU device dependency, so their result is expected to be identical on Windows, but that is an expectation until the suite runs there. |
+| Headless test suite (`dotnet test Nymeria.slnx`) | Platform-independent logic: transforms, animation, raycasting, collision, LOD, culling, streaming, audio math, format decoding. These tests contain no SDL3 or GPU device dependency. W06 later ran the same suite on `windows-latest` in CI with identical results (1120 passed, 2 skipped), so the Windows headless expectation below is now measured; interactive checks still are not. |
 | Code audit for OS-specific dependencies | Only `GpuBackendSelection` branches on the operating system; the rest of the engine and every example go through SDL3 or pure managed code. |
 | macOS interactive runs | That the examples create a device, build pipelines, submit frames, and update their feature diagnostics. Not a Windows result. |
 | Windows procedure | The commands and acceptance observations the maintainer can execute to replace every **NOT RUN** cell. |
@@ -62,6 +64,7 @@ observed here; "Windows" is a result the maintainer still has to observe.
 | 9 | Performance diagnostics | `src/core/Nymeria.Core/Diagnostics/FrameTimingWindow.cs`, renderer counters | `HelloBenchmark`, plus per-second diagnostics in `HelloCulling`, `HelloLOD`, `HelloStreaming`, `HelloCollision`, `HelloAnimation` | `FrameTimingWindowTests` | **PASS** (counters update) | **NOT RUN** |
 | 10 | Format loaders | `src/formats/Nymeria.Formats.Obj`, `.O3d`, `.DirectX`, `.Png`, `.Tga`, `.Jpeg`, `.Dds`, `.Bmp`, `.Textures`, `.Wav` | `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloMaterials` | `ObjModelParserTests`, `O3dModelParserTests`, `XModelParserTests`, `PngImageDecoderTests`, `TgaImageDecoderTests`, `JpegImageDecoderTests`, `DdsTextureDecoderTests`, `BmpImageDecoderTests`, `TextureLoaderTests`, `WavAudioDecoderTests` | **PASS** | **NOT RUN** |
 | 11 | Rendering (W04 baseline) | `examples/Shared/*Renderer.cs`, `HelloCube/CubeRenderer.cs`, `Nymeria.Graphics` | `HelloTriangle`, `HelloCube`, `HelloScene`, `HelloMaterials` | `ShaderProgramTests`, `ExampleShaderAssetTests`, `CameraTests`, `GpuBackendSelectionTests` | **PASS** | **NOT RUN** |
+| 12 | Automated headless suite (all projects) | `tests/` | none | all 14 test assemblies | **PASS** | **PASS** (CI run 39831068582: 1120 passed, 2 skipped, 0 failed) |
 
 ## Per-feature notes
 
@@ -366,8 +369,9 @@ Then, in order:
 
 ## Known limitations and remaining issues
 
-- **No Windows result exists yet.** Every Windows cell is open; W05 stays
-  partially verified until the procedure above is executed.
+- **Interactive Windows cells are still open.** The headless suite and the clean
+  build now have Windows evidence from CI (W06), but every interactive row in the
+  matrix above is **NOT RUN** until the procedure is executed on hardware.
 - **W04 Windows rendering is also open.** W05 depends on it.
 - **Device audio is untested automatically.** `AudioDeviceIntegrationTests` are
   skipped by design; playback, spatialization, and shutdown need the manual
@@ -376,8 +380,8 @@ Then, in order:
   code inspection; an end-to-end device check of a 44.1 kHz source would need a
   new example capability, which W05 must not add.
 - **No automated window, GPU, or input test exists.** CI builds and runs headless
-  tests only, and this branch triggers no CI run because the workflow is limited to
-  `main` and pull requests targeting it.
+  tests only. W06 extended the workflow trigger so this branch does get a Windows
+  build and test run; that run does not launch a window or a GPU device.
 - **No performance parity claim.** Timings from different hardware are not
   comparable, and no benchmark result is used to assert parity.
 - **Linux/Vulkan remains deferred.** No policy, no SPIR-V assets, and no plan is

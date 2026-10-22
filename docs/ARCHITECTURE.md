@@ -199,7 +199,7 @@ extension is a direction, not a current feature.
   and `SDL3-CS.Windows` packages.
 - A `Repository checks` GitHub Actions workflow that validates repository
   foundations and restores, builds, and tests the solution on macOS, Windows, and
-  Linux.
+  Linux, on `main` and on the Windows development branches.
 - Weekly Dependabot updates for GitHub Actions and NuGet, auto-merged only after
   repository checks pass.
 
@@ -1375,8 +1375,9 @@ Nymeria follows KISS (Keep It Simple) and YAGNI (You Aren't Gonna Need It):
 
 ### Repository checks
 
-`.github/workflows/repository-checks.yml` runs on pushes and pull requests to
-`main` with two jobs:
+`.github/workflows/repository-checks.yml` runs on pushes to `main` and to the
+Windows development branches (`Windows_DirectX`, `Windows`), and on pull requests
+to `main`, with two jobs:
 
 - **Repository checks** on `ubuntu-latest` verifies required files and
   directories, ensures no `bin/` or `obj/` output is tracked, resolves relative
@@ -1384,7 +1385,10 @@ Nymeria follows KISS (Keep It Simple) and YAGNI (You Aren't Gonna Need It):
   and NuGet ecosystems.
 - **.NET** runs a `macos-latest`, `windows-latest`, and `ubuntu-latest` matrix.
   Each runner restores `Nymeria.slnx`, builds it in Release configuration, and
-  runs the headless unit tests. No GUI is launched in CI.
+  runs the headless unit tests. No GUI is launched in CI. The Windows build
+  provisions the pinned DirectX Shader Compiler and compiles the HLSL shader
+  families to DXIL; macOS and Linux never download it. See
+  [WINDOWS_06_CI_STABILIZATION.md](WINDOWS_06_CI_STABILIZATION.md).
 
 Both jobs use read-only repository permissions. The workflow is named
 `Repository checks`, so Dependabot auto-merge waits for every matrix leg and the
