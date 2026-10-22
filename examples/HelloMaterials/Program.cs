@@ -117,7 +117,7 @@ internal static class Program
             Console.WriteLine(
                 "Rotate the camera to check the texture orientation, then " +
                 "resize the window. WASD moves, Space/Ctrl moves up/down, hold " +
-                "the right mouse button to look, and Esc closes the example.");
+                "the right mouse button to look, and closing the window exits.");
 
             var clock = Stopwatch.StartNew();
             double previousSeconds = clock.Elapsed.TotalSeconds;
