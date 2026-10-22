@@ -381,7 +381,12 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/H
   and one GPU texture per distinct `TextureData`, so neither is uploaded twice.
 - Tint: a third object reuses the same `TextureData` through a blue-tinted
   material. The fragment shader samples the base-color texture and multiplies its
-  RGB value by the tint; alpha is not blended.
+  RGB value by the tint.
+- Transparency: one masked pane uses a generated checkerboard cutout and a `0.5`
+  cutoff, so whole texels are discarded and the scene shows through the holes.
+  Three blended panes reuse the loaded texture with cool and warm tints at
+  different distances; they are drawn back to front with straight source-over
+  blending and do not write depth.
 - Solid color and fallback: a fourth object uses an untextured orange material.
   The renderer binds a generated 1 × 1 white texture, so the tint is displayed
   unchanged. A mesh without UVs also binds that fallback.
@@ -419,9 +424,10 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/H
 - Errors: a missing, unreadable, malformed, oversized, or unsupported file prints
   a diagnostic and falls back; the window still opens. Limits are 32 MiB of
   encoded input, 4096 × 4096 pixels, and 64 MiB of payload.
-- Scope: no MTL or OMSI material parsing, PBR, transparency sorting, texture
-  streaming, mipmap generation, CPU block decompression, hot reload, or material
-  graphs. Lighting is demonstrated by `HelloLighting` instead.
+- Scope: no MTL or OMSI material parsing, PBR, texture streaming, mipmap
+  generation, CPU block decompression, hot reload, or material graphs.
+  Transparency is object-level only: there is no per-triangle or
+  order-independent sorting. Lighting is demonstrated by `HelloLighting` instead.
 
 ## HelloLighting
 

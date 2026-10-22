@@ -430,7 +430,8 @@ The following are out of scope for this milestone: parent-child transforms,
 scene graphs, ECS, instanced draw APIs beyond per-object uniform uploads,
 serialization, editors, occlusion culling, spatial indexes, physics simulation
 or collision response, animation, multiple lights, point or spot lights, shadows,
-specular or PBR shading, transparency sorting, texture streaming or hot reload,
+specular or PBR shading, per-triangle or order-independent transparency,
+texture streaming or hot reload,
 MTL or OMSI material parsing, automatic mesh simplification or LOD generation,
 and automatic background unloading of CPU assets. Frustum culling, explicit LOD
 selection, optional distance culling, synchronous chunk membership, bounds-based

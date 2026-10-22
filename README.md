@@ -255,7 +255,9 @@ the same texture blue for a third, and shows a solid orange material on a
 fourth. The renderer caches one GPU mesh per distinct `MeshData` and one GPU
 texture per distinct `Texture`, uploads mip chains once, and binds a generated
 white fallback for untextured materials and meshes without UVs. The fragment
-shader multiplies sampled RGB by the tint and writes an opaque fragment. A PNG,
+shader multiplies sampled RGB by the tint and honors a material transparency
+mode: opaque, an alpha cutoff that discards fragments, or straight source-over
+blending drawn back to front after opaque geometry. A PNG,
 JPEG, TGA, DDS, or BMP path supplied on the command line is decoded by
 `Nymeria.Formats.Textures`; signatures take precedence over extensions, and TGA
 is recognized by its extension plus header validation. BMP support covers

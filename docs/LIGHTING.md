@@ -19,8 +19,10 @@ light and one directional light? It is deliberately small:
 
 There is no specular term, PBR, physically based energy conservation, shadow,
 point or spot light, light collection, deferred renderer, global illumination,
-shader graph, or gamma-management redesign. Alpha behavior is unchanged: texture
-alpha is decoded and preserved, but the example shaders write an opaque fragment.
+shader graph, or gamma-management redesign. Alpha behavior follows the material
+transparency mode: lighting is applied to RGB only, and the fragment output keeps
+the opaque, masked, or blended alpha described in
+[MATERIALS.md](MATERIALS.md#transparency).
 
 ## Data model and ownership
 
@@ -84,7 +86,9 @@ litColor          = baseColor * (ambientColor + directionalColor * diffuse)
 
 `baseColor` is the sampled texture RGB multiplied by the material `BaseColor`
 tint. Lighting is applied exactly once; the tint is not applied again after
-lighting. The output alpha remains `1.0`.
+lighting. Lighting never changes alpha: opaque and masked fragments write `1.0`,
+and blended fragments write the effective alpha so the light contribution is
+composited like the base color.
 
 If `Scene.Lighting` is `null`, the shared renderer supplies a white ambient term
 and no directional term. That reduces the equation to `baseColor`, which is the
@@ -143,9 +147,12 @@ treats that surface as receiving no diffuse light while preserving ambient.
 
 ## Renderer integration
 
-The shared `examples/Shared/MaterialRenderer.cs` owns one pipeline, sampler set,
-white fallback texture, depth target, mesh cache, and texture cache. It reads
-`Scene.Lighting` once per frame:
+The shared `examples/Shared/MaterialRenderer.cs` owns two pipelines (depth
+writing for opaque and masked instances, non-depth-writing with blending for
+transparent ones), a sampler set, white fallback texture, depth target, mesh
+cache, and texture cache. The same lighting uniforms are used by both passes, so
+a blended instance is lit exactly like an opaque one. It reads `Scene.Lighting`
+once per frame:
 
 - `null`: white ambient, zero directional color, zero direction.
 - non-null: the ambient effective color, the directional effective color, and
@@ -153,9 +160,11 @@ white fallback texture, depth target, mesh cache, and texture cache. It reads
 
 Each draw uploads one vertex uniform block containing the model-view-projection
 matrix and the inverse-transpose normal matrix, and one fragment uniform block
-containing ambient color, direction to light, directional color, and material
-tint. This uses the existing SDL3 uniform-push path; there is no new buffer
-allocation per frame and no second renderer architecture.
+containing ambient color, direction to light, directional color, the material
+tint and alpha, and the transparency mode with its cutoff. This uses the existing
+SDL3 uniform-push path; there is no new buffer allocation per frame and no second
+renderer architecture. Lighting is applied to RGB only, so the transparency
+alpha is composited with the lit color.
 
 `HelloMaterials` and `HelloLighting` both link the shared renderer and material
 shader. `HelloMaterials` leaves lighting unset, so it exercises the unlit path.

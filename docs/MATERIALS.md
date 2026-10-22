@@ -16,12 +16,12 @@ pipelines stay in `Nymeria.Graphics` and the examples; the format projects decod
 bytes and never touch SDL3 or the GPU.
 
 This milestone deliberately excludes OBJ `MTL` parsing, OMSI material
-configuration, physically based rendering, shadows, transparency sorting,
-texture streaming, and mipmap generation. Ambient and Lambert diffuse lighting is
-described in [LIGHTING.md](LIGHTING.md); it reuses this material data but is an
-optional scene-level feature, not a property of `Material`. Alpha is decoded and
-preserved but the example shader always writes an opaque fragment. No decoder
-decompresses block-compressed data.
+configuration, physically based rendering, shadows, texture streaming, and
+mipmap generation. Ambient and Lambert diffuse lighting is described in
+[LIGHTING.md](LIGHTING.md); it reuses this material data but is an optional
+scene-level feature, not a property of `Material`. Alpha is decoded, preserved,
+and composited for materials that opt into transparency, as described in
+[Transparency](#transparency). No decoder decompresses block-compressed data.
 
 ## `Material`
 
@@ -32,6 +32,18 @@ var material = new Material(
     baseColor: new Vector3(1.0f, 0.75f, 0.5f),
     baseColorTexture: texture,
     name: "brick");
+
+var glass = new Material(
+    baseColor: Vector3.One,
+    baseColorTexture: texture,
+    transparency: MaterialTransparency.Blend,
+    alpha: 0.4f);
+
+var cutout = new Material(
+    baseColor: Vector3.One,
+    baseColorTexture: texture,
+    transparency: MaterialTransparency.Mask,
+    alphaCutoff: 0.5f);
 ```
 
 - `BaseColor` is the display tint. Every component must be finite and between
@@ -41,8 +53,16 @@ var material = new Material(
   not own it.
 - `HasTexture` reports whether a texture is referenced.
 - `Name` is an optional diagnostic label, normalized to `null` when blank.
-- `Material.Default` is a shared, untextured white material. Scene objects use it
-  when no material is supplied.
+- `Transparency` is a `MaterialTransparency` value: `Opaque` (default), `Mask`,
+  or `Blend`.
+- `AlphaCutoff` is the mask threshold, finite and between `0` and `1`, default
+  `0.5`. It is only meaningful in `Mask` mode but is always validated.
+- `Alpha` is the material opacity, finite and between `0` and `1`, default `1`.
+  It is ignored in `Opaque` mode and multiplied with the sampled texture alpha in
+  the other two modes.
+- `RequiresBlendOrdering` reports whether the material needs the blended phase.
+- `Material.Default` is a shared, untextured, opaque white material. Scene
+  objects use it when no material is supplied.
 
 There is no equality or content-based caching: two `Material` instances that
 describe the same surface are still distinct references. A renderer may cache GPU
@@ -53,6 +73,80 @@ way to avoid duplicate uploads.
 settable `Material` property. Both reference the material without copying it.
 Assigning `null` throws `ArgumentNullException`; use `Material.Default` to clear a
 material explicitly. Several scene objects may share one material.
+
+## Transparency
+
+`MaterialTransparency` selects how the renderer uses alpha. The material stays
+CPU data: the enum records the intent and the renderer maps it to pipeline state.
+
+| Mode | Depth test | Depth write | Blending | Fragment alpha |
+| --- | --- | --- | --- | --- |
+| `Opaque` | on | on | off | written as `1.0`; alpha ignored |
+| `Mask` | on | on | off | fragments below `AlphaCutoff` are discarded |
+| `Blend` | on | **off** | straight source-over | effective alpha |
+
+The effective alpha is the sampled texture alpha multiplied by
+`Material.Alpha`:
+
+```text
+alpha = texture.a * material.alpha
+```
+
+All three modes share one shader. The fragment mode and cutoff are per-draw
+uniform values, so opaque and masked instances reuse one pipeline **because their
+fixed-function state is identical**: both test and write depth without blending,
+and the mask cutoff is a shader `discard`. A second pipeline keeps the depth test
+but disables depth writes and enables blending for the blended phase.
+
+The blend state is straight, non-premultiplied source-over:
+
+```text
+color = src.rgb * src.a + dst.rgb * (1 - src.a)
+alpha = src.a + dst.a * (1 - src.a)
+```
+
+No code path assumes premultiplied alpha. Decoded RGBA values keep their stored
+encoded values, as described in [Color space](#color-space).
+
+### Render ordering
+
+Each frame has two phases inside one render pass:
+
+1. **Opaque and masked** instances in scene order, through the depth-writing
+ pipelines. Their draw order is unchanged from earlier milestones.
+2. **Blended** instances, through the non-depth-writing blend pipeline, sorted
+ back to front by camera distance.
+
+`Nymeria.Core.Rendering.BlendOrder` provides the deterministic sort. It orders by
+squared distance from the camera position to the transformed center of the drawn
+mesh's bounds, farthest first, and breaks equal distances by ascending entry
+index. The sort is an insertion sort over a reused array and only blended
+instances are sorted, so the opaque path pays nothing. Non-finite camera
+positions are rejected; a non-finite instance position sorts as farthest rather
+than producing an undefined order.
+
+Limitations, all intentional:
+
+- Sorting is **per object**, not per triangle or per pixel. Two intersecting
+ instances, or one instance that surrounds another, cannot be ordered correctly.
+- The center-point key is a heuristic for large or elongated objects; two objects
+ can overlap on screen while their centers order the other way.
+- Blended instances do not write depth, so they never occlude each other through
+ the depth buffer and rely entirely on the object order.
+- There is no order-independent transparency, depth peeling, per-object sort key
+ cache, or render graph.
+
+### Renderer integration
+
+`examples/Shared/MaterialRenderer.cs` owns both pipelines, creates both at
+startup, and releases both on disposal, including when a later startup step
+fails. Blended instances are collected into a reused `List` during the first
+phase; the ordering array only grows when the blended instance count reaches a
+new high-water mark. No GPU resource is created or uploaded in either phase, and
+no per-instance allocation occurs at a steady frame size. `examples/Shared/BlendState.cs`
+holds the source-over state because SDL3-CS 3.4.18 has a qualified-lookup quirk
+for its two blend enums; the values are still the documented SDL factors, not
+numeric casts.
 
 ## Texture data model
 
@@ -186,8 +280,8 @@ non-interlaced, 8-bit images with grayscale, RGB, indexed, grayscale-alpha, or
 RGBA color. It verifies the signature, chunk ordering, every chunk CRC, palette
 indices, scanline filters, and the exact decompressed size; it rejects unknown
 critical chunks, 16-bit, interlaced, and malformed images. Other ancillary chunks
-such as `gAMA` and `sRGB` are ignored. Alpha is preserved but not blended and no
-color-space conversion is applied.
+such as `gAMA` and `sRGB` are ignored. Alpha is preserved for the transparency
+modes described above, and no color-space conversion is applied.
 
 `tRNS` transparency is decoded for the color types that permit it:
 
@@ -371,8 +465,9 @@ materials without a texture or meshes without UVs. The fragment shader multiplie
 sampled RGB by the material tint: `texture.rgb * material.BaseColor`. When the
 scene has lighting, the result is then multiplied by the ambient plus Lambert
 diffuse term; an unlit scene uses a white ambient term so the output is
-unchanged. See [LIGHTING.md](LIGHTING.md). Output alpha is `1.0`; alpha is decoded
-but not blended.
+unchanged. See [LIGHTING.md](LIGHTING.md). Output alpha follows the material
+transparency mode: `1.0` for opaque and masked fragments, and the effective alpha
+for blended ones.
 
 ## Color space
 
@@ -420,6 +515,13 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj -- examples/H
   how the tint multiplies the sampled texture.
 - A fourth object uses an untextured solid-orange material and the white
   fallback texture.
+- In front of them, one masked pane uses a generated checkerboard cutout texture
+  and a `0.5` cutoff, so whole texels are discarded and the scene behind it shows
+  through the holes.
+- Three blended panes share the loaded base-color texture with a cool and a warm
+  tint at different distances. They overlap the masked pane and each other, so an
+  incorrect blend order or a depth write in the blend pipeline changes the visible
+  result. The panes do not write depth.
 - A supplied path is decoded by `TextureLoader`. A missing, unreadable,
   malformed, oversized, or unsupported texture prints a diagnostic and falls back
   to the generated checkerboard; the window still opens.
@@ -444,8 +546,11 @@ textures, reload them, or generate mipmaps.
 
 `tests/Nymeria.Core.Tests` covers the CPU data without a GPU or window:
 
-- `Material` defaults, tint validation, texture-reference sharing, and blank-name
-  normalization;
+- `Material` defaults, tint validation, texture-reference sharing, blank-name
+  normalization, transparency modes, the default opaque mode, and the validation
+  of `Alpha`, `AlphaCutoff`, and undefined modes;
+- `BlendOrder` back-to-front ordering, tie-breaking by index, independence from
+  the incoming order, non-finite distances, and non-finite camera rejection;
 - `TextureData` payload validation, dimensions, row pitch, byte count, mip
   chains, and limits;
 - `CompressedTextureData` block sizes, format validation, mip layout, and limits;
@@ -479,11 +584,13 @@ are validated manually with [SMOKE_TEST.md](SMOKE_TEST.md), not by headless CI.
 
 ## Intentionally unsupported
 
-OBJ MTL parsing, OMSI material mapping, PBR, shadows, transparency sorting,
-texture streaming, mipmap generation, hot reload, animation, an editor, and a
-general asset pipeline are out of scope. Lighting is limited to the single
-ambient plus directional Lambert model in [LIGHTING.md](LIGHTING.md). Alpha is
-decoded but not blended. BC decompression on the CPU, BC6H, ASTC, ETC, cubemaps,
+OBJ MTL parsing, OMSI material mapping, PBR, shadows, texture streaming, mipmap
+generation, hot reload, animation, an editor, and a general asset pipeline are
+out of scope. Lighting is limited to the single ambient plus directional Lambert
+model in [LIGHTING.md](LIGHTING.md). Transparency is limited to the three
+modes, the object-level ordering, and the limitations described in
+[Transparency](#transparency): there is no order-independent or per-triangle
+sorting. BC decompression on the CPU, BC6H, ASTC, ETC, cubemaps,
 texture arrays, 3D
 textures, and volume textures are not supported. The supported DDS subset is not
 a claim of universal DDS compatibility. BMP support is also a documented subset:

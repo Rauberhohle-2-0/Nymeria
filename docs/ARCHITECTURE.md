@@ -137,8 +137,10 @@ extension is a direction, not a current feature.
   nearest-hit scene queries, viewport unprojection, and pick eligibility, and
   `Nymeria.Core.Collision` validated box and sphere primitives, inclusive
   overlap tests, world-space conversion, an optional scene-object collider, and
-  deterministic O(n²) pair queries. They are headless, use `System.Numerics`
-  only, and contain no SDL3, GPU, window, or format dependency.
+  deterministic O(n²) pair queries, and `Nymeria.Core.Rendering.BlendOrder`
+  deterministic back-to-front ordering for blended instances. They are headless,
+  use `System.Numerics` only, and contain no SDL3, GPU, window, or format
+  dependency.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
 - `Nymeria.Graphics.Tests`, GPU-independent tests for camera state validation,
   view/projection conventions, and matrix diagnostics.
@@ -671,14 +673,25 @@ instance. On an explicit unload path, `PruneUnusedResources` waits for the GPU t
 become idle and releases cached meshes and textures that the current scene no
 longer references, keeping anything shared with a remaining object. The shared
 vertex layout is position, normal, and UV; the fragment shader multiplies sampled
-RGB by the material tint and an optional lighting term; alpha is not blended.
+RGB by the material tint and an optional lighting term, preserves the sampled
+alpha, and applies the material transparency mode. Opaque and masked instances
+share one depth-writing pipeline and are drawn in scene order, with a shader
+`discard` for the mask cutoff. Blended instances use a second pipeline that keeps
+the depth test but disables depth writes and enables straight source-over
+blending; they are collected into a reused list, ordered back to front by
+`Nymeria.Core.Rendering.BlendOrder`, and drawn after the opaque phase. Sorting is
+per object by bounds center, so intersecting or surrounding instances cannot be
+ordered per pixel. A steady frame allocates nothing new for this path.
 
 `HelloMaterials` builds a UV-mapped cube and a generated four-quadrant
 checkerboard in code, shares one checkerboard material and one mesh between two
 objects, adds a blue-tinted variant of the same texture, and adds an untextured
-solid material. It leaves `Scene.Lighting` null, so the shared renderer uses a
-white ambient term and no directional term: the output is the same unlit base
-color as before lighting existed. A supplied PNG, JPEG, TGA, DDS, or BMP path is
+solid material. It also demonstrates transparency: one masked pane uses a
+generated checkerboard cutout texture, and three overlapping blended panes use
+the loaded texture with cool and warm tints at different distances so a wrong
+order or depth rule is visible. It leaves `Scene.Lighting` null, so the shared
+renderer uses a white ambient term and no directional term: the output is the
+same unlit base color as before lighting existed. A supplied PNG, JPEG, TGA, DDS, or BMP path is
 decoded through the loader; a missing, unreadable, malformed, oversized, or
 unsupported file prints a diagnostic and falls back to the generated checkerboard
 while the example keeps running. A compressed DDS format the GPU cannot sample is
@@ -970,11 +983,12 @@ Limitations in this version:
   shadow, normal mapping, deferred rendering, global illumination, or shader
   graph. Meshes without normals are rejected by the lit material renderer rather
   than receiving invented normals.
-- Materials are a base-color tint plus an optional base-color texture. There is
-  no MTL or OMSI material parsing, transparency sorting, texture streaming or
-  reload, mipmap generation, CPU block decompression, or animation. Alpha is
-  decoded but not blended. `HelloMaterials` accepts one explicit texture path
-  and does not search for textures relative to a model.
+- Materials are a base-color tint plus an optional base-color texture and a
+  transparency mode. There is no MTL or OMSI material parsing, texture streaming
+  or reload, mipmap generation, CPU block decompression, or animation, and no
+  order-independent or per-triangle transparency: blending is object-level,
+  back-to-front, by bounds center. `HelloMaterials` accepts one explicit texture
+  path and does not search for textures relative to a model.
 - Texture formats are PNG, JPEG, TGA, BMP, and a documented DDS subset. DDS
   support is not universal: BC6H, ASTC, ETC, cubemaps, volumes, texture arrays,
   3D textures, padded row pitches, and uncompressed sRGB DDS layouts are rejected

@@ -312,7 +312,8 @@ automated checks below.
 2. **Title is correct.** The title bar reads `Nymeria`.
 3. **Materials render.** Four cubes are visible against the dark background. Two
    show a four-quadrant checkerboard, one shows the same pattern with a blue tint,
-   and one is solid orange. The output is not blank, black, stretched, or
+   and one is solid orange. In front of them are one masked pane and three
+   overlapping blended panes. The output is not blank, black, stretched, or
    untextured.
 4. **Texture orientation is correct.** On each checkerboard face seen from
    outside, the top-left quadrant is red, the top-right is green, the bottom-left
@@ -396,6 +397,33 @@ automated checks below.
 27. **No unhandled exceptions.** No exception text appears in the terminal during
     normal launch, movement, mouse look, resize, minimize, restore, any texture
     load, fallback, or shutdown.
+
+### Transparency checks
+
+T1. **Mask discards fragments.** The pane nearest the camera shows a regular
+    checkerboard of fully transparent holes. Through each hole the scene behind
+    it is visible, and there is no dark or tinted residue where a hole should
+    be. Moving the camera along the pane keeps the holes aligned to the texture.
+T2. **Mask writes depth.** An opaque object between the camera and the surviving
+    part of the masked pane hides it; a hole never hides the geometry behind it.
+T3. **Blend composites.** The three glass panes tint the objects behind them
+    rather than replacing them. Where two panes overlap, the tint is visibly
+    stronger than for either pane alone, and the four-quadrant checkerboard is
+    still recognizable through the glass.
+T4. **Blend order is back to front.** Orbit so the three glass panes line up. The
+    far pane is composited before the near one: a warm pane behind a cool pane
+    tints the cool pane, not the reverse. No pane disappears or flickers as the
+    camera moves, and rotating away and back reproduces the same result.
+T5. **Blend does not write depth.** A blended pane in front of another blended
+    pane does not cut a hole in it, and two glass panes seen edge-on do not
+    occlude each other through the depth buffer.
+T6. **Opaque and masked paths are unchanged.** The four original cubes still
+    show the same colors, orientation, tint blending, and depth occlusion as
+    before this milestone; the mask pane is the only object that discards
+    fragments.
+T7. **Resize and minimize keep transparency stable.** After resizing, minimizing,
+    and restoring, the mask holes, the blend tints, and the ordering look the
+    same, and no depth or blend state leaks between frames.
 
 ## HelloLighting checks
 
