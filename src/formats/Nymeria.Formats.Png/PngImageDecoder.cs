@@ -11,12 +11,13 @@ namespace Nymeria.Formats.Png;
 /// <para>
 /// The decoder accepts non-interlaced, 8-bit PNG images with grayscale, RGB,
 /// indexed, grayscale-alpha, or RGBA color, including palette images with a
-/// <c>PLTE</c> chunk. It rejects 16-bit images, interlaced images, unknown
+/// <c>PLTE</c> chunk and <c>tRNS</c> transparency for grayscale, truecolor, and
+/// indexed images. It rejects 16-bit images, interlaced images, unknown
 /// critical chunks, invalid checksums, unsupported compression or filter
-/// methods, malformed image data, and dimensions or payloads beyond its
-/// documented limits. Ancillary chunks that do not affect the decoded RGB
-/// pixels are ignored; alpha is preserved in the pixel payload but the example
-/// renderer does not blend it.
+/// methods, malformed or misplaced transparency metadata, malformed image
+/// data, and dimensions or payloads beyond its documented limits. Ancillary
+/// chunks that do not affect the decoded pixels are ignored; alpha is preserved
+/// in the pixel payload but the example renderer does not blend it.
 /// </para>
 /// <para>
 /// The decoder treats the stream as untrusted input. It bounds the encoded
@@ -111,8 +112,10 @@ public sealed class PngImageDecoder
         int channelCount = 0;
         byte[]? palette = null;
         int paletteEntryCount = 0;
+        TransparencyInfo transparency = TransparencyInfo.None;
         bool hasHeader = false;
         bool hasPalette = false;
+        bool hasTransparency = false;
         bool hasImageData = false;
         bool imageDataEnded = false;
         bool hasEnd = false;
@@ -252,6 +255,28 @@ public sealed class PngImageDecoder
                 imageData.Write(payload);
                 hasImageData = true;
             }
+            else if (chunkType.SequenceEqual("tRNS"u8))
+            {
+                if (hasTransparency)
+                {
+                    throw Error($"a second tRNS chunk appears at byte {offset}.");
+                }
+
+                if (hasImageData)
+                {
+                    throw Error(
+                        $"the tRNS chunk at byte {offset} appears after the image " +
+                        "data. PNG requires transparency before IDAT.");
+                }
+
+                transparency = ParseTransparency(
+                    payload,
+                    colorType,
+                    hasPalette,
+                    paletteEntryCount,
+                    offset);
+                hasTransparency = true;
+            }
             else if (chunkType.SequenceEqual("IEND"u8))
             {
                 if (payloadLength != 0)
@@ -289,9 +314,9 @@ public sealed class PngImageDecoder
                         $"appears at byte {offset}.");
                 }
 
-                // Ancillary chunks such as tRNS, gAMA, or sRGB are ignored. The
-                // decoded payload preserves alpha but the renderer does not blend
-                // and performs no color-space conversion.
+                // Ancillary chunks such as gAMA or sRGB are ignored. The decoded
+                // payload preserves alpha but the renderer does not blend and
+                // performs no color-space conversion.
             }
 
             if (hasImageData && !chunkType.SequenceEqual("IDAT"u8))
@@ -331,6 +356,7 @@ public sealed class PngImageDecoder
             channelCount,
             palette,
             paletteEntryCount,
+            transparency,
             imageData);
     }
 
@@ -469,6 +495,7 @@ public sealed class PngImageDecoder
         int channelCount,
         byte[]? palette,
         int paletteEntryCount,
+        TransparencyInfo transparency,
         MemoryStream imageData)
     {
         int width = (int)widthValue;
@@ -530,7 +557,102 @@ public sealed class PngImageDecoder
             channelCount,
             colorType,
             palette,
-            paletteEntryCount);
+            paletteEntryCount,
+            transparency);
+    }
+
+    private TransparencyInfo ParseTransparency(
+        ReadOnlySpan<byte> payload,
+        byte colorType,
+        bool hasPalette,
+        int paletteEntryCount,
+        int offset)
+    {
+        switch (colorType)
+        {
+            case 0:
+            {
+                if (payload.Length != 2)
+                {
+                    throw Error(
+                        $"the tRNS chunk at byte {offset} has {payload.Length} data " +
+                        "bytes, but a grayscale image requires exactly 2.");
+                }
+
+                int sample = BinaryPrimitives.ReadUInt16BigEndian(payload);
+
+                if (sample > 255)
+                {
+                    throw Error(
+                        $"the tRNS chunk at byte {offset} specifies gray sample " +
+                        $"{sample}, which is outside the 8-bit range 0 to 255.");
+                }
+
+                return new TransparencyInfo { HasGray = true, Gray = (byte)sample };
+            }
+
+            case 2:
+            {
+                if (payload.Length != 6)
+                {
+                    throw Error(
+                        $"the tRNS chunk at byte {offset} has {payload.Length} data " +
+                        "bytes, but a truecolor image requires exactly 6.");
+                }
+
+                int red = BinaryPrimitives.ReadUInt16BigEndian(payload[..2]);
+                int green = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(2, 2));
+                int blue = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(4, 2));
+
+                if (red > 255 || green > 255 || blue > 255)
+                {
+                    throw Error(
+                        $"the tRNS chunk at byte {offset} specifies the color " +
+                        $"({red}, {green}, {blue}), but each sample must be in the " +
+                        "8-bit range 0 to 255.");
+                }
+
+                return new TransparencyInfo
+                {
+                    HasRgb = true,
+                    Red = (byte)red,
+                    Green = (byte)green,
+                    Blue = (byte)blue,
+                };
+            }
+
+            case 3:
+            {
+                if (!hasPalette)
+                {
+                    throw Error(
+                        $"the tRNS chunk at byte {offset} appears before PLTE. An " +
+                        "indexed image requires the palette first.");
+                }
+
+                if (payload.Length == 0)
+                {
+                    throw Error(
+                        $"the tRNS chunk at byte {offset} is empty. It must provide " +
+                        "one to {paletteEntryCount} alpha values.");
+                }
+
+                if (payload.Length > paletteEntryCount)
+                {
+                    throw Error(
+                        $"the tRNS chunk at byte {offset} has {payload.Length} alpha " +
+                        $"values, but the palette has only {paletteEntryCount} entries.");
+                }
+
+                return new TransparencyInfo { PaletteAlpha = payload.ToArray() };
+            }
+
+            default:
+                throw Error(
+                    $"the tRNS chunk at byte {offset} is not allowed with color " +
+                    $"type {colorType}. PNG permits transparency only for grayscale, " +
+                    "truecolor, and indexed images.");
+        }
     }
 
     private void Unfilter(
@@ -606,7 +728,8 @@ public sealed class PngImageDecoder
         int channelCount,
         byte colorType,
         byte[]? palette,
-        int paletteEntryCount)
+        int paletteEntryCount,
+        TransparencyInfo transparency)
     {
         int outputLength = checked(width * height * TextureData.BytesPerPixel);
         byte[] rgba = new byte[outputLength];
@@ -627,7 +750,10 @@ public sealed class PngImageDecoder
                         rgba[output] = gray;
                         rgba[output + 1] = gray;
                         rgba[output + 2] = gray;
-                        rgba[output + 3] = 255;
+                        rgba[output + 3] =
+                            transparency.HasGray && gray == transparency.Gray
+                                ? (byte)0
+                                : (byte)255;
                         source += 1;
                         break;
                     }
@@ -637,7 +763,13 @@ public sealed class PngImageDecoder
                         rgba[output] = scanlines[source];
                         rgba[output + 1] = scanlines[source + 1];
                         rgba[output + 2] = scanlines[source + 2];
-                        rgba[output + 3] = 255;
+                        rgba[output + 3] =
+                            transparency.HasRgb &&
+                            scanlines[source] == transparency.Red &&
+                            scanlines[source + 1] == transparency.Green &&
+                            scanlines[source + 2] == transparency.Blue
+                                ? (byte)0
+                                : (byte)255;
                         source += 3;
                         break;
                     }
@@ -657,7 +789,10 @@ public sealed class PngImageDecoder
                         rgba[output] = palette[paletteOffset];
                         rgba[output + 1] = palette[paletteOffset + 1];
                         rgba[output + 2] = palette[paletteOffset + 2];
-                        rgba[output + 3] = 255;
+                        rgba[output + 3] = transparency.PaletteAlpha is { } paletteAlpha &&
+                            index < paletteAlpha.Length
+                                ? paletteAlpha[index]
+                                : (byte)255;
                         source += 1;
                         break;
                     }
@@ -739,6 +874,29 @@ public sealed class PngImageDecoder
         }
 
         return new string(characters);
+    }
+
+    /// <summary>
+    /// The validated <c>tRNS</c> transparency samples for one image. Only the
+    /// field that matches the image color type is populated.
+    /// </summary>
+    private readonly struct TransparencyInfo
+    {
+        public static TransparencyInfo None => default;
+
+        public bool HasGray { get; init; }
+
+        public byte Gray { get; init; }
+
+        public bool HasRgb { get; init; }
+
+        public byte Red { get; init; }
+
+        public byte Green { get; init; }
+
+        public byte Blue { get; init; }
+
+        public byte[]? PaletteAlpha { get; init; }
     }
 
     private PngFormatException Error(string message, Exception? innerException = null)

@@ -75,6 +75,269 @@ public sealed class PngImageDecoderTests
         Assert.Equal(new byte[] { 0, 0, 255, 255 }, Decode(png).Pixels.ToArray());
     }
 
+    [Fact]
+    public void Decode_AppliesPaletteTransparencyToIndexedPixels()
+    {
+        byte[] palette = [255, 0, 0, 0, 255, 0, 0, 0, 255];
+        byte[] png = PngTestFileBuilder.CreatePng(
+            3,
+            1,
+            colorType: 3,
+            scanlines: [0, 0, 1, 2],
+            palette: palette,
+            transparency: [0, 128]);
+
+        Assert.Equal(
+            new byte[]
+            {
+                255, 0, 0, 0,
+                0, 255, 0, 128,
+                0, 0, 255, 255,
+            },
+            Decode(png).Pixels.ToArray());
+    }
+
+    [Fact]
+    public void Decode_AppliesASinglePaletteAlphaValue()
+    {
+        byte[] palette = [10, 20, 30, 40, 50, 60];
+        byte[] png = PngTestFileBuilder.CreatePng(
+            2,
+            1,
+            colorType: 3,
+            scanlines: [0, 0, 1],
+            palette: palette,
+            transparency: [0]);
+
+        Assert.Equal(
+            new byte[] { 10, 20, 30, 0, 40, 50, 60, 255 },
+            Decode(png).Pixels.ToArray());
+    }
+
+    [Fact]
+    public void Decode_KeepsPaletteEntriesBeyondTheAlphaListOpaque()
+    {
+        byte[] palette = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        byte[] png = PngTestFileBuilder.CreatePng(
+            1,
+            1,
+            colorType: 3,
+            scanlines: [0, 2],
+            palette: palette,
+            transparency: [64]);
+
+        Assert.Equal(new byte[] { 7, 8, 9, 255 }, Decode(png).Pixels.ToArray());
+    }
+
+    [Fact]
+    public void Decode_AppliesGrayscaleTransparency()
+    {
+        byte[] png = PngTestFileBuilder.CreatePng(
+            2,
+            1,
+            colorType: 0,
+            scanlines: [0, 10, 20],
+            transparency: [0, 10]);
+
+        Assert.Equal(
+            new byte[] { 10, 10, 10, 0, 20, 20, 20, 255 },
+            Decode(png).Pixels.ToArray());
+    }
+
+    [Fact]
+    public void Decode_AppliesTruecolorTransparencyBeforeConversion()
+    {
+        byte[] png = PngTestFileBuilder.CreatePng(
+            2,
+            1,
+            colorType: 2,
+            scanlines: [0, 1, 2, 3, 4, 5, 6],
+            transparency: [0, 1, 0, 2, 0, 3]);
+
+        Assert.Equal(
+            new byte[] { 1, 2, 3, 0, 4, 5, 6, 255 },
+            Decode(png).Pixels.ToArray());
+    }
+
+    [Fact]
+    public void Decode_KeepsImagesWithoutTransparencyOpaque()
+    {
+        byte[] png = PngTestFileBuilder.CreatePng(
+            1,
+            1,
+            colorType: 2,
+            scanlines: [0, 9, 8, 7]);
+
+        Assert.Equal(new byte[] { 9, 8, 7, 255 }, Decode(png).Pixels.ToArray());
+    }
+
+    [Theory]
+    [InlineData((byte)0, 0)]
+    [InlineData((byte)0, 1)]
+    [InlineData((byte)0, 3)]
+    [InlineData((byte)2, 2)]
+    [InlineData((byte)2, 5)]
+    [InlineData((byte)2, 7)]
+    public void Decode_RejectsTRnsLengthsThatDoNotMatchTheColorType(
+        byte colorType,
+        int length)
+    {
+        byte[] png = PngTestFileBuilder.CreatePng(
+            1,
+            1,
+            colorType: colorType,
+            scanlines: [0, 1, 2, 3],
+            transparency: new byte[length]);
+
+        PngFormatException exception = Assert.Throws<PngFormatException>(
+            () => Decode(png));
+
+        Assert.Contains("tRNS", exception.Message);
+    }
+
+    [Fact]
+    public void Decode_RejectsAnEmptyIndexedTRnsChunk()
+    {
+        byte[] png = PngTestFileBuilder.CreatePng(
+            1,
+            1,
+            colorType: 3,
+            scanlines: [0, 0],
+            palette: [1, 2, 3],
+            transparency: []);
+
+        Assert.Throws<PngFormatException>(() => Decode(png));
+    }
+
+    [Fact]
+    public void Decode_RejectsMoreAlphaValuesThanPaletteEntries()
+    {
+        byte[] png = PngTestFileBuilder.CreatePng(
+            1,
+            1,
+            colorType: 3,
+            scanlines: [0, 0],
+            palette: [1, 2, 3],
+            transparency: [1, 2]);
+
+        PngFormatException exception = Assert.Throws<PngFormatException>(
+            () => Decode(png));
+
+        Assert.Contains("only 1", exception.Message);
+    }
+
+    [Theory]
+    [InlineData((byte)0, new byte[] { 1, 0 })]
+    [InlineData((byte)2, new byte[] { 1, 0, 0, 0, 0, 0 })]
+    public void Decode_RejectsTransparencySamplesBeyondEightBits(
+        byte colorType,
+        byte[] transparency)
+    {
+        byte[] png = PngTestFileBuilder.CreatePng(
+            1,
+            1,
+            colorType: colorType,
+            scanlines: [0, 1, 2, 3, 4, 5],
+            transparency: transparency);
+
+        PngFormatException exception = Assert.Throws<PngFormatException>(
+            () => Decode(png));
+
+        Assert.Contains("8-bit range", exception.Message);
+    }
+
+    [Theory]
+    [InlineData((byte)4)]
+    [InlineData((byte)6)]
+    public void Decode_RejectsTRnsForColorTypesThatProhibitIt(byte colorType)
+    {
+        byte[] png = PngTestFileBuilder.CreatePng(
+            1,
+            1,
+            colorType: colorType,
+            scanlines: [0, 1, 2, 3, 4],
+            transparency: [0, 1]);
+
+        PngFormatException exception = Assert.Throws<PngFormatException>(
+            () => Decode(png));
+
+        Assert.Contains("not allowed", exception.Message);
+    }
+
+    [Fact]
+    public void Decode_RejectsDuplicateTransparencyChunks()
+    {
+        byte[] png = PngTestFileBuilder.CreatePng(
+            1,
+            1,
+            colorType: 0,
+            scanlines: [0, 5],
+            transparency: [0, 5]);
+        byte[] duplicated = InsertBeforeIend(
+            png,
+            PngTestFileBuilder.CreateChunk("tRNS", [0, 5]));
+
+        PngFormatException exception = Assert.Throws<PngFormatException>(
+            () => Decode(duplicated));
+
+        Assert.Contains("second tRNS", exception.Message);
+    }
+
+    [Fact]
+    public void Decode_RejectsTransparencyAfterImageData()
+    {
+        byte[] png = PngTestFileBuilder.CreatePng(
+            1,
+            1,
+            colorType: 0,
+            scanlines: [0, 5]);
+        byte[] misordered = InsertBeforeIend(
+            png,
+            PngTestFileBuilder.CreateChunk("tRNS", [0, 5]));
+
+        PngFormatException exception = Assert.Throws<PngFormatException>(
+            () => Decode(misordered));
+
+        Assert.Contains("before IDAT", exception.Message);
+    }
+
+    [Fact]
+    public void Decode_RejectsPaletteTransparencyBeforeThePalette()
+    {
+        byte[] png = PngTestFileBuilder.CreatePng(
+            1,
+            1,
+            colorType: 3,
+            scanlines: [0, 0],
+            palette: [1, 2, 3],
+            transparency: [0],
+            transparencyBeforePalette: true);
+
+        PngFormatException exception = Assert.Throws<PngFormatException>(
+            () => Decode(png));
+
+        Assert.Contains("before PLTE", exception.Message);
+    }
+
+    [Fact]
+    public void Decode_RejectsTruncatedTransparencyPayload()
+    {
+        byte[] png = PngTestFileBuilder.CreatePng(
+            1,
+            1,
+            colorType: 0,
+            scanlines: [0, 5]);
+        byte[] truncated = InsertBeforeIend(
+            png,
+            [
+                0x00, 0x00, 0x00, 0x06,
+                (byte)'t', (byte)'R', (byte)'N', (byte)'S',
+                0x00, 0x05,
+            ]);
+
+        Assert.Throws<PngFormatException>(() => Decode(truncated));
+    }
+
     [Theory]
     [InlineData((byte)0)]
     [InlineData((byte)1)]

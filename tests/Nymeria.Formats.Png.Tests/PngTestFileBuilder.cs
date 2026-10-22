@@ -19,6 +19,8 @@ internal static class PngTestFileBuilder
         byte colorType = 6,
         byte[]? scanlines = null,
         byte[]? palette = null,
+        byte[]? transparency = null,
+        bool transparencyBeforePalette = false,
         bool interlace = false,
         bool includeImageData = true,
         bool includeEnd = true,
@@ -49,9 +51,19 @@ internal static class PngTestFileBuilder
             colorType,
             interlace)));
 
+        if (transparencyBeforePalette && transparency is not null)
+        {
+            output.Write(CreateChunk("tRNS", transparency));
+        }
+
         if (palette is not null)
         {
             output.Write(CreateChunk("PLTE", palette));
+        }
+
+        if (!transparencyBeforePalette && transparency is not null)
+        {
+            output.Write(CreateChunk("tRNS", transparency));
         }
 
         if (includeImageData)

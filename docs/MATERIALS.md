@@ -185,9 +185,24 @@ Every decoder:
 non-interlaced, 8-bit images with grayscale, RGB, indexed, grayscale-alpha, or
 RGBA color. It verifies the signature, chunk ordering, every chunk CRC, palette
 indices, scanline filters, and the exact decompressed size; it rejects unknown
-critical chunks, 16-bit, interlaced, and malformed images. Ancillary chunks such
-as `tRNS`, `gAMA`, and `sRGB` are ignored. Alpha is preserved but not blended and
-no color-space conversion is applied.
+critical chunks, 16-bit, interlaced, and malformed images. Other ancillary chunks
+such as `gAMA` and `sRGB` are ignored. Alpha is preserved but not blended and no
+color-space conversion is applied.
+
+`tRNS` transparency is decoded for the color types that permit it:
+
+- **Indexed (3):** the alpha values apply to the leading palette entries in
+  order. Entries beyond the supplied alpha list stay fully opaque. The chunk must
+  follow `PLTE` and provide one to the palette entry count values.
+- **Grayscale (0):** one 16-bit sample names the fully transparent gray value;
+  matching pixels get alpha 0 and all others stay opaque.
+- **Truecolor (2):** three 16-bit samples name the fully transparent RGB value;
+  matching pixels get alpha 0 and all others stay opaque.
+
+Samples are compared against the decoded 8-bit pixel values, before any
+conversion, and must be in the 8-bit range. `tRNS` is rejected for grayscale-alpha
+(4) and RGBA (6), which already carry alpha, and for duplicate, misplaced,
+mis-sized, out-of-range, or truncated transparency metadata.
 
 ### JPEG
 
