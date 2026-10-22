@@ -33,11 +33,14 @@ bounded timing helpers in `Nymeria.Core.Diagnostics`. `HelloAudio` uses
 listener and spatial status math. `HelloAnimation` uses the keyframe tracks and
 playback controller in `Nymeria.Core.Animation` to drive three scene transforms.
 
-All examples except `HelloWindow` use SDL3's GPU API with the Metal backend and
-Metal Shading Language (MSL) source. SDL compiles the embedded MSL source when
-the shaders are created, so there is no Xcode build step and no generated shader
-artifact. `HelloWindow` creates a window and pumps events only, so it needs no
-GPU device and no shader.
+All examples except `HelloWindow` use SDL3's GPU API and embed Metal Shading
+Language (MSL) source, which SDL compiles when the shaders are created, so there
+is no Xcode build step and no generated shader artifact. `GpuDevice` takes the
+backend from the platform policy, so these examples render on macOS through
+Metal. On Windows the device is created through Direct3D 12 with DXIL, but the
+examples still embed MSL only, so they fail at shader creation until DXIL assets
+exist. `HelloWindow` creates a window and pumps events only, so it needs no GPU
+device and no shader.
 
 From the repository root:
 
@@ -787,12 +790,13 @@ dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
 
 ## Platform limits
 
-Sixteen of the seventeen examples are macOS-only for now: they require SDL's
-Metal backend and MSL source, and Windows and Linux need their own shader
-formats. `HelloWindow` is the exception, because it needs only a native SDL3
-runtime; it runs on macOS and on Windows, where the `SDL3-CS.Windows` package
-deploys `SDL3.dll`. Windows GPU behavior is unverified and Direct3D 12 is not
-implemented. Linux is unsupported and ships no native package. `HelloAudio`
+Sixteen of the seventeen examples render on macOS only for now: they embed MSL
+and need SDL's Metal backend. Windows selects Direct3D 12 with DXIL, but the
+examples have no DXIL shader assets yet, so they stop at shader creation there;
+Linux has no backend at all. `HelloWindow` is the exception, because it needs
+only a native SDL3 runtime; it runs on macOS and on Windows, where the
+`SDL3-CS.Windows` package deploys `SDL3.dll`. No Windows GPU behavior is
+verified, and Linux ships no native package. `HelloAudio`
 additionally uses the SDL3 audio device, which is verified
 on macOS CoreAudio only. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
 general material or scene importers. `HelloO3D` accepts only unscrambled static meshes

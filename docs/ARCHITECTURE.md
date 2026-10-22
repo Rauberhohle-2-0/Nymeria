@@ -73,8 +73,9 @@ extension is a direction, not a current feature.
   transforms, and contains no SDL3, GPU, window, format, or scene-membership
   dependency.
 - `Nymeria.Graphics`, a class library that owns the SDL3 GPU device and window
-  presentation claim, provides reusable MSL shader, buffer, texture, and sampler
-  creation, and contains a reusable, SDL-independent free-fly `Camera`.
+  presentation claim, provides reusable shader, buffer, texture, and sampler
+  creation, reports the device's driver and shader format, and contains a
+  reusable, SDL-independent free-fly `Camera`.
 - `examples/HelloTriangle`, a console executable that opens the window and draws
   the triangle with example-owned shaders and geometry.
 - `examples/HelloWindow`, a window-only console executable that initializes SDL
@@ -431,18 +432,34 @@ never mutates it. [CULLING.md](CULLING.md) is the authoritative culling contract
 
 `Nymeria.Graphics` contains reusable graphics infrastructure. `GpuDevice`
 creates and owns an SDL3 GPU device, claims a native window for presentation,
-reports the swapchain format, and creates MSL shaders, uploaded GPU buffers,
-2D RGBA textures, and samplers. It uses SDL3's GPU API through the same `SDL3-CS`
-binding; there is no direct Metal interop, native wrapper, second binding, or
-software fallback.
+reports the swapchain format, the selected driver, and the device's shader
+format, and creates shaders, uploaded GPU buffers, 2D RGBA textures, and
+samplers. It uses SDL3's GPU API through the same `SDL3-CS` binding; there is no
+direct Metal or Direct3D 12 interop, native wrapper, second binding, or software
+fallback.
 
 `GpuDevice.Create(IntPtr window)`:
 
 - requires the main thread and a non-zero native `SDL_Window*` handle from
   `Window.Handle`;
-- checks `SDL_GPUSupportsShaderFormats(MSL, "metal")`;
-- creates an SDL GPU device with `SDL_CreateGPUDevice(MSL, debug: false, "metal")`;
+- asks the internal `GpuBackendSelection` component for the platform's policy:
+  MSL shaders for SDL's `metal` driver on macOS, and DXIL shaders for SDL's
+  `direct3d12` driver on Windows. Linux and unknown platforms have no policy and
+  fail with an explicit message instead of selecting an untested backend;
+- checks `SDL_GPUSupportsShaderFormats` for that format with a null driver name,
+  so SDL selects the backend in its own order rather than from a hardcoded name;
+- creates an SDL GPU device with
+  `SDL_CreateGPUDevice(formats, debug: false, null)`;
+- verifies that `SDL_GetGPUDeviceDriver` reports the expected driver and that
+  `SDL_GetGPUShaderFormats` includes the policy format, destroying the device and
+  throwing an actionable error when either check fails;
 - claims the window for presentation and reads its swapchain format.
+
+The shader format is the only platform-specific input. `GpuDevice.ShaderFormat`
+reports the verified bytecode format, and `CreateShader` rejects bytes that do not
+match it instead of relabelling them. Backend policy is a set of pure functions,
+so it is unit-tested without a device or a native library; see
+[WINDOWS_02_D3D12_BACKEND.md](WINDOWS_02_D3D12_BACKEND.md).
 
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
 `examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloX`,
@@ -942,14 +959,14 @@ authoritative contract.
 
 Limitations in this version:
 
-- GPU rendering is macOS-only. It requires SDL's Metal driver and MSL shader
-  source; Windows and Linux will need their own shader formats, which are not
-  implemented.
+- GPU rendering is implemented on macOS only. Windows selects Direct3D 12 and
+  can create a DXIL device, but no DXIL shader assets exist yet, so every GPU
+  example there fails at shader creation. Linux will need Vulkan with SPIR-V;
+  that backend has no policy and is rejected explicitly.
 - Windowing works on Windows. The `SDL3-CS.Windows` package deploys `SDL3.dll`
   for `win-x64`, `win-arm64`, and `win-x86`, and `examples/HelloWindow` is the
-  supported window-only path there. Windows GPU behavior is unverified: device
-  creation still requests Metal, so it fails on Windows, and Direct3D 12 is not
-  implemented.
+  supported window-only path there. No Windows GPU behavior is verified: device
+  creation and rendering remain unconfirmed on Windows hardware.
 - Apple Silicon and Intel Macs both use Metal. The macOS native package contains
   both architectures.
 - Audio playback is verified on macOS through CoreAudio. Windows and Linux audio
@@ -1148,14 +1165,16 @@ The following choices are implemented:
 - **Solution format:** `Nymeria.slnx`, built with the `dotnet` CLI.
 - **Windowing:** SDL3 3.4.18 through `SDL3-CS` 3.4.18 and the native packages
   `SDL3-CS.MacOS` 3.4.18 and `SDL3-CS.Windows` 3.4.18.
-- **GPU rendering:** SDL3's GPU API with the Metal backend and MSL shader source,
-  reached through `SDL3-CS`. `Nymeria.Graphics` provides the reusable
-  `GpuDevice`, including buffer, RGBA and block-compressed texture, sampler, and
-  shader creation; the
+- **GPU rendering:** SDL3's GPU API reached through `SDL3-CS`, with the backend
+  chosen from the shader format the platform provides: Metal with MSL source on
+  macOS and Direct3D 12 with DXIL on Windows. `Nymeria.Graphics` provides the
+  reusable `GpuDevice`, including buffer, RGBA and block-compressed texture,
+  sampler, and shader creation; the
   examples embed their own `.metal` files; `HelloOBJ` and `HelloO3D` share
   `examples/Shared/Shaders/Model.metal`, and `HelloMaterials` and `HelloLighting`
   share `examples/Shared/Shaders/Material.metal`, compiled by SDL at runtime. No
-  direct Metal interop or shader compiler is used.
+  direct Metal or Direct3D 12 interop and no shader compiler are used. Windows
+  DXIL shader assets are not implemented yet.
 - **Math:** `System.Numerics` vectors, quaternions, and matrices, with no custom
   math library. `Camera` uses it for yaw/pitch view and projection math.
   `Transform` uses it for normalized quaternion rotation and row-vector

@@ -51,8 +51,9 @@ automated checks below.
 ## Windows window-only smoke test
 
 This section validates native SDL3 deployment and window creation on Windows. It
-does not validate rendering: `GpuDevice` still requests the Metal backend, so
-every GPU example is expected to stop at device creation on Windows.
+does not validate rendering: `GpuDevice` selects Direct3D 12 with DXIL on
+Windows, but no DXIL shader assets exist yet, so every GPU example is expected to
+create its device and then stop at shader creation.
 
 Setup:
 
@@ -80,9 +81,11 @@ Setup:
    `window closed by the user` and exits with status code `0`.
 4. **No native copy is required.** Run the example from a clean build without
    placing any DLL in the output directory by hand.
-5. **The unusable GPU path is expected.** Running `HelloTriangle` on Windows
-   stops at GPU device creation with a Metal-specific error. Record the message;
-   that is the expected state until a Windows GPU backend exists.
+5. **Device creation should succeed; shader creation is the expected blocker.**
+   Running `HelloTriangle` on Windows should not report a Metal, driver, or
+   device-creation failure. It should stop at shader creation with a message
+   naming the `direct3d12` driver, DXIL, and MSL. Record that exact message; it
+   is the expected state until DXIL shader assets exist.
 
 Record the Windows version, CPU architecture, and date with the result.
 

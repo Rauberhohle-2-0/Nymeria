@@ -114,9 +114,10 @@ window smoke test passed
   initialization, window creation, resizing, and input on Windows are
   unverified. Those are the Windows checks in
   [SMOKE_TEST.md](SMOKE_TEST.md#windows-window-only-smoke-test).
-- **No Windows GPU behavior exists to verify.** `GpuDevice.Create` still requests
-  the Metal backend, so every GPU example is expected to stop at device creation
-  on Windows with a Metal-specific error.
+- **No Windows GPU behavior was verified in W01.** At the time of this task
+  `GpuDevice.Create` still requested the Metal backend. W02 replaced that with a
+  platform policy, so this statement has been superseded; see
+  [WINDOWS_02_D3D12_BACKEND.md](WINDOWS_02_D3D12_BACKEND.md).
 - **No CI run.** The `Repository checks` workflow triggers on `main` only, so no
   Actions result exists for this branch. The Windows and Linux CI legs are
   expected to keep compiling, because the new project is ordinary managed code
@@ -146,9 +147,10 @@ W02 can now assume:
   resolves without manual copying.
 - `examples/HelloWindow` is a GPU-free Windows path for separating native-runtime
   failures from GPU failures.
-- The GPU backend is still hardcoded to Metal in
-  `src/graphics/Nymeria.Graphics/GpuDevice.cs`, and only MSL shader assets exist.
-  Both belong to W02/W03, not to this task.
+- The GPU backend was hardcoded to Metal in
+  `src/graphics/Nymeria.Graphics/GpuDevice.cs` and only MSL shader assets
+  existed. Backend selection was W02's scope and is now implemented; DXIL shader
+  assets remain W03's scope.
 
-Deliberately left untouched: backend selection, shader formats, `.metal`
+Deliberately left untouched by W01: backend selection, shader formats, `.metal`
 sources, `GpuDevice`, and every CI workflow.

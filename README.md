@@ -27,7 +27,7 @@ interactive, depth-tested cube scene.
   sampling and a per-object playback controller,
   ambient and single-directional lighting data with Lambert diffuse shading,
   `Nymeria.Graphics` with reusable
-  Metal GPU device infrastructure and camera math, `examples/HelloTriangle`, the
+  SDL3 GPU device infrastructure and camera math, `examples/HelloTriangle`, the
   interactive `examples/HelloCube`, the OBJ-rendering `examples/HelloOBJ`, the
   O3D-rendering `examples/HelloO3D`, the text-`.x`-rendering `examples/HelloX`,
   the scene-instancing `examples/HelloScene`, the textured and solid-material
@@ -165,15 +165,18 @@ standard macOS quit shortcut (`Cmd+Q`). The command exits with status code `0`
 on a normal shutdown.
 
 The startup path prints an actionable error and exits with status code `1` if the
-native SDL3 library is missing or mismatched, SDL initialization fails, the Metal
-GPU backend is unavailable, the window cannot be created or claimed, a shader or
-pipeline cannot be created, or the OBJ/O3D/`.x` example cannot read or parse its
-file.
+native SDL3 library is missing or mismatched, SDL initialization fails, the GPU
+backend or its shader format is unavailable, the window cannot be created or
+claimed, a shader or pipeline cannot be created, or the OBJ/O3D/`.x` example
+cannot read or parse its file.
 
 ### GPU examples
 
-The GPU examples use SDL3's GPU API on the Metal backend. There is no direct
-Metal interop and no software fallback. `Nymeria.Graphics` provides the reusable
+The GPU examples use SDL3's GPU API. `GpuDevice` takes the shader format from the
+platform's backend policy and lets SDL select the driver, so macOS uses Metal
+with MSL source and Windows requests Direct3D 12 with DXIL. There is no direct
+Metal or Direct3D 12 interop and no software fallback. `Nymeria.Graphics`
+provides the reusable
 GPU device and the `Camera` math type; `Nymeria.Core` provides the model data
 used by `HelloCube` and the scene data used by `HelloScene`;
 `Nymeria.Formats.Obj` parses the file used by `HelloOBJ`,
@@ -343,12 +346,13 @@ All fourteen interactive examples skip rendering while minimized and recover
 when a drawable is available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
-The GPU path is macOS-only for now. Windows deploys the native `SDL3.dll` and can
-build and run the window-only `HelloWindow` example, but it has no GPU backend
-yet: `GpuDevice` still requests Metal, and Direct3D 12 is not implemented.
-Linux is unsupported and ships no native package. See
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
-[docs/WINDOWS_01_NATIVE_SDL3.md](docs/WINDOWS_01_NATIVE_SDL3.md).
+The GPU path renders on macOS only. Windows deploys the native `SDL3.dll`, can
+build and run the window-only `HelloWindow` example, and selects Direct3D 12 with
+DXIL, but no DXIL shader assets exist yet, so GPU examples stop at shader
+creation there. Linux is unsupported and ships no native package. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
+[docs/WINDOWS_01_NATIVE_SDL3.md](docs/WINDOWS_01_NATIVE_SDL3.md), and
+[docs/WINDOWS_02_D3D12_BACKEND.md](docs/WINDOWS_02_D3D12_BACKEND.md).
 GPU output is validated manually with [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md),
 not in CI.
 
@@ -438,6 +442,7 @@ tests/          Headless unit tests for audio, core, formats, and platform
 - [Security audit 01](docs/SECURITY_AUDIT_01.md)
 - [Security audit 02](docs/SECURITY_AUDIT_02.md)
 - [Windows native SDL3 deployment](docs/WINDOWS_01_NATIVE_SDL3.md)
+- [Windows Direct3D 12 backend selection](docs/WINDOWS_02_D3D12_BACKEND.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)
 - [Agent instructions](AGENTS.md)
