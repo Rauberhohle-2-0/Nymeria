@@ -571,81 +571,81 @@ public sealed class PngImageDecoder
         switch (colorType)
         {
             case 0:
-            {
-                if (payload.Length != 2)
                 {
-                    throw Error(
-                        $"the tRNS chunk at byte {offset} has {payload.Length} data " +
-                        "bytes, but a grayscale image requires exactly 2.");
+                    if (payload.Length != 2)
+                    {
+                        throw Error(
+                            $"the tRNS chunk at byte {offset} has {payload.Length} data " +
+                            "bytes, but a grayscale image requires exactly 2.");
+                    }
+
+                    int sample = BinaryPrimitives.ReadUInt16BigEndian(payload);
+
+                    if (sample > 255)
+                    {
+                        throw Error(
+                            $"the tRNS chunk at byte {offset} specifies gray sample " +
+                            $"{sample}, which is outside the 8-bit range 0 to 255.");
+                    }
+
+                    return new TransparencyInfo { HasGray = true, Gray = (byte)sample };
                 }
-
-                int sample = BinaryPrimitives.ReadUInt16BigEndian(payload);
-
-                if (sample > 255)
-                {
-                    throw Error(
-                        $"the tRNS chunk at byte {offset} specifies gray sample " +
-                        $"{sample}, which is outside the 8-bit range 0 to 255.");
-                }
-
-                return new TransparencyInfo { HasGray = true, Gray = (byte)sample };
-            }
 
             case 2:
-            {
-                if (payload.Length != 6)
                 {
-                    throw Error(
-                        $"the tRNS chunk at byte {offset} has {payload.Length} data " +
-                        "bytes, but a truecolor image requires exactly 6.");
+                    if (payload.Length != 6)
+                    {
+                        throw Error(
+                            $"the tRNS chunk at byte {offset} has {payload.Length} data " +
+                            "bytes, but a truecolor image requires exactly 6.");
+                    }
+
+                    int red = BinaryPrimitives.ReadUInt16BigEndian(payload[..2]);
+                    int green = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(2, 2));
+                    int blue = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(4, 2));
+
+                    if (red > 255 || green > 255 || blue > 255)
+                    {
+                        throw Error(
+                            $"the tRNS chunk at byte {offset} specifies the color " +
+                            $"({red}, {green}, {blue}), but each sample must be in the " +
+                            "8-bit range 0 to 255.");
+                    }
+
+                    return new TransparencyInfo
+                    {
+                        HasRgb = true,
+                        Red = (byte)red,
+                        Green = (byte)green,
+                        Blue = (byte)blue,
+                    };
                 }
-
-                int red = BinaryPrimitives.ReadUInt16BigEndian(payload[..2]);
-                int green = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(2, 2));
-                int blue = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(4, 2));
-
-                if (red > 255 || green > 255 || blue > 255)
-                {
-                    throw Error(
-                        $"the tRNS chunk at byte {offset} specifies the color " +
-                        $"({red}, {green}, {blue}), but each sample must be in the " +
-                        "8-bit range 0 to 255.");
-                }
-
-                return new TransparencyInfo
-                {
-                    HasRgb = true,
-                    Red = (byte)red,
-                    Green = (byte)green,
-                    Blue = (byte)blue,
-                };
-            }
 
             case 3:
-            {
-                if (!hasPalette)
                 {
-                    throw Error(
-                        $"the tRNS chunk at byte {offset} appears before PLTE. An " +
-                        "indexed image requires the palette first.");
-                }
+                    if (!hasPalette)
+                    {
+                        throw Error(
+                            $"the tRNS chunk at byte {offset} appears before PLTE. An " +
+                            "indexed image requires the palette first.");
+                    }
 
-                if (payload.Length == 0)
-                {
-                    throw Error(
-                        $"the tRNS chunk at byte {offset} is empty. It must provide " +
-                        "one to {paletteEntryCount} alpha values.");
-                }
+                    if (payload.Length == 0)
+                    {
+                        throw Error(
+                            $"the tRNS chunk at byte {offset} is empty. It must provide " +
+                            "one to {paletteEntryCount} alpha values.");
+                    }
 
-                if (payload.Length > paletteEntryCount)
-                {
-                    throw Error(
-                        $"the tRNS chunk at byte {offset} has {payload.Length} alpha " +
-                        $"values, but the palette has only {paletteEntryCount} entries.");
-                }
+                    if (payload.Length > paletteEntryCount)
+                    {
+                        throw Error(
+                            $"the tRNS chunk at byte {offset} has {payload.Length} alpha " +
+                            $"values, but the palette has only {paletteEntryCount} entries.");
+                    }
 
-                return new TransparencyInfo { PaletteAlpha = payload.ToArray() };
-            }
+                    return new TransparencyInfo { PaletteAlpha = payload.ToArray() };
+                }
 
             default:
                 throw Error(
@@ -745,78 +745,78 @@ public sealed class PngImageDecoder
                 switch (colorType)
                 {
                     case 0:
-                    {
-                        byte gray = scanlines[source];
-                        rgba[output] = gray;
-                        rgba[output + 1] = gray;
-                        rgba[output + 2] = gray;
-                        rgba[output + 3] =
-                            transparency.HasGray && gray == transparency.Gray
-                                ? (byte)0
-                                : (byte)255;
-                        source += 1;
-                        break;
-                    }
-
-                    case 2:
-                    {
-                        rgba[output] = scanlines[source];
-                        rgba[output + 1] = scanlines[source + 1];
-                        rgba[output + 2] = scanlines[source + 2];
-                        rgba[output + 3] =
-                            transparency.HasRgb &&
-                            scanlines[source] == transparency.Red &&
-                            scanlines[source + 1] == transparency.Green &&
-                            scanlines[source + 2] == transparency.Blue
-                                ? (byte)0
-                                : (byte)255;
-                        source += 3;
-                        break;
-                    }
-
-                    case 3:
-                    {
-                        int index = scanlines[source];
-
-                        if (palette is null || index >= paletteEntryCount)
                         {
-                            throw Error(
-                                $"pixel ({x}, {y}) uses palette index {index}, but " +
-                                $"the palette has {paletteEntryCount} entries.");
+                            byte gray = scanlines[source];
+                            rgba[output] = gray;
+                            rgba[output + 1] = gray;
+                            rgba[output + 2] = gray;
+                            rgba[output + 3] =
+                                transparency.HasGray && gray == transparency.Gray
+                                    ? (byte)0
+                                    : (byte)255;
+                            source += 1;
+                            break;
                         }
 
-                        int paletteOffset = index * 3;
-                        rgba[output] = palette[paletteOffset];
-                        rgba[output + 1] = palette[paletteOffset + 1];
-                        rgba[output + 2] = palette[paletteOffset + 2];
-                        rgba[output + 3] = transparency.PaletteAlpha is { } paletteAlpha &&
-                            index < paletteAlpha.Length
-                                ? paletteAlpha[index]
-                                : (byte)255;
-                        source += 1;
-                        break;
-                    }
+                    case 2:
+                        {
+                            rgba[output] = scanlines[source];
+                            rgba[output + 1] = scanlines[source + 1];
+                            rgba[output + 2] = scanlines[source + 2];
+                            rgba[output + 3] =
+                                transparency.HasRgb &&
+                                scanlines[source] == transparency.Red &&
+                                scanlines[source + 1] == transparency.Green &&
+                                scanlines[source + 2] == transparency.Blue
+                                    ? (byte)0
+                                    : (byte)255;
+                            source += 3;
+                            break;
+                        }
+
+                    case 3:
+                        {
+                            int index = scanlines[source];
+
+                            if (palette is null || index >= paletteEntryCount)
+                            {
+                                throw Error(
+                                    $"pixel ({x}, {y}) uses palette index {index}, but " +
+                                    $"the palette has {paletteEntryCount} entries.");
+                            }
+
+                            int paletteOffset = index * 3;
+                            rgba[output] = palette[paletteOffset];
+                            rgba[output + 1] = palette[paletteOffset + 1];
+                            rgba[output + 2] = palette[paletteOffset + 2];
+                            rgba[output + 3] = transparency.PaletteAlpha is { } paletteAlpha &&
+                                index < paletteAlpha.Length
+                                    ? paletteAlpha[index]
+                                    : (byte)255;
+                            source += 1;
+                            break;
+                        }
 
                     case 4:
-                    {
-                        byte gray = scanlines[source];
-                        rgba[output] = gray;
-                        rgba[output + 1] = gray;
-                        rgba[output + 2] = gray;
-                        rgba[output + 3] = scanlines[source + 1];
-                        source += 2;
-                        break;
-                    }
+                        {
+                            byte gray = scanlines[source];
+                            rgba[output] = gray;
+                            rgba[output + 1] = gray;
+                            rgba[output + 2] = gray;
+                            rgba[output + 3] = scanlines[source + 1];
+                            source += 2;
+                            break;
+                        }
 
                     case 6:
-                    {
-                        rgba[output] = scanlines[source];
-                        rgba[output + 1] = scanlines[source + 1];
-                        rgba[output + 2] = scanlines[source + 2];
-                        rgba[output + 3] = scanlines[source + 3];
-                        source += 4;
-                        break;
-                    }
+                        {
+                            rgba[output] = scanlines[source];
+                            rgba[output + 1] = scanlines[source + 1];
+                            rgba[output + 2] = scanlines[source + 2];
+                            rgba[output + 3] = scanlines[source + 3];
+                            source += 4;
+                            break;
+                        }
 
                     default:
                         throw new InvalidOperationException(
