@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/audio/Nymeria.Audio/Nymeria.Audio.csproj" />
+    <ProjectReference Include="../../src/core/Nymeria.Core/Nymeria.Core.csproj" />
+    <ProjectReference Include="../../src/graphics/Nymeria.Graphics/Nymeria.Graphics.csproj" />
+    <ProjectReference Include="../../src/platform/Nymeria.Platform/Nymeria.Platform.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../Shared/FlyCameraControls.cs" Link="FlyCameraControls.cs" />
+    <Compile Include="../Shared/MaterialGpuGeometry.cs" Link="MaterialGpuGeometry.cs" />
+    <Compile Include="../Shared/MaterialRenderer.cs" Link="MaterialRenderer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="../Shared/Shaders/Material.metal"
+                      LogicalName="Nymeria.Examples.Shaders.Material.metal" />
+  </ItemGroup>
+
+</Project>

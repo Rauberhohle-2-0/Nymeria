@@ -120,6 +120,34 @@ not a guarantee.
       updates, and returned references are validated with `Scene.Contains` after
       reuse.
 
+## Audio decoding and playback
+
+- [ ] WAV input is treated as untrusted: RIFF and form signatures, declared RIFF
+      size, chunk order, single format/data chunks, padding, offsets, and lengths
+      are validated before use, and truncation and trailing bytes fail.
+- [ ] Format tag, channel count, sample rate, bit depth, block alignment, and
+      byte rate are validated before samples are interpreted. Unsupported
+      formats, extensible headers, and compressed input fail explicitly.
+- [ ] The data payload describes whole sample frames; frame and decoded-payload
+      limits are enforced before allocation with wider arithmetic.
+- [ ] Non-finite float samples, duplicate or missing chunks, and data before
+      format fail with `WavFormatException`; no partial audio is returned.
+- [ ] Input limits hold for seekable and non-seekable streams, and the caller's
+      stream is left open.
+- [ ] The audio callback allocates no managed memory, performs no file or device
+      I/O, and calls only SDL's stream queue function. Its shared state is
+      protected by one documented lock.
+- [ ] Device creation, control, update, and disposal happen on the application
+      main thread; the callback never re-enters the public API.
+- [ ] The native callback delegate and its `GCHandle` outlive every possible
+      callback, and the handle is freed only after the stream is destroyed.
+- [ ] A clip is never disposed while a playing or paused voice references it;
+      voice stop/dispose releases the reference exactly once.
+- [ ] Device loss stops voices, releases clip references, and refuses new
+      playback without crashing or silently reopening a device.
+- [ ] No recording device, microphone permission, telemetry, or network access is
+      introduced by an audio change.
+
 ## Native and GPU resources
 
 - [ ] Handles are owned by one wrapper and are not destroyed elsewhere.
@@ -180,6 +208,10 @@ not a guarantee.
 - [ ] Bounded mutation or truncation tests cover binary structure changes where
       practical.
 - [ ] Tests are deterministic, headless, and use the existing test projects.
+- [ ] Audio tests cover attenuation and pan boundaries, invalid and non-finite
+      values, malformed WAV input and every new limit, voice lifecycle, shared
+      clip ownership, and concurrent mixing and control. Device-dependent checks
+      are explicitly skipped with a reason or recorded as a manual result.
 - [ ] Valid behavior and public API compatibility are preserved.
 - [ ] Release build has zero warnings and all headless tests pass.
 - [ ] Documentation and the audit register are updated when limits or behavior
@@ -196,6 +228,10 @@ not a guarantee.
   not by CI.
 - There is no general fuzzing campaign, address sanitizer run, SBOM, license scan,
   or third-party binary analysis.
+- The WAV decoder has targeted malformed and boundary tests, not a fuzzing
+  campaign. A valid file at the limits can still allocate the documented decoded
+  payload, and the audio device callback and hot-unplug path are not exercised in
+  CI.
 - The image decoders have targeted malformed and boundary tests, not a fuzzing
   campaign. Their worst accepted case still allocates the documented payload.
 - JPEG decoding depends on `StbImageSharp`. NuGet advisory checks cover the pinned

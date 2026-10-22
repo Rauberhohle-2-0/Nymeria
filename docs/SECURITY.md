@@ -11,15 +11,16 @@ secure or fully audited. The repository-wide reviews and their findings are in
 | Input | Trust |
 | --- | --- |
 | Project source, embedded shaders, checked-in test fixtures | Trusted project content. |
-| OBJ, O3D, text DirectX `.x`, PNG, JPEG, TGA, DDS, and BMP files, streams, and paths supplied at run time | Untrusted. |
+| OBJ, O3D, text DirectX `.x`, PNG, JPEG, TGA, DDS, BMP, and WAV files, streams, and paths supplied at run time | Untrusted. |
 | Package restore input and GitHub Actions metadata | Untrusted external data that the build must validate or pin. |
-| SDL3, Metal, and the operating system | External native dependencies. Nymeria does not sandbox them. |
+| SDL3, CoreAudio or the platform audio device, Metal, and the operating system | External native dependencies. Nymeria does not sandbox them. |
 
-The parsers and the image decoders are headless libraries. They must not depend
-on SDL3, Metal, a GPU, a window, or the current working directory. This keeps
-parsing testable and keeps untrusted input away from the native boundary. The
-JPEG decoder wraps the pure-managed `StbImageSharp` package; the wrap still owns
-the input bound, structural validation, and dimension checks.
+The model parsers, image decoders, and WAV decoder are headless libraries. They
+must not depend on SDL3, Metal, a GPU, a window, or the current working
+directory. This keeps parsing testable and keeps untrusted input away from the
+native boundary. The JPEG decoder wraps the pure-managed `StbImageSharp`
+package; the wrap still owns the input bound, structural validation, and
+dimension checks.
 
 ## Untrusted model input
 
@@ -158,6 +159,51 @@ unreadable, oversized, or malformed file prints a diagnostic and uses a generate
 checkerboard instead of exiting. That fallback is example presentation, not a
 parser result.
 
+## Untrusted audio input
+
+`Nymeria.Formats.Wav.WavAudioDecoder` is a headless decoder for untrusted WAV
+input. It must:
+
+- Verify the `RIFF` signature and `WAVE` form type, and require the declared RIFF
+  size to match the available bytes exactly. Truncation and trailing bytes fail.
+- Walk chunks with wider arithmetic, enforce the RIFF boundary for every chunk,
+  honor RIFF padding, and reject an incomplete chunk header or missing odd-size
+  padding.
+- Require exactly one `fmt ` chunk before exactly one `data` chunk, and reject
+  duplicate or missing chunks.
+- Validate the format tag, channel count, sample rate, bit depth, block
+  alignment, and byte rate before interpreting samples. Only uncompressed PCM
+  format 1 at 8/16/24/32 bits and IEEE float format 3 at 32 bits, with one or two
+  channels and a sample rate from 8000 through 192000 Hz, are accepted.
+  `WAVE_FORMAT_EXTENSIBLE`, compressed formats, and wider channel layouts are
+  rejected explicitly, not approximated.
+- Require the data payload length to be a whole number of sample frames and
+  enforce the frame and decoded-payload limits before allocating the float
+  output.
+- Reject non-finite float samples.
+- Return `PcmAudioData` or throw `WavFormatException`; never return partial or
+  repaired audio. The caller owns the stream and the decoder leaves it open.
+- Bound the encoded input for seekable and non-seekable streams alike, and stop
+  reading as soon as the input limit is crossed.
+
+The current WAV limits are:
+
+| Limit | Default |
+| --- | --- |
+| Encoded input | 32 MiB |
+| Decoded frame count | 4,000,000 |
+| Decoded float payload | 32 MiB (8,388,608 samples) |
+| Resampled float payload | 32 MiB (8,388,608 samples) |
+| Channels | 2 |
+| Sample rate | 8000–192000 Hz |
+
+These are practical viewer limits. A service that accepts untrusted audio should
+lower them or isolate decoding in a memory-limited process. Linear resampling to
+the mixer rate can multiply the sample count by up to 24, so the playback layer
+rejects a resampled payload above 32 MiB instead of allocating it. Nymeria plays
+audio only; it does not open a recording device, request microphone access, send
+telemetry, or contact a network service for playback.
+
 ## Mesh bounds and visibility culling
 
 `MeshData.Bounds` is derived from the same positions that `MeshData` already
@@ -281,6 +327,33 @@ parallel work, or background thread. Callers must not run collision queries
 concurrently with scene mutation or a streaming update. See
 [COLLISION.md](COLLISION.md).
 
+## Native audio ownership and threading
+
+- `AudioSystem` owns the one `SDL_AudioStream` that also owns the playback
+  device. `DestroyAudioStream` closes the device; do not close or rebind the
+  device elsewhere.
+- The managed callback delegate is rooted for the life of the system. Its
+  `GCHandle` is freed only after the stream has been destroyed, so a queued
+  native callback cannot observe a collected system.
+- The callback runs on SDL's audio thread. It holds one short managed lock while
+  reading voice state and mixing into a preallocated scratch buffer, calls only
+  `SDL_PutAudioStreamData`, and performs no file I/O, logging, or blocking wait.
+  Nymeria's mix path is allocation-free after warm-up. A managed exception is
+  contained and treated as device loss rather than escaping into the native
+  callback.
+- Device creation, playback control, `Update`, and disposal run on the process
+  main thread. The callback never calls the public API. The public API exposes
+  no SDL type, so `Nymeria.Core` and `Nymeria.Formats.Wav` remain device-free.
+- A voice holds a clip reference while it can still play. `AudioClip.Dispose`
+  fails instead of freeing samples that a playing or paused voice can still read;
+  stopping or disposing the voice releases the reference exactly once. Disposing
+  the system stops and disposes every voice before destroying the stream.
+- Listener, voice, and master-gain values are validated before they reach the
+  mixer. Non-finite positions and gains are rejected; spatial math fails to
+  silence or a centered pan when a runtime value is non-finite.
+- Device loss or a failed queue stops voices on the next `Update` and refuses new
+  playback. The system does not silently reopen a device.
+
 ## Native and GPU ownership
 
 - Native handles are owned by the managed wrapper that created them. Do not
@@ -365,6 +438,11 @@ resources, dependencies, or automation must:
    limits change.
 5. Be pushed and checked against the actual GitHub Actions result.
 
+Audio changes additionally require negative WAV tests for every new rejection
+path, limit boundary tests, and mixer ownership and lifecycle tests. Device
+behavior that cannot run headlessly must be recorded as a manual verification or
+as an explicit skipped test with a reason.
+
 Contributors should follow [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md) during
 review. Report suspected vulnerabilities privately to the repository maintainer
 instead of opening a public issue with exploit details.
@@ -379,6 +457,12 @@ encoded, dimension, and decoded payload sizes, but a valid image at the limits c
 still request 64 MiB of decoded pixels or encoded blocks plus GPU memory. JPEG
 decoding additionally relies on `StbImageSharp`, a third-party pure-managed
 library; its version is pinned and audited by NuGet, but Nymeria does not fuzz it.
-SDL3, Metal, and the operating system are trusted native dependencies and are not
-sandboxed. The GPU examples, including texture upload, mip upload, compressed
-format capability, and sampling, are not exercised in CI.
+SDL3, Metal, CoreAudio, and the operating system are trusted native dependencies
+and are not sandboxed. The GPU examples, including texture upload, mip upload,
+compressed format capability, and sampling, are not exercised in CI. The WAV
+decoder is not fuzzed; a valid file at its limits can still request 32 MiB of
+decoded float samples per clip, and loaded clips remain in memory until disposed.
+The audio callback's lock is short and allocation-free by design, but real-time
+scheduling and device behavior remain the platform's responsibility. Device
+creation, playback, and hot-unplug handling are verified manually and are not
+claimed as a CI result.

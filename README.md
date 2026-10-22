@@ -19,7 +19,10 @@ interactive, depth-tested cube scene.
   bounded text DirectX `.x` static-mesh parser, `Nymeria.Formats.Png` with a
   bounded PNG decoder, `Nymeria.Formats.Tga`, `Nymeria.Formats.Jpeg`,
   `Nymeria.Formats.Dds`, and `Nymeria.Formats.Bmp` with bounded texture decoders,
-  and `Nymeria.Formats.Textures` with a signature-first texture loader,
+  `Nymeria.Formats.Textures` with a signature-first texture loader,
+  `Nymeria.Formats.Wav` with a bounded PCM/float decoder, `Nymeria.Audio` with
+  validated clips, overlapping 2D and spatial voices, gain, looping, and an SDL3
+  playback device, a headless audio listener and distance/pan math layer,
   ambient and single-directional lighting data with Lambert diffuse shading,
   `Nymeria.Graphics` with reusable
   Metal GPU device infrastructure and camera math, `examples/HelloTriangle`, the
@@ -30,9 +33,11 @@ interactive, depth-tested cube scene.
   frustum-culling `examples/HelloCulling`, the explicit-LOD and distance-culling
   `examples/HelloLOD`, the chunk-streaming `examples/HelloStreaming`, the
   raycasting and picking `examples/HelloPicking`, the collision-detection
-  `examples/HelloCollision`, the CPU-profiling `examples/HelloBenchmark`,
+  `examples/HelloCollision`, the audio and spatial-sound `examples/HelloAudio`,
+  the CPU-profiling `examples/HelloBenchmark`,
   bounded frame-timing diagnostics, headless mesh-bounds, visibility, LOD,
-  streaming, raycasting, and collision helpers, platform-independent unit tests,
+  streaming, raycasting, collision, and audio helpers, platform-independent
+  unit tests,
   CI restore/build/test on macOS, Windows, and Linux, repository checks, an
   audited dependency restore, a documented security baseline, and Dependabot
   updates for GitHub Actions and NuGet.
@@ -80,6 +85,7 @@ dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj -- --no-culling
 dotnet run --project examples/HelloCollision/HelloCollision.csproj
+dotnet run --project examples/HelloAudio/HelloAudio.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj -- --no-streaming
@@ -119,7 +125,12 @@ picks, `V` switches modes, `G` toggles the ghost box's pickability, and `R`
 resets the camera. `HelloCollision` animates box and sphere colliders around a
 movable player box, highlights every currently overlapping pair, and prints
 active-collider, tested-pair, overlapping-pair, and query-time diagnostics; the
-arrow keys move the player, `P` pauses animation, and `R` resets. `HelloBenchmark` is an
+arrow keys move the player, `P` pauses animation, and `R` resets. `HelloAudio`
+generates its own looping test audio, plays a non-spatial ambient sound and two
+spatial tone sources, draws the source positions, and uses the camera as the
+listener; `P` and `O` pause/resume the ambient and source A, `X` stops and
+restarts source A, `[`/`]` and `-`/`=` change master and source gain, and `R`
+resets the listener. `HelloBenchmark` is an
 auto-exiting Release CPU benchmark with a
 fixed camera, deterministic 512/2048/8192-instance scenes, culling and LOD
 modes, and 16 ms pacing control; it prints bounded phase timings, instance,
@@ -155,8 +166,10 @@ example owns its pipeline and depth target, while `HelloOBJ`, `HelloO3D`, and
 `examples/Shared`.
 `HelloScene` uses the shared geometry builder, model shader, and camera controls
 with its own scene renderer. `HelloMaterials`, `HelloLighting`, `HelloCulling`,
-`HelloCollision`, `HelloLOD`, `HelloStreaming`, and `HelloPicking` share the
-material renderer and camera controls in `examples/Shared`. `HelloCulling` enables the renderer's optional conservative
+`HelloCollision`, `HelloLOD`, `HelloStreaming`, `HelloPicking`, and `HelloAudio`
+share the material renderer and camera controls in `examples/Shared`;
+`HelloAudio` also uses `Nymeria.Audio` and the headless audio math in
+`Nymeria.Core.Audio`. `HelloCulling` enables the renderer's optional conservative
 frustum culling and prints per-frame instance and draw-call counts; bounds,
 planes, fallbacks, and limitations are documented in
 [docs/CULLING.md](docs/CULLING.md). `HelloLOD` enables the renderer's optional
@@ -301,8 +314,8 @@ frustum-culled, distance-culled, drawn, draw-call, submitted-triangle, and
 per-level counts plus render-time average and p95; see
 [docs/LOD.md](docs/LOD.md) for the contract, benchmark method, and limits.
 
-All twelve interactive examples skip rendering while minimized and recover when
-a drawable is available again. [examples/README.md](examples/README.md) records the matrix
+All thirteen interactive examples skip rendering while minimized and recover
+when a drawable is available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
 This path is macOS-only for now. Windows and Linux need their own native SDL3
@@ -326,7 +339,8 @@ validation, the lighting data, Lambert term, and normal-matrix math, ray and
 AABB boundary behavior, nearest-hit selection, transformed bounds, viewport
 camera rays, pick eligibility, picking independence from culling and LOD,
 collision-shape validation, inclusive box and sphere overlap, conservative
-collision transforms, and scene collision lifecycle and ordering in
+collision transforms, scene collision lifecycle and ordering, audio distance and
+pan math, listener validation, and PCM resampling in
 `Nymeria.Core.Tests`, the
 OBJ subset and diagnostics in `Nymeria.Formats.Obj.Tests`, the O3D header,
 supported versions and flags, conversions, limits, and failure behavior in
@@ -335,8 +349,11 @@ elements, conversions, malformed input, and limits in
 `Nymeria.Formats.DirectX.Tests`, the PNG subset, malformed input, and decode
 limits in `Nymeria.Formats.Png.Tests`, and the JPEG, TGA, DDS, BMP, and loader
 paths in `Nymeria.Formats.Jpeg.Tests`, `Nymeria.Formats.Tga.Tests`,
-`Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Bmp.Tests`, and
-`Nymeria.Formats.Textures.Tests`. There are
+`Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Bmp.Tests`,
+`Nymeria.Formats.Textures.Tests`, and `Nymeria.Formats.Wav.Tests`, and the
+mixer, voice lifecycle, clip ownership, concurrency, and allocation checks in
+`Nymeria.Audio.Tests`. Device-dependent audio tests are explicitly skipped and
+covered by the manual smoke test. There are
 deliberately no fake GUI tests: native window behavior is covered by the manual
 smoke test below and is not claimed as a headless CI result.
 
@@ -350,15 +367,19 @@ manually; it is not claimed as a headless CI result.
 ```text
 .github/        Repository checks and Dependabot configuration
 docs/           Architecture, Git policy, and manual smoke test
-src/core/       Nymeria.Core model data, parser contract, scene, and material data
+src/audio/      Nymeria.Audio SDL3 playback, mixer, clips, and voices
+src/core/       Nymeria.Core model data, parser contract, scene, material,
+                and audio math data
 src/formats/    Nymeria.Formats.Obj, O3d, DirectX, Png, Tga, Jpeg, Dds, Bmp,
-                and Textures
+                Textures, and Wav
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
 examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloX, HelloScene,
                 HelloMaterials, HelloLighting, HelloCulling, HelloCollision,
-                HelloLOD, HelloStreaming, HelloPicking, and HelloBenchmark
-tests/          Headless unit tests for core, formats, and platform projects
+                HelloAudio, HelloLOD, HelloStreaming, HelloPicking, and
+                HelloBenchmark
+tests/          Headless unit tests for audio, core, formats, and platform
+                projects
 ```
 
 ## Documentation
@@ -373,6 +394,7 @@ tests/          Headless unit tests for core, formats, and platform projects
 - [Scene chunk streaming](docs/STREAMING.md)
 - [Raycasting and object picking](docs/PICKING.md)
 - [Basic collision detection](docs/COLLISION.md)
+- [Audio and basic spatial sound](docs/AUDIO.md)
 - [Performance measurement](docs/PERFORMANCE.md)
 - [Performance baseline 01](docs/PERFORMANCE_BASELINE_01.md)
 - [Wavefront OBJ import](docs/OBJ.md)
@@ -392,9 +414,9 @@ tests/          Headless unit tests for core, formats, and platform projects
 The `Repository checks` GitHub Actions workflow runs on pushes and pull requests
 to `main`. One job validates the repository foundation, including Markdown links,
 tracked build output, and Dependabot configuration. A second job restores, builds,
-and runs the headless unit tests on macOS, Windows, and Linux. The GUI and GPU
-output are not launched or validated in CI; window and example behavior is
-covered by the manual smoke test.
+and runs the headless unit tests on macOS, Windows, and Linux. GUI, GPU, and audio
+device output are not launched or validated in CI; window, GPU, and audio-device
+behavior is covered by the manual smoke test.
 
 Dependabot checks GitHub Actions and NuGet weekly and opens update pull requests.
 The existing `Dependabot auto-merge` workflow squash-merges a Dependabot pull

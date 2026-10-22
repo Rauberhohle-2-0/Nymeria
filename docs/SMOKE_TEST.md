@@ -1,8 +1,8 @@
-# macOS Manual Smoke Test: Window and GPU Examples
+# macOS Manual Smoke Test: Window, GPU, and Audio Examples
 
 This checklist validates behavior that headless CI cannot verify. Run it on a
 macOS machine after the solution builds. Record the macOS version, CPU
-architecture, GPU model, and date with the result.
+architecture, GPU model, audio output device, and date with the result.
 
 ## Setup
 
@@ -21,6 +21,7 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloCollision/HelloCollision.csproj
+dotnet run --project examples/HelloAudio/HelloAudio.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
 dotnet run --project examples/HelloPicking/HelloPicking.csproj
@@ -35,13 +36,13 @@ The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 `HelloOBJ`, `HelloO3D`, and `HelloScene` as
 `Nymeria.Examples.Shaders.Model.metal`; the material shader is embedded in
 `HelloMaterials`, `HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloLOD`,
-`HelloStreaming`, and `HelloPicking` as
+`HelloStreaming`, `HelloPicking`, and `HelloAudio` as
 `Nymeria.Examples.Shaders.Material.metal`. Shaders are
 embedded in their examples and compiled by SDL's Metal backend at startup, so
 there is no shader compiler step and no external shader file to deploy.
 
 Run each interactive example checklist separately. The failure-path checks at
-the end apply to all twelve interactive examples; `HelloBenchmark` has its own
+the end apply to all thirteen interactive examples; `HelloBenchmark` has its own
 automated checks below.
 
 ## HelloTriangle checks
@@ -720,6 +721,48 @@ Expected: `0`.
    rendering resumes and the next diagnostic line remains accurate. Close with
    the button and `Cmd+Q`; both exit with status `0` and restore the cursor.
 
+## HelloAudio checks
+
+1. **Window and terminal appear.** The window opens, draws a dark ground plane
+   and red and blue source markers, and prints the control summary. The status
+   starts with `Audio ready:` followed by the sample rate, stereo format, and
+   voice limit.
+2. **Status is live.** Once per second the console prints the listener position
+   and forward direction, `device ok`, a nonzero voice count, and each voice's
+   state, position, distance, attenuation, pan, and gain. Values must change as
+   the listener moves and turns.
+3. **2D ambient playback works.** A quiet looping chord is audible. Turning the
+   listener must not pan or attenuate it.
+4. **Spatial sources are audible and distinct.** The two pulsing tones are
+   audible at different pitches. Face the red source: it should be louder and
+   panned left. Face the blue source: it should be panned right. The reported
+   `pan left`/`pan right` values must agree with what is heard.
+5. **Attenuation works.** Walk toward a source and confirm it gets louder and the
+   reported attenuation approaches `1.00`. Walk away and confirm it gets quieter;
+   beyond the maximum distance it becomes silent and attenuation is `0.00`.
+   Turning the listener changes pan but not attenuation.
+6. **Pause and resume work.** Press `P`; the ambient loop stops while the spatial
+   tones continue, and the status says `paused`. Press `P` again and it resumes.
+   Press `O` to pause and resume source A independently.
+7. **Stop and restart share the clip.** Press `X`; source A stops and its status
+   says `stopped (no voice)`. Press `X` again; a new voice starts the same clip
+   from the beginning without an error or a device change.
+8. **Gain controls work.** `[` and `]` change master gain; `-` and `=` change
+   source A gain. The audible level and the printed percentages change together.
+9. **Missing device is graceful.** Quit, then run the example with an invalid
+   SDL audio driver:
+
+   ```bash
+   SDL_AUDIODRIVER=nymeria-not-a-driver \
+     dotnet run --project examples/HelloAudio/HelloAudio.csproj
+   ```
+
+   Expected: the terminal prints `Audio unavailable:` with the SDL failure and
+   the window still opens and renders with an `audio unavailable` status. The
+   process must not crash or exit with status `1`.
+10. **Close exits cleanly.** Close with the button and with `Cmd+Q`. Both exit
+    with status `0`, release the cursor, and leave no orphan process.
+
 ## HelloBenchmark checks
 
 `HelloBenchmark` is a CPU benchmark, not a visual or GPU-timing test. It opens a
@@ -833,8 +876,10 @@ These checks are optional and must not modify tracked files.
 Report the macOS version, architecture (`arm64` or `x86_64`), GPU model, date, and
 pass/fail for each check, separately for `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloLOD`, `HelloStreaming`,
-and `HelloPicking`, plus the separate `HelloBenchmark` checks.
+`HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloAudio`, `HelloLOD`,
+`HelloStreaming`, and `HelloPicking`, plus the separate `HelloBenchmark`
+checks. For `HelloAudio`, also record the output device and that the generated
+ambient and two spatial tones were audible.
 Do not describe this manual checklist as a CI result.
 State separately that the checked-in `HelloO3D` fixture is synthetic, that the
 `HelloX` fixture is original project content rather than an exported game asset,

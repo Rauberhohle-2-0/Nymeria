@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/examples/">
+    <Project Path="examples/HelloAudio/HelloAudio.csproj" />
     <Project Path="examples/HelloBenchmark/HelloBenchmark.csproj" />
     <Project Path="examples/HelloCollision/HelloCollision.csproj" />
     <Project Path="examples/HelloCube/HelloCube.csproj" />
@@ -16,6 +17,9 @@
     <Project Path="examples/HelloX/HelloX.csproj" />
   </Folder>
   <Folder Name="/src/" />
+  <Folder Name="/src/audio/">
+    <Project Path="src/audio/Nymeria.Audio/Nymeria.Audio.csproj" />
+  </Folder>
   <Folder Name="/src/core/">
     <Project Path="src/core/Nymeria.Core/Nymeria.Core.csproj" />
   </Folder>
@@ -29,6 +33,7 @@
     <Project Path="src/formats/Nymeria.Formats.Png/Nymeria.Formats.Png.csproj" />
     <Project Path="src/formats/Nymeria.Formats.Textures/Nymeria.Formats.Textures.csproj" />
     <Project Path="src/formats/Nymeria.Formats.Tga/Nymeria.Formats.Tga.csproj" />
+    <Project Path="src/formats/Nymeria.Formats.Wav/Nymeria.Formats.Wav.csproj" />
   </Folder>
   <Folder Name="/src/graphics/">
     <Project Path="src/graphics/Nymeria.Graphics/Nymeria.Graphics.csproj" />
@@ -37,6 +42,7 @@
     <Project Path="src/platform/Nymeria.Platform/Nymeria.Platform.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Nymeria.Audio.Tests/Nymeria.Audio.Tests.csproj" />
     <Project Path="tests/Nymeria.Core.Tests/Nymeria.Core.Tests.csproj" />
     <Project Path="tests/Nymeria.Formats.Bmp.Tests/Nymeria.Formats.Bmp.Tests.csproj" />
     <Project Path="tests/Nymeria.Formats.Dds.Tests/Nymeria.Formats.Dds.Tests.csproj" />
@@ -47,6 +53,7 @@
     <Project Path="tests/Nymeria.Formats.Png.Tests/Nymeria.Formats.Png.Tests.csproj" />
     <Project Path="tests/Nymeria.Formats.Textures.Tests/Nymeria.Formats.Textures.Tests.csproj" />
     <Project Path="tests/Nymeria.Formats.Tga.Tests/Nymeria.Formats.Tga.Tests.csproj" />
+    <Project Path="tests/Nymeria.Formats.Wav.Tests/Nymeria.Formats.Wav.Tests.csproj" />
     <Project Path="tests/Nymeria.Platform.Tests/Nymeria.Platform.Tests.csproj" />
   </Folder>
 </Solution>

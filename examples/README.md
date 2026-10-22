@@ -26,7 +26,9 @@ adds the box, sphere, and scene collision queries in `Nymeria.Core.Collision`,
 `Nymeria.Core.Streaming`, and `HelloPicking` adds the raycasting and
 viewport-picking layer in `Nymeria.Core.Raycasting`.
 `HelloBenchmark` reuses the shared material renderer with a fixed camera and the
-bounded timing helpers in `Nymeria.Core.Diagnostics`.
+bounded timing helpers in `Nymeria.Core.Diagnostics`. `HelloAudio` uses
+`Nymeria.Audio` for 2D and spatial playback and `Nymeria.Core.Audio` for its
+listener and spatial status math.
 
 All examples use SDL3's GPU API with the Metal backend and Metal Shading
 Language (MSL) source. SDL compiles the embedded MSL source when the shaders are
@@ -47,6 +49,7 @@ dotnet run --project examples/HelloMaterials/HelloMaterials.csproj
 dotnet run --project examples/HelloLighting/HelloLighting.csproj
 dotnet run --project examples/HelloCulling/HelloCulling.csproj
 dotnet run --project examples/HelloCollision/HelloCollision.csproj
+dotnet run --project examples/HelloAudio/HelloAudio.csproj
 dotnet run --project examples/HelloLOD/HelloLOD.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj
 dotnet run --project examples/HelloStreaming/HelloStreaming.csproj -- --no-streaming
@@ -99,9 +102,10 @@ renders continuously, and targets about 16 ms per frame.
 ### Controls
 
 `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
-`HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloLOD`, `HelloStreaming`,
-and `HelloPicking` share `examples/Shared/FlyCameraControls.cs`, so these
-controls apply to all twelve interactive examples.
+`HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloAudio`, `HelloLOD`,
+`HelloStreaming`, and `HelloPicking` share
+`examples/Shared/FlyCameraControls.cs`, so these controls apply to all thirteen
+interactive examples.
 
 | Input | Action |
 | --- | --- |
@@ -641,6 +645,34 @@ dotnet run --project examples/HelloCollision/HelloCollision.csproj
   continuous collision detection. The scene pair query is O(n²). See
   [../docs/COLLISION.md](../docs/COLLISION.md).
 
+## HelloAudio
+
+`HelloAudio` demonstrates the audio foundation with no external sound asset. It
+generates a seamless four-second stereo ambient loop and two two-second mono
+tone loops, writes them as in-memory PCM WAV data, and loads them through
+`AudioSystem.LoadWav`. It draws a ground plane and a colored marker for each of
+two spatial sources; the camera is the listener.
+
+- Playback: the ambient clip is a non-spatial looping voice at low gain. Sources
+  A and B are spatial looping voices with independent positions, minimum and
+  maximum distances, and gains.
+- Spatial model: linear distance attenuation and equal-power left/right panning
+  against the listener position and forward direction. It is not HRTF, occlusion,
+  reverb, Doppler, or surround sound. See [../docs/AUDIO.md](../docs/AUDIO.md).
+- Listener: the camera position and forward direction are copied into
+  `AudioSystem.Listener` every frame before `AudioSystem.Update`.
+- Controls: shared camera movement and mouse look; `P` pauses/resumes the ambient
+  loop, `O` pauses/resumes source A, `X` stops source A and starts a new voice on
+  the same clip, `[`/`]` change master gain, `-`/`=` change source A gain, and
+  `R` resets the listener.
+- Diagnostics: once per second the console prints device state, voice count,
+  master gain, and each voice's state, position, distance, attenuation, pan, and
+  gain. With no audio device it prints the failure and keeps rendering with an
+  `audio unavailable` status.
+- Ownership: voices release their clip references before the system is disposed,
+  and clips are disposed last. The example demonstrates the explicit policy for
+  stopping a voice instead of destroying a shared clip.
+
 ## HelloBenchmark
 
 `HelloBenchmark` is a deterministic, auto-exiting CPU benchmark for the scene and
@@ -684,9 +716,10 @@ dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj \
 
 ## Platform limits
 
-All fourteen examples are macOS-only for now. They require SDL's Metal backend and
+All fifteen examples are macOS-only for now. They require SDL's Metal backend and
 MSL source; Windows and Linux need their own native SDL3 packages and shader
-formats. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
+formats. `HelloAudio` additionally uses the SDL3 audio device, which is verified
+on macOS CoreAudio only. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
 general material or scene importers. `HelloO3D` accepts only unscrambled static meshes
 and rejects bones and animation. `HelloCube` still constructs its model data in
 code. `HelloScene` adds flat, transformed instances but no hierarchy.
@@ -703,8 +736,11 @@ background, reclaim CPU assets automatically, or generate terrain. `HelloPicking
 adds conservative bounds picking; it has no triangle-accurate hit, interaction
 events, or spatial index. `HelloCollision` adds box and sphere overlap detection
 and deterministic pair queries; it has no triangle-mesh collision, contact
-manifold, response, rigid body, physics solver, or broad phase. No example has
+manifold, response, rigid body, physics solver, or broad phase. `HelloAudio`
+adds decoded PCM playback, 2D and basic stereo spatialization, gain, and
+looping; it has no HRTF, occlusion, reverb, Doppler, surround output, compressed
+formats, audio capture, or effects graph. No example has
 shadows, specular or PBR shading, an object hierarchy, or a physics simulation. GPU output, texture sampling,
 compressed-format capability, lighting, frustum culling, LOD selection, distance
-culling, collision feedback, and input behavior are validated manually with
-[../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.
+culling, collision feedback, audio playback, and input behavior are validated
+manually with [../docs/SMOKE_TEST.md](../docs/SMOKE_TEST.md), not in CI.

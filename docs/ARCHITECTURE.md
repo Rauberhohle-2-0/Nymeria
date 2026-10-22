@@ -54,6 +54,16 @@ extension is a direction, not a current feature.
   subsets, returning validated top-down RGBA texture data.
 - `Nymeria.Formats.Textures`, a signature-first `TextureLoader` that dispatches
   to the PNG, JPEG, TGA, DDS, and BMP decoders without touching the GPU.
+- `Nymeria.Formats.Wav`, a dependency-free, bounded RIFF/WAVE decoder for
+  documented mono/stereo integer PCM and 32-bit float subsets. It returns
+  validated `PcmAudioData` and never opens a file or touches a device.
+- `Nymeria.Core.Audio`, validated interleaved PCM clip data with bounded linear
+  resampling, a listener whose axes match the camera, and pure distance
+  attenuation, stereo panning, and equal-power gain math. It is headless and
+  contains no SDL3, GPU, window, or format dependency.
+- `Nymeria.Audio`, an SDL3-backed playback system with a bounded managed stereo
+  mixer, shared clips, independent 2D and spatial voices, pause/resume/stop,
+  looping, per-source and master gain, and explicit device and thread ownership.
 - `Nymeria.Graphics`, a class library that owns the SDL3 GPU device and window
   presentation claim, provides reusable MSL shader, buffer, texture, and sampler
   creation, and contains a reusable, SDL-independent free-fly `Camera`.
@@ -98,6 +108,11 @@ extension is a direction, not a current feature.
 - `examples/HelloPicking`, an interactive streamed world with cursor and
   center-of-screen picking, a material-based selection highlight, a non-pickable
   ghost box toggle, and click-driven console and window-title diagnostics.
+- `examples/HelloAudio`, an interactive example with a generated looping 2D
+  ambient sound and two generated spatial sources. The camera is the listener,
+  source markers and a ground plane show the spatial layout, and the console
+  reports device state, distance, attenuation, pan, and gains. It keeps running
+  with an explicit status when no audio device is available.
 - `MeshData.Bounds` plus `Nymeria.Core.Culling` bounds, frustum, and per-frame
   visibility helpers, `Nymeria.Core.Lod` explicit mesh variants, validated
   activation distances, conservative union bounds, and hysteresis-aware
@@ -121,8 +136,10 @@ extension is a direction, not a current feature.
   viewport camera rays, picking independence from frustum culling and LOD,
   collision shape validation, inclusive box and sphere overlap, conservative
   collision transforms, scene collider filtering and lifecycle, deterministic
-  pair ordering, and bounded frame-timing aggregation with warm-up exclusion and
-  invalid samples.
+  pair ordering, bounded frame-timing aggregation with warm-up exclusion and
+  invalid samples, audio distance attenuation at and beyond the range with
+  invalid values, stereo panning for rotated listeners and degenerate bases,
+  listener validation, and PCM data validation and resampling.
 - `Nymeria.Formats.Obj.Tests`, GPU-independent tests for the OBJ subset,
   conversions, and diagnostics.
 - `Nymeria.Formats.O3d.Tests`, GPU-independent tests for the O3D header,
@@ -139,8 +156,16 @@ extension is a direction, not a current feature.
   input, and resource limits.
 - `Nymeria.Formats.Textures.Tests`, GPU-independent tests for signature-based
   format detection and loader error behavior.
-- SDL3 windowing and GPU rendering through the pinned `SDL3-CS` and
-  `SDL3-CS.MacOS` packages.
+- `Nymeria.Formats.Wav.Tests`, GPU-independent tests for PCM and float decoding,
+  truncated and malformed chunks, duplicate and missing chunks, unsupported
+  formats, overflow, and input, frame, and payload limits.
+- `Nymeria.Audio.Tests`, device-independent tests for the bounded stereo mixer,
+  voice lifecycle, looping, overlapping voices, gain and clipping, shared clip
+  ownership, voice limits, concurrent mixing and control, zero allocation per
+  mix block, and options validation. Device checks are explicitly skipped with a
+  reason.
+- SDL3 windowing, audio playback, and GPU rendering through the pinned
+  `SDL3-CS` and `SDL3-CS.MacOS` packages.
 - A `Repository checks` GitHub Actions workflow that validates repository
   foundations and restores, builds, and tests the solution on macOS, Windows, and
   Linux.
@@ -176,8 +201,9 @@ would require maintainer approval.
 
 | Path | Intended responsibility |
 | --- | --- |
+| `src/audio/` | `Nymeria.Audio`: SDL3 playback device, mixer, clips, and voices. |
 | `src/core/` | Platform-independent engine fundamentals in `Nymeria.Core`. |
-| `src/formats/` | Format-specific model parsers in isolated projects such as `Nymeria.Formats.Obj`. |
+| `src/formats/` | Format-specific model, image, and audio parsers and decoders in isolated projects. |
 | `src/graphics/` | `Nymeria.Graphics`: reusable SDL3 GPU device and resource infrastructure. |
 | `src/platform/` | `Nymeria.Platform`: windowing, input, and operating-system integration. |
 | `examples/` | Small runnable programs that demonstrate engine usage. |
@@ -185,29 +211,32 @@ would require maintainer approval.
 | `docs/` | Authoritative project and architecture decisions. |
 | `.github/` | Repository automation: checks and dependency updates. |
 
-`src/platform/` contains the `Nymeria.Platform` project, `src/graphics/`
-contains `Nymeria.Graphics`, `src/core/` contains `Nymeria.Core`, `src/formats/`
-contains `Nymeria.Formats.Obj`, `Nymeria.Formats.O3d`,
-`Nymeria.Formats.DirectX`, `Nymeria.Formats.Png`, `Nymeria.Formats.Tga`,
-`Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`, `Nymeria.Formats.Bmp`, and
-`Nymeria.Formats.Textures`, `examples/` contains `HelloTriangle`, `HelloCube`,
+`src/audio/` contains `Nymeria.Audio`, `src/platform/` contains
+`Nymeria.Platform`, `src/graphics/` contains `Nymeria.Graphics`, `src/core/`
+contains `Nymeria.Core`, `src/formats/` contains `Nymeria.Formats.Obj`,
+`Nymeria.Formats.O3d`, `Nymeria.Formats.DirectX`, `Nymeria.Formats.Png`,
+`Nymeria.Formats.Tga`, `Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`,
+`Nymeria.Formats.Bmp`, `Nymeria.Formats.Textures`, and
+`Nymeria.Formats.Wav`, `examples/` contains `HelloTriangle`, `HelloCube`,
 `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
 `HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, `HelloPicking`,
-and `HelloBenchmark`, and `tests/` contains `Nymeria.Core.Tests`,
+`HelloAudio`, and `HelloBenchmark`, and `tests/` contains `Nymeria.Core.Tests`,
 `Nymeria.Formats.Obj.Tests`, `Nymeria.Formats.O3d.Tests`,
 `Nymeria.Formats.DirectX.Tests`, `Nymeria.Formats.Png.Tests`,
 `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
 `Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Bmp.Tests`,
-`Nymeria.Formats.Textures.Tests`, and `Nymeria.Platform.Tests`.
+`Nymeria.Formats.Textures.Tests`, `Nymeria.Formats.Wav.Tests`,
+`Nymeria.Audio.Tests`, and `Nymeria.Platform.Tests`.
 
 `Nymeria.Core` owns the format-independent model data and parser contract
 described in [MODEL_DATA.md](MODEL_DATA.md), the minimal scene data described in
 [SCENE.md](SCENE.md), the explicit mesh level-of-detail data described in
 [LOD.md](LOD.md), the spatially bounded scene-chunk streaming layer described in
 [STREAMING.md](STREAMING.md), the headless raycasting and object-picking layer
-described in [PICKING.md](PICKING.md), and the material and texture data
-described in [MATERIALS.md](MATERIALS.md). It references `System.Numerics` and the base class
-library only. The camera lives in `Nymeria.Graphics` rather than
+described in [PICKING.md](PICKING.md), the material and texture data
+described in [MATERIALS.md](MATERIALS.md), and the headless audio clip, listener,
+and spatial math described in [AUDIO.md](AUDIO.md). It references
+`System.Numerics` and the base class library only. The camera lives in `Nymeria.Graphics` rather than
 in `Nymeria.Core`: it is reusable 3D rendering math with no SDL, window, or GPU
 dependency, and the model-loading foundation is the first demonstrated need for
 the core project. `Nymeria.Formats.Obj` and `Nymeria.Formats.O3d` reference only
@@ -218,7 +247,11 @@ in [OBJ.md](OBJ.md) and [O3D.md](O3D.md); the `.x` subset is documented in
 reference only `Nymeria.Core` and the base class library.
 `Nymeria.Formats.Jpeg` references `Nymeria.Core` and the pure-managed
 `StbImageSharp` package. `Nymeria.Formats.Textures` references `Nymeria.Core`
-and the five image decoders.
+and the five image decoders. `Nymeria.Formats.Wav` references `Nymeria.Core` and
+the base class library only; [AUDIO.md](AUDIO.md) documents its supported subset
+and limits. `Nymeria.Audio` references `Nymeria.Core`, `Nymeria.Formats.Wav`,
+and the `SDL3-CS` managed binding; it owns all SDL audio calls and exposes no
+SDL type in its public API.
 `Nymeria.Core.Lighting` references `System.Numerics` and the base class library
 only; [LIGHTING.md](LIGHTING.md) documents the equation, conventions, and limits.
 [MATERIALS.md](MATERIALS.md) documents every supported image subset and limit.
@@ -798,8 +831,8 @@ authoritative contract.
   renderer has released its claim.
 - `HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
   `HelloLighting`, `HelloCulling`, `HelloCollision`, `HelloLOD`,
-  `HelloStreaming`, and `HelloPicking` own their `Camera` instances and share
-  the `FlyCameraControls` implementation.
+  `HelloStreaming`, `HelloPicking`, and `HelloAudio` own their `Camera`
+  instances and share the `FlyCameraControls` implementation.
   `HelloBenchmark` owns a fixed `Camera` and does not use input controls. The
   camera has no unmanaged resources. The input mapping disables relative mouse
   mode and discards pending mouse motion during disposal, before the window is
@@ -811,6 +844,18 @@ authoritative contract.
   released by the renderer, either on disposal or through
   `PruneUnusedResources`, which waits for GPU idle and keeps any resource still
   referenced by the scene.
+- `AudioSystem` owns exactly one SDL audio stream and closes the device when
+  the stream is destroyed. The managed mixer owns the fixed voice slots and the
+  per-clip voice reference counts. A clip owns managed sample memory only; a
+  voice holds a reference to its clip while it can still play. `AudioClip.Dispose`
+  is refused while a playing or paused voice references it, and disposing the
+  system stops and disposes every voice before the stream is destroyed. Voices,
+  the system, and clips are released in that order; the system must be disposed
+  before the window because window disposal shuts SDL down.
+- Audio is not part of the scene or streaming ownership graph. A `SceneStreamer`
+  never disposes or stops audio. An application's chunk release callback stops
+  and disposes the voices it owns and disposes clips that no other chunk shares;
+  a still-shared clip is protected by the reference count.
 - No renderer creates per-frame GPU resources. The scene and material renderers
   upload newly referenced meshes and textures once and reuse them; command
   buffers and swapchain textures are owned and recycled by SDL. Pruning is an
@@ -823,6 +868,19 @@ Limitations in this version:
   packages, which are not implemented.
 - Apple Silicon and Intel Macs both use Metal. The macOS native package contains
   both architectures.
+- Audio playback is verified on macOS through CoreAudio. Windows and Linux audio
+  is not verified because the repository ships no native SDL3 package for those
+  platforms. The headless audio projects still build and their tests run on all
+  three CI platforms.
+- Spatial audio is basic stereo: linear distance attenuation and left/right
+  equal-power panning only. There is no HRTF, binaural filter, reverb, occlusion,
+  Doppler, propagation delay, surround or height output, or physics-driven
+  acoustics.
+- Audio supports uncompressed mono/stereo WAV only, decoded fully into memory and
+  resampled linearly to the mixer rate. There is no compressed format, sample
+  streaming, audio capture, microphone input, effects chain, or audio graph.
+  Device loss stops all voices and requires explicit recreation; there is no
+  automatic device reopen.
 - There is no scene hierarchy, ECS, serialization, editor, shadow, physics
   simulation, or collision response, and no engine-level input system. The scene
   layer holds flat objects only. Collision is limited to box and sphere overlap
@@ -896,19 +954,20 @@ Limitations in this version:
 
 ## Dependency direction
 
-The following principle guides project references. The core, formats, graphics,
-and platform projects and the examples exist today.
+The following principle guides project references. The audio, core, formats,
+graphics, and platform projects and the examples exist today.
 
 ```text
 examples  -----------------------> engine projects
    |
    v
-Nymeria.Graphics   Nymeria.Platform   Nymeria.Formats.* (Obj, O3d, DirectX, Png, Tga, Jpeg, Dds, Bmp)
+Nymeria.Graphics   Nymeria.Platform   Nymeria.Formats.* (Obj, O3d, DirectX, Png, Tga, Jpeg, Dds, Bmp, Wav)
         \                /                                |
          v              v                                 v
                             Nymeria.Core
 
 Nymeria.Formats.Textures  ->  Nymeria.Core + Png + Jpeg + Tga + Dds + Bmp
+Nymeria.Audio             ->  Nymeria.Core + Nymeria.Formats.Wav + SDL3-CS
 ```
 
 - `Nymeria.Core` must not depend on graphics, platform, or format code.
@@ -916,6 +975,9 @@ Nymeria.Formats.Textures  ->  Nymeria.Core + Png + Jpeg + Tga + Dds + Bmp
   on graphics or platform code. `Nymeria.Formats.Textures` additionally depends
   on the five image decoders.
 - `Nymeria.Graphics` and `Nymeria.Platform` may depend on `Nymeria.Core`.
+- `Nymeria.Audio` depends on `Nymeria.Core`, `Nymeria.Formats.Wav`, and the
+  `SDL3-CS` managed binding. It must not depend on `Nymeria.Graphics` or
+  `Nymeria.Platform`, so audio does not require a window, GPU, or rendering.
 - `Nymeria.Graphics` and `Nymeria.Platform` must not depend on each other
   directly unless the maintainer approves and this document records the reason.
 - `examples/` may depend on all engine projects.
@@ -928,8 +990,12 @@ class library only. Its scene types reference `MeshData`, `Material`, and
 `Nymeria.Formats.Tga`, `Nymeria.Formats.Dds`, and `Nymeria.Formats.Bmp`
 reference `Nymeria.Core` only. `Nymeria.Formats.Jpeg` references
 `Nymeria.Core` and `StbImageSharp`; `Nymeria.Formats.Textures` references
-`Nymeria.Core` and the five decoders.
-`Nymeria.Graphics` and `Nymeria.Platform` have no
+`Nymeria.Core` and the five decoders; `Nymeria.Formats.Wav` references
+`Nymeria.Core` only.
+`Nymeria.Audio` references `Nymeria.Core`, `Nymeria.Formats.Wav`, and
+`SDL3-CS`. The native SDL3 runtime still comes from `Nymeria.Platform` in an
+application, so `Nymeria.Audio` adds no second native package and no window or
+GPU dependency. `Nymeria.Graphics` and `Nymeria.Platform` have no
 `Nymeria.Core` reference; culling math lives in `Nymeria.Core.Culling`, so the
 renderer in the example composes the dependency instead of adding a
 `Nymeria.Graphics` reference. They do not reference each other: each example
@@ -961,7 +1027,10 @@ for scene, streaming, picking, mesh, and material data, `Nymeria.Graphics` for
 the device and camera, and `Nymeria.Platform` for the window; `HelloCollision`
 references `Nymeria.Core` for scene, collision, mesh, and material data,
 `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for the
-window; `HelloBenchmark`
+window; `HelloAudio`
+references `Nymeria.Audio` for playback, `Nymeria.Core` for scene, camera-math,
+and audio-math data, `Nymeria.Graphics` for the device and camera, and
+`Nymeria.Platform` for the window; `HelloBenchmark`
 references `Nymeria.Core` for scene, LOD, mesh, material, and timing data,
 `Nymeria.Graphics` for the device and camera, and `Nymeria.Platform` for the
 window; `HelloTriangle` does not need the core or formats projects.
@@ -970,8 +1039,9 @@ No engine project references an example. `Nymeria.Core.Tests`,
 `Nymeria.Formats.DirectX.Tests`, `Nymeria.Formats.Png.Tests`,
 `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
 `Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Bmp.Tests`,
-`Nymeria.Formats.Textures.Tests`, and `Nymeria.Platform.Tests` reference their
-project or projects under test. No interfaces or abstractions are created to enforce the
+`Nymeria.Formats.Textures.Tests`, `Nymeria.Formats.Wav.Tests`,
+`Nymeria.Audio.Tests`, and `Nymeria.Platform.Tests` reference their project or
+projects under test. No interfaces or abstractions are created to enforce the
 future direction. Adding them speculatively would violate YAGNI.
 
 ## Technical choices
@@ -1044,6 +1114,25 @@ The following choices are implemented:
   loops, and independent of rendering visibility and LOD. It is detection only:
   there is no response or physics solver. [COLLISION.md](COLLISION.md) is the
   authoritative contract.
+- **Audio data and spatial math:** `Nymeria.Core.Audio` contains validated
+  interleaved `PcmAudioData`, bounded linear resampling, an `AudioListener` with
+  camera-matching axes, and `AudioMath` distance attenuation, stereo panning,
+  and equal-power gains. It is headless, uses `System.Numerics` only, and
+  contains no SDL3, device, or GPU state. [AUDIO.md](AUDIO.md) is the
+  authoritative contract.
+- **WAV parsing:** `Nymeria.Formats.Wav` is a dependency-free decoder for mono
+  or stereo 8/16/24/32-bit PCM and 32-bit float RIFF/WAVE input. It validates
+  RIFF and chunk sizes, ordering, padding, format fields, frame alignment, and
+  input, frame, and decoded-payload limits before allocating. [AUDIO.md](AUDIO.md)
+  documents the subset and limits.
+- **Audio playback:** `Nymeria.Audio` owns one SDL3 playback stream and a bounded
+  managed float32 stereo mixer. It supports shared clips, overlapping 2D and
+  spatial voices, pause/resume/stop, looping, per-source and master gain, linear
+  distance attenuation, and stereo panning. Mixing runs in SDL's callback with a
+  preallocated scratch buffer and one short lock; Nymeria's mixer allocates
+  nothing per block after warm-up and performs no I/O. Device creation is
+  explicit and never happens merely by loading the assembly. [AUDIO.md](AUDIO.md)
+  is the authoritative contract.
 - **Performance diagnostics:** `Nymeria.Core.Diagnostics.FrameTimingWindow` is a
   bounded, warm-up-aware rolling window for CPU frame durations. It rejects
   invalid samples, reports average, nearest-rank p95, maximum, and FPS from the
@@ -1079,22 +1168,26 @@ The following choices are implemented:
   normal matrix and rejects degenerate transforms; normals are required and
   normalized before upload. `HelloMaterials` leaves lighting unset and remains
   unlit; `HelloLighting` opts in. See [LIGHTING.md](LIGHTING.md).
-- **External packages:** the SDL3 binding and macOS native runtime, the
-  pure-managed `StbImageSharp` 2.30.16 JPEG decoder (Unlicense OR MIT, no
-  transitive packages), plus the xUnit test packages `xunit` 2.9.3,
-  `xunit.runner.visualstudio` 4.0.1, and `Microsoft.NET.Test.Sdk` 18.11.0. The
-  headless tests cover platform-independent `WindowOptions` behavior, model-data
-  validation and parser error semantics, transform composition, scene lifecycle
-  and mesh sharing, lighting data and math, mesh bounds and frustum culling,
-  visibility counts, bounded frame-timing aggregation, material and texture data,
-  the OBJ, O3D, and text `.x` subsets, and the PNG, JPEG, TGA, BMP, DDS, and
-  loader paths; they do not launch a GUI or create a GPU device.
+- **External packages:** the SDL3 binding and macOS native runtime (also used
+  for audio playback), the pure-managed `StbImageSharp` 2.30.16 JPEG decoder
+  (Unlicense OR MIT, no transitive packages), plus the xUnit test packages
+  `xunit` 2.9.3, `xunit.runner.visualstudio` 4.0.1, and
+  `Microsoft.NET.Test.Sdk` 18.11.0. The headless tests cover
+  platform-independent `WindowOptions` behavior, model-data validation and
+  parser error semantics, transform composition, scene lifecycle and mesh
+  sharing, lighting data and math, mesh bounds and frustum culling, visibility
+  counts, bounded frame-timing aggregation, material and texture data, the OBJ,
+  O3D, and text `.x` subsets, the PNG, JPEG, TGA, BMP, DDS, loader, and WAV
+  paths, and the audio math, mixer, voice lifecycle, clip ownership, concurrency,
+  and allocation checks; they do not launch a GUI, create a GPU device, or open
+  an audio device.
 
 The following choices remain open:
 
 - **Additional platforms and backends:** Windows and Linux rendering, their
   native SDL3 packages, and the shader formats those backends require are not
-  implemented.
+  implemented. Audio playback uses SDL3's portable API but has only been verified
+  on macOS; Windows and Linux audio device testing remains open.
 - **Further O3D features:** scrambled vertices, bones, animation, and material
   rendering are not implemented and require a separate decision.
 
@@ -1128,8 +1221,8 @@ Nymeria follows KISS (Keep It Simple) and YAGNI (You Aren't Gonna Need It):
 
 Both jobs use read-only repository permissions. The workflow is named
 `Repository checks`, so Dependabot auto-merge waits for every matrix leg and the
-foundation job. macOS window and GPU example behavior is covered by
-[SMOKE_TEST.md](SMOKE_TEST.md) instead of a CI claim.
+foundation job. macOS window, GPU, and audio-device example behavior is covered
+by [SMOKE_TEST.md](SMOKE_TEST.md) instead of a CI claim.
 
 Results appear on commits and pull requests, and in the repository's **Actions**
 tab. The workflow can also be inspected with `gh run list` and
