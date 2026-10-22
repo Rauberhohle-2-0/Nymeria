@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Nymeria.Core.Models;
 using Nymeria.Core.Scenes;
@@ -14,10 +15,14 @@ namespace HelloScene;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This example uses SDL's Metal backend and Metal Shading Language (MSL)
-/// source, which SDL compiles when the shaders are created. It must be created,
-/// used, and disposed on the process main thread. The window must outlive the
-/// renderer.
+/// The shader assets follow the format the device reports: Metal takes Metal
+/// Shading Language source, which SDL compiles when the shaders are created, and
+/// Direct3D 12 takes build-generated DXIL bytecode. Neither format is used in
+/// place of the other, and this renderer has no platform branch.
+/// </para>
+/// <para>
+/// It must be created, used, and disposed on the process main thread. The window
+/// must outlive the renderer.
 /// </para>
 /// <para>
 /// The renderer owns one GPU upload per distinct <see cref="MeshData"/> instance
@@ -28,9 +33,7 @@ namespace HelloScene;
 /// </remarks>
 public sealed class SceneRenderer : IDisposable
 {
-    private const string ShaderResourceName = "Nymeria.Examples.Shaders.Model.metal";
-    private const string VertexEntryPoint = "vertex_main";
-    private const string FragmentEntryPoint = "fragment_main";
+    private const string ShaderResourcePrefix = "Nymeria.Examples.Shaders.Model";
     private const int VertexStride = 6 * sizeof(float);
 
     private readonly IntPtr _window;
@@ -86,16 +89,26 @@ public sealed class SceneRenderer : IDisposable
 
         try
         {
-            byte[] shaderCode = ReadShaderSource();
+            Assembly assembly = typeof(SceneRenderer).Assembly;
+            ShaderProgram program = ShaderProgram.Select(ShaderResourcePrefix, device.ShaderFormat);
+            byte[] vertexCode = program.Vertex.ReadBytes(assembly);
+
+            // Metal keeps both stages in one source resource, so read it once.
+            byte[] fragmentCode = program.Fragment.ResourceName == program.Vertex.ResourceName
+                ? vertexCode
+                : program.Fragment.ReadBytes(assembly);
+
             vertexShader = device.CreateShader(
-                shaderCode,
+                vertexCode,
+                program.Vertex.Format,
                 SDL.GPUShaderStage.Vertex,
-                VertexEntryPoint,
+                program.Vertex.EntryPoint,
                 uniformBufferCount: 1);
             fragmentShader = device.CreateShader(
-                shaderCode,
+                fragmentCode,
+                program.Fragment.Format,
                 SDL.GPUShaderStage.Fragment,
-                FragmentEntryPoint);
+                program.Fragment.EntryPoint);
             SDL.GPUTextureFormat depthFormat = ChooseDepthFormat(device.Handle);
             pipeline = CreatePipeline(
                 device.Handle,
@@ -407,23 +420,6 @@ public sealed class SceneRenderer : IDisposable
 
             throw;
         }
-    }
-
-    private static byte[] ReadShaderSource()
-    {
-        using Stream? stream = typeof(SceneRenderer).Assembly
-            .GetManifestResourceStream(ShaderResourceName);
-
-        if (stream is null)
-        {
-            throw new InvalidOperationException(
-                $"The embedded shader '{ShaderResourceName}' is missing. " +
-                "Rebuild HelloScene so Shared/Shaders/Model.metal is embedded.");
-        }
-
-        using var memory = new MemoryStream();
-        stream.CopyTo(memory);
-        return memory.ToArray();
     }
 
     private static SDL.GPUTextureFormat ChooseDepthFormat(IntPtr device)
