@@ -215,6 +215,13 @@ Final state on macOS 27.0.1 / arm64, .NET SDK 10.0.402:
 The independent PNG probe and the fixtures it used were temporary and are not
 part of the repository.
 
+GitHub Actions on the pushed commit (`3447d48`) — run
+[39755663508](https://github.com/Rauberhohle-2-0/Nymeria/actions/runs/39755663508)
+— **success**: `Repository checks`, `.NET (macos-latest)`, `.NET
+(windows-latest)`, and `.NET (ubuntu-latest)`. The Windows and Ubuntu jobs build
+and test the solution without a graphics backend, which is the expected state
+documented above.
+
 ## Remaining risks
 
 **Confirmed defects fixed:** camera state could produce non-finite matrices
