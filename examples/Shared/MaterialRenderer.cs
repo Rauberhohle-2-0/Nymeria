@@ -299,9 +299,10 @@ public sealed class MaterialRenderer : IDisposable
         }
 
         // Upload new meshes and textures before acquiring the frame command
-        // buffer. Buffer and texture creation submit their own copy passes, and
-        // a scene traversal that only reads object references does not allocate
-        // per frame.
+        // buffer. Buffer and texture creation submit their own copy passes.
+        // Upload bookkeeping allocates no per-object state, but the traversal
+        // itself boxes one enumerator per pass over Scene.Objects; the benchmark
+        // reports that residual, documented in docs/CULLING.md.
         EnsureResourcesUploaded(scene);
 
         IntPtr commandBuffer = SDL.AcquireGPUCommandBuffer(_device.Handle);
