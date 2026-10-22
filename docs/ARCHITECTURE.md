@@ -461,6 +461,15 @@ match it instead of relabelling them. Backend policy is a set of pure functions,
 so it is unit-tested without a device or a native library; see
 [WINDOWS_02_D3D12_BACKEND.md](WINDOWS_02_D3D12_BACKEND.md).
 
+`ShaderProgram.Select` turns that format into the embedded assets a renderer loads:
+one Metal Shading Language resource for both stages on Metal, and one DXIL blob per
+stage on Direct3D 12, each with its own entry point. `ShaderAsset` carries the
+resource name, its bytecode format, and the entry point, and reads its bytes from
+the owning assembly. A format with no assets throws rather than falling back to
+another backend's bytes, and a missing resource names the format, the resource,
+and the assembly. The mapping is pure data, so it is unit-tested without a device;
+see [WINDOWS_03_HLSL_DXIL_SHADERS.md](WINDOWS_03_HLSL_DXIL_SHADERS.md).
+
 The demonstrations live in `examples/HelloTriangle`, `examples/HelloCube`,
 `examples/HelloOBJ`, `examples/HelloO3D`, `examples/HelloX`,
 `examples/HelloScene`, `examples/HelloMaterials`, `examples/HelloLighting`,
@@ -518,16 +527,29 @@ timing, and demo geometry remain in the example that uses it.
 
 ### HelloTriangle
 
-`TriangleRenderer` owns the triangle vertex data, the triangle shader resource,
-the vertex buffer, the graphics pipeline, and the draw calls.
+`TriangleRenderer` owns the triangle vertex data, the triangle shader resources,
+the vertex buffer, the graphics pipeline, and the draw calls. It asks
+`ShaderProgram` for the assets the device's shader format needs, so it has no
+platform branch of its own.
 
-The triangle shader asset is
-`examples/HelloTriangle/Shaders/Triangle.metal`. It is embedded in the
-`HelloTriangle` assembly under `HelloTriangle.Shaders.Triangle.metal` and
-compiled from MSL source by SDL when the two shader objects are created. No
-shader compiler, Xcode build step, or generated shader artifact is required. The
+The Metal assets are `examples/HelloTriangle/Shaders/Triangle.metal`, embedded in
+the `HelloTriangle` assembly under `HelloTriangle.Shaders.Triangle.metal` and
+compiled from MSL source by SDL when the two shader objects are created. The
 vertex shader uses `[[stage_in]]` with `[[attribute]]` inputs; the fragment
-shader interpolates per-vertex colors.
+shader interpolates per-vertex colors. macOS needs no shader compiler, Xcode build
+step, or generated shader artifact.
+
+The Direct3D 12 assets are generated. `examples/HelloTriangle/Shaders/Triangle.hlsl`
+holds `VSMain` and `PSMain`, and an MSBuild target in the example's project file
+compiles them to `obj/dxil/Triangle.vert.dxil` and `Triangle.frag.dxil` with
+Microsoft's DirectX Shader Compiler, then embeds them as
+`HelloTriangle.Shaders.Triangle.vert.dxil` and `.frag.dxil`. The target runs only
+on Windows builds, recompiles when the HLSL or either output changes, and fails
+with guidance instead of silently omitting the bytecode when `dxc` is missing.
+This is the only shader toolchain in the repository, and it produces no committed
+artifact. Its HLSL uses `TEXCOORD0`/`TEXCOORD1` vertex inputs and `SV_Position`
+outputs, matching SDL3's documented Direct3D 12 semantic convention for attribute
+locations 0 and 1.
 
 Geometry is three interleaved position/color vertices in one vertex buffer. The
 buffer is uploaded once at startup through a transfer buffer and a copy pass.

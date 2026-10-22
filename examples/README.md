@@ -101,7 +101,17 @@ for events between frames, so idle redraws stay near ten per second.
 
 - Geometry: three interleaved position/color vertices in one vertex buffer.
 - Shader: `HelloTriangle/Shaders/Triangle.metal`, embedded as
-  `HelloTriangle.Shaders.Triangle.metal`.
+  `HelloTriangle.Shaders.Triangle.metal` and compiled by SDL's Metal backend at
+  startup. On Windows the same triangle uses
+  `HelloTriangle/Shaders/Triangle.hlsl`, which the build compiles to DXIL with the
+  DirectX Shader Compiler and embeds as
+  `HelloTriangle.Shaders.Triangle.vert.dxil` and `.frag.dxil`. That build step is
+  the only example-level toolchain requirement, it applies to Windows only, and
+  it needs `dxc` on `PATH` or `-p:DxcPath=<path to dxc.exe>`; see
+  [../docs/WINDOWS_03_HLSL_DXIL_SHADERS.md](../docs/WINDOWS_03_HLSL_DXIL_SHADERS.md).
+- Shader asset selection: `ShaderProgram` picks the MSL or DXIL asset from the
+  format the GPU device reports, so the renderer and its pipeline are identical on
+  both platforms.
 - Coordinates: vertices are already in clip space. There is no matrix, camera,
   or depth buffer.
 - Viewport: a centered square derived from the swapchain's physical pixels, so

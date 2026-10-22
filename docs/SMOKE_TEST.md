@@ -2,9 +2,9 @@
 
 This checklist validates behavior that headless CI cannot verify. Run the macOS
 sections on a macOS machine and the
-[Windows window-only section](#windows-window-only-smoke-test) on a Windows
-machine. Record the macOS version, CPU architecture, GPU model, audio output
-device, and date with the result.
+[Windows section](#windows-smoke-test) on a Windows machine. Record the macOS
+version, CPU architecture, GPU model, audio output device, and date with the
+result.
 
 ## Setup
 
@@ -44,21 +44,34 @@ The shaders are `examples/HelloTriangle/Shaders/Triangle.metal`,
 embedded in their examples and compiled by SDL's Metal backend at startup, so
 there is no shader compiler step and no external shader file to deploy.
 
+`HelloTriangle` is the one exception to that description. It also ships
+`Shaders/Triangle.hlsl`, which a **Windows** build compiles to DXIL with the
+DirectX Shader Compiler and embeds as `HelloTriangle.Shaders.Triangle.vert.dxil`
+and `.frag.dxil`. That compiler runs only on Windows, requires `dxc` on `PATH` or
+`-p:DxcPath=<path to dxc.exe>`, and produces no committed artifact. macOS still
+needs no shader compiler. See
+[WINDOWS_03_HLSL_DXIL_SHADERS.md](WINDOWS_03_HLSL_DXIL_SHADERS.md).
+
 Run each interactive example checklist separately. The failure-path checks at
 the end apply to all fourteen interactive examples; `HelloBenchmark` has its own
 automated checks below.
 
-## Windows window-only smoke test
+## Windows smoke test
 
-This section validates native SDL3 deployment and window creation on Windows. It
-does not validate rendering: `GpuDevice` selects Direct3D 12 with DXIL on
-Windows, but no DXIL shader assets exist yet, so every GPU example is expected to
-create its device and then stop at shader creation.
+This section validates native SDL3 deployment, window creation, and the one
+render path that exists on Windows. `GpuDevice` selects Direct3D 12 with DXIL, and
+`HelloTriangle` supplies DXIL generated from HLSL at build time, so it is expected
+to draw. Every other GPU example still ships MSL only and is expected to create
+its device and then stop at shader creation.
 
 Setup:
 
 1. **Build.** From the repository root run `dotnet build Nymeria.slnx`. It must
-   report no warnings and no errors.
+   report no warnings and no errors. The Windows build compiles
+   `examples/HelloTriangle/Shaders/Triangle.hlsl` to DXIL, so `dxc` must be on
+   `PATH` or passed as `-p:DxcPath=<path to dxc.exe>`; the Windows SDK includes
+   `dxc.exe`. A missing compiler fails the build with guidance rather than
+   silently producing an assembly without DXIL.
 2. **Native library is deployed.** Confirm that
    `examples/HelloWindow/bin/Debug/net10.0/runtimes/win-x64/native/SDL3.dll`
    exists (use `win-arm64` or `win-x86` on those architectures), or that
@@ -81,16 +94,28 @@ Setup:
    `window closed by the user` and exits with status code `0`.
 4. **No native copy is required.** Run the example from a clean build without
    placing any DLL in the output directory by hand.
-5. **Device creation should succeed; shader creation is the expected blocker.**
-   Running `HelloTriangle` on Windows should not report a Metal, driver, or
-   device-creation failure. It should stop at shader creation with a message
-   naming the `direct3d12` driver, DXIL, and MSL. Record that exact message; it
-   is the expected state until DXIL shader assets exist.
 
-Record the Windows version, CPU architecture, and date with the result.
+### HelloTriangle checks on Windows
 
-**Not claimed:** this section does not validate rendering, input mapping, the
-swapchain, or audio on Windows.
+1. **The device uses Direct3D 12 with DXIL.** Running
+   `dotnet run --project examples/HelloTriangle/HelloTriangle.csproj` must not
+   report a Metal, driver, format, or device-creation failure.
+2. **The triangle renders.** A window opens containing one triangle with a red top
+   corner and green and blue bottom corners on the dark clear color. There is no
+   shader or pipeline creation error. Resizing keeps the triangle centered and
+   proportional, and closing the window exits with status code `0` and no error
+   output. A failure naming DXIL at shader creation is the W03 integration point
+   to report, not the expected state.
+3. **Other GPU examples stop at shader creation.** Any other GPU example, for
+   example `HelloCube`, should create its device and then fail at shader creation
+   with a message naming the `direct3d12` driver, DXIL, and MSL. That is expected
+   until its HLSL port lands.
+
+Record the Windows version, CPU architecture, date, and the driver
+`GpuDevice.DriverName` reports with the result.
+
+**Not claimed:** this section does not validate any other GPU example, input
+mapping, hi-DPI drawable sizing, GPU-side frame timing, or audio on Windows.
 
 ## HelloTriangle checks
 

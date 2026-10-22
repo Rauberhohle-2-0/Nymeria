@@ -61,8 +61,13 @@ macOS:
 
 Windows:
 
-- Windows 10 or newer on x64, x86, or arm64, for building the solution and for
-  the window-only example. GPU rendering is not implemented on Windows yet.
+- Windows 10 or newer on x64, x86, or arm64, with a Direct3D 12-capable graphics
+  driver for the GPU examples. `HelloTriangle` renders through Direct3D 12 with
+  DXIL; the other GPU examples are still MSL only.
+- The DirectX Shader Compiler (`dxc`) on `PATH`, or `-p:DxcPath=<path to
+  dxc.exe>`, because a Windows build compiles HLSL to DXIL. The Windows SDK ships
+  `dxc.exe`. See
+  [docs/WINDOWS_03_HLSL_DXIL_SHADERS.md](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md).
 
 No Homebrew SDL installation, Xcode installation, or manual native-library
 download is required. NuGet restores the pinned SDL3 binding and the native
@@ -174,8 +179,10 @@ cannot read or parse its file.
 
 The GPU examples use SDL3's GPU API. `GpuDevice` takes the shader format from the
 platform's backend policy and lets SDL select the driver, so macOS uses Metal
-with MSL source and Windows requests Direct3D 12 with DXIL. There is no direct
-Metal or Direct3D 12 interop and no software fallback. `Nymeria.Graphics`
+with MSL source and Windows requests Direct3D 12 with DXIL. `ShaderProgram`
+then selects the embedded shader asset for the format the device reports, so a
+renderer never branches on the operating system. There is no direct Metal or
+Direct3D 12 interop and no software fallback. `Nymeria.Graphics`
 provides the reusable
 GPU device and the `Camera` math type; `Nymeria.Core` provides the model data
 used by `HelloCube` and the scene data used by `HelloScene`;
@@ -346,13 +353,16 @@ All fourteen interactive examples skip rendering while minimized and recover
 when a drawable is available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
-The GPU path renders on macOS only. Windows deploys the native `SDL3.dll`, can
-build and run the window-only `HelloWindow` example, and selects Direct3D 12 with
-DXIL, but no DXIL shader assets exist yet, so GPU examples stop at shader
-creation there. Linux is unsupported and ships no native package. See
+The GPU path renders on macOS through Metal. On Windows, `HelloTriangle` renders
+through Direct3D 12 with DXIL generated from HLSL during the build; every other
+GPU example still ships MSL only, so it creates its device and stops at shader
+creation there until its HLSL port lands. Windows also deploys the native
+`SDL3.dll` and runs the window-only `HelloWindow` example without a shader
+compiler. Linux is unsupported and ships no native package. See
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
-[docs/WINDOWS_01_NATIVE_SDL3.md](docs/WINDOWS_01_NATIVE_SDL3.md), and
-[docs/WINDOWS_02_D3D12_BACKEND.md](docs/WINDOWS_02_D3D12_BACKEND.md).
+[docs/WINDOWS_01_NATIVE_SDL3.md](docs/WINDOWS_01_NATIVE_SDL3.md),
+[docs/WINDOWS_02_D3D12_BACKEND.md](docs/WINDOWS_02_D3D12_BACKEND.md), and
+[docs/WINDOWS_03_HLSL_DXIL_SHADERS.md](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md).
 GPU output is validated manually with [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md),
 not in CI.
 
@@ -443,6 +453,7 @@ tests/          Headless unit tests for audio, core, formats, and platform
 - [Security audit 02](docs/SECURITY_AUDIT_02.md)
 - [Windows native SDL3 deployment](docs/WINDOWS_01_NATIVE_SDL3.md)
 - [Windows Direct3D 12 backend selection](docs/WINDOWS_02_D3D12_BACKEND.md)
+- [Windows HLSL and DXIL shaders](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)
 - [Agent instructions](AGENTS.md)

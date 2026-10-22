@@ -113,7 +113,7 @@ window smoke test passed
 - **No Windows process was started.** Native `SDL3.dll` loading, SDL video
   initialization, window creation, resizing, and input on Windows are
   unverified. Those are the Windows checks in
-  [SMOKE_TEST.md](SMOKE_TEST.md#windows-window-only-smoke-test).
+  [SMOKE_TEST.md](SMOKE_TEST.md#windows-smoke-test).
 - **No Windows GPU behavior was verified in W01.** At the time of this task
   `GpuDevice.Create` still requested the Metal backend. W02 replaced that with a
   platform policy, so this statement has been superseded; see
