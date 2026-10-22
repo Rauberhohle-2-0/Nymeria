@@ -62,6 +62,30 @@ internal static class Program
                 null,
                 "solid orange");
 
+            // Two transparency modes. The mask material discards whole texels, while
+            // the glass materials keep the scene visible through a tint. The mask
+            // texture is generated and shared by one object only; the glass
+            // materials reuse the loaded base-color texture, so it is still
+            // uploaded once.
+            var maskMaterial = new Material(
+                Vector3.One,
+                MaterialFixtures.CreateMaskTexture(),
+                "alpha-mask cutout",
+                MaterialTransparency.Mask,
+                alphaCutoff: 0.5f);
+            var coolGlassMaterial = new Material(
+                new Vector3(0.45f, 0.85f, 1.0f),
+                baseColorTexture,
+                "cool glass",
+                MaterialTransparency.Blend,
+                alpha: 0.45f);
+            var warmGlassMaterial = new Material(
+                new Vector3(1.0f, 0.60f, 0.25f),
+                baseColorTexture,
+                "warm glass",
+                MaterialTransparency.Blend,
+                alpha: 0.35f);
+
             MeshData sharedMesh = MaterialFixtures.CreateCubeMesh();
             var scene = new Scene();
 
@@ -103,6 +127,40 @@ internal static class Program
                 yawRadians: 0.2f,
                 pitchRadians: -0.4f));
 
+            // The transparent stack sits in front of the opaque objects so a wrong
+            // depth-write or order rule is visible: the mask pane cuts holes that
+            // reveal the scene behind it, and three blended panes overlap each
+            // other at different distances, so their tint must accumulate from
+            // the farthest to the nearest pane.
+            scene.Add(CreateObject(
+                sharedMesh,
+                maskMaterial,
+                new Vector3(0.0f, 1.2f, 3.4f),
+                new Vector3(2.8f, 1.9f, 0.05f),
+                yawRadians: 0.0f,
+                pitchRadians: 0.0f));
+            scene.Add(CreateObject(
+                sharedMesh,
+                coolGlassMaterial,
+                new Vector3(0.9f, 1.4f, 2.6f),
+                new Vector3(2.0f, 1.5f, 0.05f),
+                yawRadians: 0.15f,
+                pitchRadians: 0.0f));
+            scene.Add(CreateObject(
+                sharedMesh,
+                warmGlassMaterial,
+                new Vector3(-0.7f, 1.0f, 1.5f),
+                new Vector3(2.0f, 1.5f, 0.05f),
+                yawRadians: -0.1f,
+                pitchRadians: 0.0f));
+            scene.Add(CreateObject(
+                sharedMesh,
+                coolGlassMaterial,
+                new Vector3(0.2f, 1.2f, 0.4f),
+                new Vector3(1.8f, 1.4f, 0.05f),
+                yawRadians: 0.05f,
+                pitchRadians: 0.0f));
+
             var camera = new Camera(new Vector3(0.0f, 1.5f, 9.0f))
             {
                 MoveSpeed = 4.0f,
@@ -114,6 +172,11 @@ internal static class Program
                 "HelloMaterials: two objects share the base-color material, " +
                 "one uses a blue-tinted variant of the same texture, and one is " +
                 "solid orange through the white fallback texture.");
+            Console.WriteLine(
+                "In front of them, one alpha-mask pane discards a checkerboard of " +
+                "holes, and three blended panes overlap at different distances with " +
+                "a cool and a warm tint. Blended panes are drawn back to front and " +
+                "do not write depth.");
             Console.WriteLine(
                 "Rotate the camera to check the texture orientation, then " +
                 "resize the window. WASD moves, Space/Ctrl moves up/down, hold " +

@@ -14,6 +14,7 @@
   <ItemGroup>
     <Compile Include="../Shared/MaterialGpuGeometry.cs" Link="MaterialGpuGeometry.cs" />
     <Compile Include="../Shared/MaterialRenderer.cs" Link="MaterialRenderer.cs" />
+    <Compile Include="../Shared/BlendState.cs" Link="BlendState.cs" />
   </ItemGroup>
 
   <ItemGroup>

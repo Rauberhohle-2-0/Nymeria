@@ -5,6 +5,7 @@ using Nymeria.Core.Lighting;
 using Nymeria.Core.Lod;
 using Nymeria.Core.Materials;
 using Nymeria.Core.Models;
+using Nymeria.Core.Rendering;
 using Nymeria.Core.Scenes;
 using Nymeria.Graphics;
 using SDL3;
@@ -63,6 +64,17 @@ namespace Nymeria.Examples;
 /// releasing anything, so it belongs on an occasional unload path, not in the
 /// per-frame draw loop.
 /// </para>
+/// <para>
+/// Transparency follows <see cref="Material.Transparency"/>. Opaque and masked
+/// instances share the depth-writing pipeline and are drawn in scene order; the
+/// fragment shader applies the mask cutoff. Blended instances are collected into
+/// a reusable per-frame list, sorted back to front with
+/// <see cref="BlendOrder"/>, and drawn after the opaque phase through a second
+/// pipeline that keeps depth testing but disables depth writes and enables
+/// straight source-over blending. Effective alpha is the sampled texture alpha
+/// times <see cref="Material.Alpha"/>. Neither phase uploads a resource or
+/// allocates once the instance lists have grown to their steady size.
+/// </para>
 /// </remarks>
 public sealed class MaterialRenderer : IDisposable
 {
@@ -75,7 +87,8 @@ public sealed class MaterialRenderer : IDisposable
     private readonly GpuDevice _device;
     private readonly IntPtr _vertexShader;
     private readonly IntPtr _fragmentShader;
-    private readonly IntPtr _pipeline;
+    private readonly IntPtr _opaquePipeline;
+    private readonly IntPtr _blendPipeline;
     private readonly IntPtr _sampler;
     private readonly IntPtr _mippedSampler;
     private readonly IntPtr _fallbackTexture;
@@ -86,6 +99,8 @@ public sealed class MaterialRenderer : IDisposable
         new(ReferenceEqualityComparer.Instance);
     private readonly SceneVisibilityCounter _visibility = new();
     private readonly Frustum _cullingFrustum = new();
+    private readonly List<BlendedInstance> _blended = new();
+    private BlendOrderEntry[] _blendOrder = [];
     private IntPtr _depthTexture;
     private uint _depthWidth;
     private uint _depthHeight;
@@ -96,7 +111,8 @@ public sealed class MaterialRenderer : IDisposable
         GpuDevice device,
         IntPtr vertexShader,
         IntPtr fragmentShader,
-        IntPtr pipeline,
+        IntPtr opaquePipeline,
+        IntPtr blendPipeline,
         IntPtr sampler,
         IntPtr mippedSampler,
         IntPtr fallbackTexture,
@@ -106,7 +122,8 @@ public sealed class MaterialRenderer : IDisposable
         _device = device;
         _vertexShader = vertexShader;
         _fragmentShader = fragmentShader;
-        _pipeline = pipeline;
+        _opaquePipeline = opaquePipeline;
+        _blendPipeline = blendPipeline;
         _sampler = sampler;
         _mippedSampler = mippedSampler;
         _fallbackTexture = fallbackTexture;
@@ -134,7 +151,8 @@ public sealed class MaterialRenderer : IDisposable
         GpuDevice? device = null;
         IntPtr vertexShader = IntPtr.Zero;
         IntPtr fragmentShader = IntPtr.Zero;
-        IntPtr pipeline = IntPtr.Zero;
+        IntPtr opaquePipeline = IntPtr.Zero;
+        IntPtr blendPipeline = IntPtr.Zero;
         IntPtr sampler = IntPtr.Zero;
         IntPtr mippedSampler = IntPtr.Zero;
         IntPtr fallbackTexture = IntPtr.Zero;
@@ -159,19 +177,28 @@ public sealed class MaterialRenderer : IDisposable
             fallbackTexture = CreateFallbackTexture(device);
 
             SDL.GPUTextureFormat depthFormat = ChooseDepthFormat(device.Handle);
-            pipeline = CreatePipeline(
+            opaquePipeline = CreatePipeline(
                 device.Handle,
                 vertexShader,
                 fragmentShader,
                 device.SwapchainFormat,
-                depthFormat);
+                depthFormat,
+                enableBlending: false);
+            blendPipeline = CreatePipeline(
+                device.Handle,
+                vertexShader,
+                fragmentShader,
+                device.SwapchainFormat,
+                depthFormat,
+                enableBlending: true);
 
             return new MaterialRenderer(
                 window,
                 device,
                 vertexShader,
                 fragmentShader,
-                pipeline,
+                opaquePipeline,
+                blendPipeline,
                 sampler,
                 mippedSampler,
                 fallbackTexture,
@@ -183,9 +210,14 @@ public sealed class MaterialRenderer : IDisposable
             {
                 SDL.WaitForGPUIdle(device.Handle);
 
-                if (pipeline != IntPtr.Zero)
+                if (blendPipeline != IntPtr.Zero)
                 {
-                    SDL.ReleaseGPUGraphicsPipeline(device.Handle, pipeline);
+                    SDL.ReleaseGPUGraphicsPipeline(device.Handle, blendPipeline);
+                }
+
+                if (opaquePipeline != IntPtr.Zero)
+                {
+                    SDL.ReleaseGPUGraphicsPipeline(device.Handle, opaquePipeline);
                 }
 
                 if (fallbackTexture != IntPtr.Zero)
@@ -407,8 +439,6 @@ public sealed class MaterialRenderer : IDisposable
                 $"SDL could not begin a GPU render pass: {error}");
         }
 
-        SDL.BindGPUGraphicsPipeline(renderPass, _pipeline);
-
         var viewport = new SDL.GPUViewport
         {
             X = 0.0f,
@@ -441,17 +471,18 @@ public sealed class MaterialRenderer : IDisposable
             ? Vector4.Zero
             : new Vector4(directional.EffectiveColor, 0.0f);
 
-        Span<VertexUniforms> vertexUniforms = stackalloc VertexUniforms[1];
-        Span<FragmentUniforms> fragmentUniforms = stackalloc FragmentUniforms[1];
-        Span<SDL.GPUBufferBinding> vertexBindings = stackalloc SDL.GPUBufferBinding[1];
-        Span<SDL.GPUTextureSamplerBinding> samplerBindings =
-            stackalloc SDL.GPUTextureSamplerBinding[1];
-
         int drawCalls = 0;
         long submittedTriangles = 0;
         bool lodEnabled = LodEnabled;
         bool distanceCullingEnabled = DistanceCullingEnabled;
         Vector3 cameraPosition = camera.Position;
+
+        // Opaque and masked instances share the depth-writing pipeline and are
+        // submitted in scene order, so previous frames keep their draw order.
+        // Blended instances are collected and drawn afterwards, farthest first.
+        SDL.BindGPUGraphicsPipeline(renderPass, _opaquePipeline);
+
+        _blended.Clear();
 
         for (int objectIndex = 0; objectIndex < scene.Objects.Count; objectIndex++)
         {
@@ -472,89 +503,49 @@ public sealed class MaterialRenderer : IDisposable
             GpuMesh mesh = _meshes[selectedMesh];
             Material material = sceneObject.Material;
 
-            if (!LightingMath.TryCreateNormalMatrix(model, out Matrix4x4 normalMatrix))
+            if (material.RequiresBlendOrdering)
             {
-                // A swapchain texture and render pass are already acquired, so
-                // the command buffer must be submitted before propagating the
-                // error; SDL no longer permits cancelling it at this point.
-                string message =
-                    $"The model transform for scene object {objectIndex} is singular " +
-                    "or non-finite, so a normal matrix cannot be computed for lighting.";
-
-                SDL.EndGPURenderPass(renderPass);
-
-                if (!SDL.SubmitGPUCommandBuffer(commandBuffer))
-                {
-                    throw new InvalidOperationException(
-                        $"{message} SDL also could not submit the GPU command buffer: " +
-                        $"{SDL.GetError()}");
-                }
-
-                throw new InvalidOperationException(message);
+                Vector3 center = Vector3.Transform(
+                    (selectedMesh.Bounds.Min + selectedMesh.Bounds.Max) * 0.5f,
+                    model);
+                _blended.Add(new BlendedInstance(
+                    objectIndex,
+                    model,
+                    mesh,
+                    material,
+                    center));
+                continue;
             }
 
-            vertexUniforms[0] = new VertexUniforms
-            {
-                Mvp = model * view * projection,
-                NormalMatrix = normalMatrix,
-            };
-
-            ReadOnlySpan<byte> vertexBytes = MemoryMarshal.AsBytes(vertexUniforms);
-            SDL.PushGPUVertexUniformData(
-                commandBuffer,
-                0,
-                vertexBytes,
-                (uint)vertexBytes.Length);
-
-            fragmentUniforms[0] = new FragmentUniforms
-            {
-                AmbientColor = ambientColor,
-                LightDirectionToLight = lightDirectionToLight,
-                LightColor = lightColor,
-                Tint = new Vector4(material.BaseColor, 1.0f),
-            };
-
-            ReadOnlySpan<byte> fragmentBytes = MemoryMarshal.AsBytes(fragmentUniforms);
-            SDL.PushGPUFragmentUniformData(
-                commandBuffer,
-                0,
-                fragmentBytes,
-                (uint)fragmentBytes.Length);
-
-            vertexBindings[0] = new SDL.GPUBufferBinding
-            {
-                Buffer = mesh.VertexBuffer,
-                Offset = 0,
-            };
-            SDL.BindGPUVertexBuffers(renderPass, 0, vertexBindings, 1);
-
-            var indexBinding = new SDL.GPUBufferBinding
-            {
-                Buffer = mesh.IndexBuffer,
-                Offset = 0,
-            };
-            SDL.BindGPUIndexBuffer(
+            DrawInstance(
                 renderPass,
-                in indexBinding,
-                SDL.GPUIndexElementSize.IndexElementSize32Bit);
-
-            GpuTexture texture = ResolveTexture(mesh, material);
-            samplerBindings[0] = new SDL.GPUTextureSamplerBinding
-            {
-                Texture = texture.Handle,
-                Sampler = texture.UploadedMipLevels > 1 ? _mippedSampler : _sampler,
-            };
-            SDL.BindGPUFragmentSamplers(renderPass, 0, samplerBindings, 1);
-
-            SDL.DrawGPUIndexedPrimitives(
-                renderPass,
-                mesh.IndexCount,
-                1,
-                0,
-                0,
-                0);
+                commandBuffer,
+                objectIndex,
+                in mesh,
+                material,
+                model,
+                view,
+                projection,
+                ambientColor,
+                lightDirectionToLight,
+                lightColor);
             drawCalls++;
             submittedTriangles += mesh.IndexCount / 3;
+        }
+
+        if (_blended.Count > 0)
+        {
+            (int blendedDrawCalls, long blendedTriangles) = DrawBlendedInstances(
+                renderPass,
+                commandBuffer,
+                view,
+                projection,
+                cameraPosition,
+                ambientColor,
+                lightDirectionToLight,
+                lightColor);
+            drawCalls += blendedDrawCalls;
+            submittedTriangles += blendedTriangles;
         }
 
         SDL.EndGPURenderPass(renderPass);
@@ -574,6 +565,168 @@ public sealed class MaterialRenderer : IDisposable
             _visibility.LodDrawnInstances,
             submittedTriangles,
             _visibility.LodLevelUsage);
+    }
+
+    private void DrawInstance(
+        IntPtr renderPass,
+        IntPtr commandBuffer,
+        int objectIndex,
+        in GpuMesh mesh,
+        Material material,
+        Matrix4x4 model,
+        Matrix4x4 view,
+        Matrix4x4 projection,
+        Vector4 ambientColor,
+        Vector4 lightDirectionToLight,
+        Vector4 lightColor)
+    {
+        if (!LightingMath.TryCreateNormalMatrix(model, out Matrix4x4 normalMatrix))
+        {
+            // A swapchain texture and render pass are already acquired, so
+            // the command buffer must be submitted before propagating the
+            // error; SDL no longer permits cancelling it at this point.
+            string message =
+                $"The model transform for scene object {objectIndex} is singular " +
+                "or non-finite, so a normal matrix cannot be computed for lighting.";
+
+            SDL.EndGPURenderPass(renderPass);
+
+            if (!SDL.SubmitGPUCommandBuffer(commandBuffer))
+            {
+                throw new InvalidOperationException(
+                    $"{message} SDL also could not submit the GPU command buffer: " +
+                    $"{SDL.GetError()}");
+            }
+
+            throw new InvalidOperationException(message);
+        }
+
+        Span<VertexUniforms> vertexUniforms = stackalloc VertexUniforms[1];
+        vertexUniforms[0] = new VertexUniforms
+        {
+            Mvp = model * view * projection,
+            NormalMatrix = normalMatrix,
+        };
+
+        ReadOnlySpan<byte> vertexBytes = MemoryMarshal.AsBytes(vertexUniforms);
+        SDL.PushGPUVertexUniformData(
+            commandBuffer,
+            0,
+            vertexBytes,
+            (uint)vertexBytes.Length);
+
+        Span<FragmentUniforms> fragmentUniforms = stackalloc FragmentUniforms[1];
+        fragmentUniforms[0] = new FragmentUniforms
+        {
+            AmbientColor = ambientColor,
+            LightDirectionToLight = lightDirectionToLight,
+            LightColor = lightColor,
+            Tint = new Vector4(material.BaseColor, material.Alpha),
+            AlphaParams = new Vector4(
+                material.AlphaCutoff,
+                (float)material.Transparency,
+                0.0f,
+                0.0f),
+        };
+
+        ReadOnlySpan<byte> fragmentBytes = MemoryMarshal.AsBytes(fragmentUniforms);
+        SDL.PushGPUFragmentUniformData(
+            commandBuffer,
+            0,
+            fragmentBytes,
+            (uint)fragmentBytes.Length);
+
+        Span<SDL.GPUBufferBinding> vertexBindings = stackalloc SDL.GPUBufferBinding[1];
+        vertexBindings[0] = new SDL.GPUBufferBinding
+        {
+            Buffer = mesh.VertexBuffer,
+            Offset = 0,
+        };
+        SDL.BindGPUVertexBuffers(renderPass, 0, vertexBindings, 1);
+
+        var indexBinding = new SDL.GPUBufferBinding
+        {
+            Buffer = mesh.IndexBuffer,
+            Offset = 0,
+        };
+        SDL.BindGPUIndexBuffer(
+            renderPass,
+            in indexBinding,
+            SDL.GPUIndexElementSize.IndexElementSize32Bit);
+
+        GpuTexture texture = ResolveTexture(mesh, material);
+        Span<SDL.GPUTextureSamplerBinding> samplerBindings =
+            stackalloc SDL.GPUTextureSamplerBinding[1];
+        samplerBindings[0] = new SDL.GPUTextureSamplerBinding
+        {
+            Texture = texture.Handle,
+            Sampler = texture.UploadedMipLevels > 1 ? _mippedSampler : _sampler,
+        };
+        SDL.BindGPUFragmentSamplers(renderPass, 0, samplerBindings, 1);
+
+        SDL.DrawGPUIndexedPrimitives(
+            renderPass,
+            mesh.IndexCount,
+            1,
+            0,
+            0,
+            0);
+    }
+
+    private (int DrawCalls, long Triangles) DrawBlendedInstances(
+        IntPtr renderPass,
+        IntPtr commandBuffer,
+        Matrix4x4 view,
+        Matrix4x4 projection,
+        Vector3 cameraPosition,
+        Vector4 ambientColor,
+        Vector4 lightDirectionToLight,
+        Vector4 lightColor)
+    {
+        int count = _blended.Count;
+
+        if (_blendOrder.Length < count)
+        {
+            // Growth happens only when the blended instance count reaches a new
+            // high-water mark, so a steady scene does not allocate per frame.
+            _blendOrder = new BlendOrderEntry[count];
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            _blendOrder[i] = new BlendOrderEntry(i, _blended[i].Center);
+        }
+
+        BlendOrder.SortBackToFront(_blendOrder.AsSpan(0, count), cameraPosition);
+
+        // The blend pipeline keeps the depth test but stops writing depth, so
+        // already drawn opaque geometry occludes blended instances while the
+        // blended instances never occlude each other. Ordering is handled here.
+        SDL.BindGPUGraphicsPipeline(renderPass, _blendPipeline);
+
+        long triangles = 0;
+
+        for (int i = 0; i < count; i++)
+        {
+            BlendedInstance instance = _blended[_blendOrder[i].Index];
+            GpuMesh mesh = instance.Mesh;
+
+            DrawInstance(
+                renderPass,
+                commandBuffer,
+                instance.ObjectIndex,
+                in mesh,
+                instance.Material,
+                instance.Model,
+                view,
+                projection,
+                ambientColor,
+                lightDirectionToLight,
+                lightColor);
+            triangles += instance.Mesh.IndexCount / 3;
+        }
+
+        return (count, triangles);
     }
 
     public void Dispose()
@@ -610,7 +763,8 @@ public sealed class MaterialRenderer : IDisposable
         SDL.ReleaseGPUTexture(_device.Handle, _fallbackTexture);
         SDL.ReleaseGPUSampler(_device.Handle, _mippedSampler);
         SDL.ReleaseGPUSampler(_device.Handle, _sampler);
-        SDL.ReleaseGPUGraphicsPipeline(_device.Handle, _pipeline);
+        SDL.ReleaseGPUGraphicsPipeline(_device.Handle, _blendPipeline);
+        SDL.ReleaseGPUGraphicsPipeline(_device.Handle, _opaquePipeline);
         SDL.ReleaseGPUShader(_device.Handle, _fragmentShader);
         SDL.ReleaseGPUShader(_device.Handle, _vertexShader);
         _device.Dispose();
@@ -1150,7 +1304,8 @@ public sealed class MaterialRenderer : IDisposable
         IntPtr vertexShader,
         IntPtr fragmentShader,
         SDL.GPUTextureFormat swapchainFormat,
-        SDL.GPUTextureFormat depthFormat)
+        SDL.GPUTextureFormat depthFormat,
+        bool enableBlending)
     {
         var vertexBuffer = new SDL.GPUVertexBufferDescription
         {
@@ -1184,9 +1339,19 @@ public sealed class MaterialRenderer : IDisposable
             },
         };
 
+        // The blend pipeline composites straight source-over; the opaque and
+        // mask pipelines leave blending disabled.
+        SDL.GPUColorTargetBlendState blendState = enableBlending
+            ? BlendState.SourceOver
+            : default;
+
         SDL.GPUColorTargetDescription[] colorTargets =
         {
-            new() { Format = swapchainFormat },
+            new()
+            {
+                Format = swapchainFormat,
+                BlendState = blendState,
+            },
         };
 
         IntPtr pipeline = SDL.CreateGPUGraphicsPipeline(
@@ -1212,10 +1377,13 @@ public sealed class MaterialRenderer : IDisposable
                 {
                     SampleCount = SDL.GPUSampleCount.SampleCount1,
                 },
+                // Masked instances share this state: the cutoff is applied by
+                // discarding in the shader, which needs depth writes so the
+                // surviving fragments occlude later geometry.
                 DepthStencilState = new SDL.GPUDepthStencilState
                 {
                     EnableDepthTest = true,
-                    EnableDepthWrite = true,
+                    EnableDepthWrite = !enableBlending,
                     EnableStencilTest = false,
                     CompareOp = SDL.GPUCompareOp.Less,
                 },
@@ -1278,8 +1446,26 @@ public sealed class MaterialRenderer : IDisposable
         public Vector4 AmbientColor;
         public Vector4 LightDirectionToLight;
         public Vector4 LightColor;
+
+        // Alpha is the material opacity; RGB is the base-color tint.
         public Vector4 Tint;
+
+        // X is the mask cutoff and Y is the MaterialTransparency value. Z and W
+        // are reserved so the struct stays a whole number of 16-byte rows and
+        // matches the MSL float4 layout.
+        public Vector4 AlphaParams;
     }
 
     private readonly record struct GpuTexture(IntPtr Handle, int UploadedMipLevels);
+
+    /// <summary>
+    /// A blended instance collected during the opaque phase and drawn later in
+    /// back-to-front order.
+    /// </summary>
+    private readonly record struct BlendedInstance(
+        int ObjectIndex,
+        Matrix4x4 Model,
+        GpuMesh Mesh,
+        Material Material,
+        Vector3 Center);
 }

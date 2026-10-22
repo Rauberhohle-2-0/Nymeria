@@ -139,6 +139,38 @@ internal static class MaterialFixtures
         return new TextureData(size, size, pixels, "generated checkerboard");
     }
 
+    /// <summary>
+    /// Builds an opaque white texture with a regular grid of fully transparent
+    /// cells, so an alpha-mask material discards visible holes.
+    /// </summary>
+    /// <remarks>
+    /// White keeps the material tint visible, and the binary alpha makes the
+    /// cutoff unambiguous: every texel is either 0 or 255, and the example uses a
+    /// cutoff of 0.5.
+    /// </remarks>
+    public static TextureData CreateMaskTexture()
+    {
+        const int size = 128;
+        const int cellSize = 16;
+        var pixels = new byte[size * size * 4];
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                bool hole = ((x / cellSize) + (y / cellSize)) % 2 == 0;
+                int offset = (y * size + x) * 4;
+
+                pixels[offset] = 255;
+                pixels[offset + 1] = 255;
+                pixels[offset + 2] = 255;
+                pixels[offset + 3] = hole ? (byte)0 : (byte)255;
+            }
+        }
+
+        return new TextureData(size, size, pixels, "generated alpha-mask cutout");
+    }
+
     private static byte ToByte(float value)
     {
         return (byte)Math.Clamp((int)MathF.Round(value * 255.0f), 0, 255);

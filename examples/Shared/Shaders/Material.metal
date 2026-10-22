@@ -23,11 +23,14 @@ struct VertexUniforms {
     float4x4 normalMatrix;
 };
 
+// `tint.a` is the material alpha. `alphaParams.x` is the mask cutoff and
+// `alphaParams.y` is the material transparency mode: 0 opaque, 1 mask, 2 blend.
 struct FragmentUniforms {
     float4 ambientColor;
     float4 lightDirectionToLight;
     float4 lightColor;
     float4 tint;
+    float4 alphaParams;
 };
 
 vertex VertexOut vertex_main(VertexIn in [[stage_in]],
@@ -42,13 +45,19 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
 // Lighting is evaluated in world space. `ambientColor` and `lightColor` already
 // include their CPU-side intensity. The normal is normalized after interpolation
 // and guarded against a zero-length result so a degenerate mesh cannot produce
-// NaN. Alpha is not blended; the existing material behavior writes 1.0.
+// NaN.
+//
+// Effective alpha is the sampled texture alpha multiplied by the material alpha.
+// Opaque mode ignores it and writes 1.0, mask mode discards fragments below the
+// cutoff and otherwise writes 1.0, and blend mode outputs the effective alpha for
+// straight source-over compositing configured on the pipeline.
 fragment float4 fragment_main(VertexOut in [[stage_in]],
                               constant FragmentUniforms &uniforms [[buffer(0)]],
                               texture2d<float> baseColorTexture [[texture(0)]],
                               sampler baseColorSampler [[sampler(0)]]) {
     float4 texel = baseColorTexture.sample(baseColorSampler, in.uv);
     float3 baseColor = texel.rgb * uniforms.tint.rgb;
+    float alpha = texel.a * uniforms.tint.a;
 
     float normalLengthSquared = dot(in.worldNormal, in.worldNormal);
     float3 normal = normalLengthSquared > 1.0e-12
@@ -58,6 +67,17 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
     float diffuse = max(dot(normal, uniforms.lightDirectionToLight.xyz), 0.0);
     float3 lighting =
         uniforms.ambientColor.rgb + (uniforms.lightColor.rgb * diffuse);
+    float3 color = baseColor * lighting;
 
-    return float4(baseColor * lighting, 1.0);
+    float mode = uniforms.alphaParams.y;
+
+    if (mode >= 1.5) {
+        return float4(color, alpha);
+    }
+
+    if (mode >= 0.5 && alpha < uniforms.alphaParams.x) {
+        discard_fragment();
+    }
+
+    return float4(color, 1.0);
 }
