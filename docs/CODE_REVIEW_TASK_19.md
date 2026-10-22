@@ -354,7 +354,7 @@ confirmed `UnloadAll` empties the scene.
 | Frustum cross-check | local harness, 4,000,000 sampled points | 0 false culls |
 | Core invariants | local harness (distance, ray slab, box/sphere, gains, counters, LOD, raycast, streaming, animation) | all held |
 | Package audit | `dotnet list Nymeria.slnx package --vulnerable --include-transitive` | none reported |
-| CI | `Repository checks` on the pushed commit | see the final summary of the task |
+| CI | [`Repository checks` run 39753515387](https://github.com/Rauberhohle-2-0/Nymeria/actions/runs/39753515387) on `db0864e` | Success: repository checks, macOS, Windows and Ubuntu |
 
 ## Files changed
 
