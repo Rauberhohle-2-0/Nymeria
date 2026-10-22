@@ -140,6 +140,8 @@ extension is a direction, not a current feature.
   deterministic O(n²) pair queries. They are headless, use `System.Numerics`
   only, and contain no SDL3, GPU, window, or format dependency.
 - `Nymeria.Platform.Tests`, automated tests for platform-independent options.
+- `Nymeria.Graphics.Tests`, GPU-independent tests for camera state validation,
+  view/projection conventions, and matrix diagnostics.
 - `Nymeria.Core.Tests`, GPU-independent tests for model-data validation,
   parser-contract error behavior, transform composition, scene lifecycle,
   lighting data and math, materials, texture-data validation, mesh bounds,
@@ -165,7 +167,8 @@ extension is a direction, not a current feature.
   supported versions and flags, geometry conversion, limits, and failure
   behavior.
 - `Nymeria.Formats.Png.Tests`, GPU-independent tests for the PNG subset, malformed
-  and truncated input, decompression limits, and decoded texture data.
+  and truncated input, decompression limits, `tRNS` transparency, and decoded
+  texture data.
 - `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
   `Nymeria.Formats.Dds.Tests`, and `Nymeria.Formats.Bmp.Tests`,
   GPU-independent tests for their supported subsets, orientation, channel order,
@@ -246,7 +249,8 @@ contains `Nymeria.Core`, `src/formats/` contains `Nymeria.Formats.Obj`,
 `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
 `Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Bmp.Tests`,
 `Nymeria.Formats.Textures.Tests`, `Nymeria.Formats.Wav.Tests`,
-`Nymeria.Audio.Tests`, and `Nymeria.Platform.Tests`.
+`Nymeria.Audio.Tests`, `Nymeria.Platform.Tests`, and
+`Nymeria.Graphics.Tests`.
 
 `Nymeria.Core` owns the format-independent model data and parser contract
 described in [MODEL_DATA.md](MODEL_DATA.md), the minimal scene data described in
@@ -454,6 +458,17 @@ sensitivity, field of view, and clip planes. It exposes a right-handed view
 matrix and a perspective projection factory that takes the drawable aspect
 ratio. Pitch is clamped below a right angle, yaw is wrapped, non-finite rotation
 deltas are ignored, and diagonal movement is normalized.
+
+Invalid camera state is rejected at the matrix boundary rather than inside the
+render loop. `ViewMatrix` throws `InvalidOperationException` when the position is
+not finite, when the position magnitude cannot express a distinct look target in
+single precision, or when the view basis is degenerate. `CreateProjectionMatrix`
+throws `ArgumentOutOfRangeException` for a non-positive or non-finite aspect
+ratio, and `InvalidOperationException` when the field of view is not finite and
+strictly between 0 and π, the near plane is not finite and positive, or the far
+plane is not finite and greater than the near plane. The exception names the
+offending property; values are never silently replaced or clamped, and a valid
+camera keeps its previous matrices and movement behavior.
 
 The type has no SDL3, window, GPU-device, or example dependency. It is not a
 scene graph, controller, input system, or game-loop component. Input mapping,
@@ -1076,8 +1091,9 @@ No engine project references an example. `Nymeria.Core.Tests`,
 `Nymeria.Formats.Tga.Tests`, `Nymeria.Formats.Jpeg.Tests`,
 `Nymeria.Formats.Dds.Tests`, `Nymeria.Formats.Bmp.Tests`,
 `Nymeria.Formats.Textures.Tests`, `Nymeria.Formats.Wav.Tests`,
-`Nymeria.Audio.Tests`, and `Nymeria.Platform.Tests` reference their project or
-projects under test; the animation tests live in `Nymeria.Core.Tests`. No
+`Nymeria.Audio.Tests`, `Nymeria.Platform.Tests`, and `Nymeria.Graphics.Tests`
+reference their project or projects under test; the animation tests live in
+`Nymeria.Core.Tests`. No
 interfaces or abstractions are created to enforce the future direction. Adding
 them speculatively would violate YAGNI.
 

@@ -125,16 +125,89 @@ public sealed class Camera
     /// <summary>
     /// Gets the right-handed view matrix.
     /// </summary>
-    public Matrix4x4 ViewMatrix => Matrix4x4.CreateLookAt(
-        Position,
-        Position + Forward,
-        Vector3.UnitY);
+    /// <remarks>
+    /// The camera state is validated at this boundary. A non-finite position, a
+    /// position so large that the look target coincides with it, or a degenerate
+    /// view basis throws <see cref="InvalidOperationException"/> with the
+    /// offending property, instead of returning a matrix containing NaNs or
+    /// infinities to a renderer.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="Position"/> is not finite, the position magnitude cannot
+    /// express a look target, or the view basis is degenerate.
+    /// </exception>
+    public Matrix4x4 ViewMatrix
+    {
+        get
+        {
+            RequireFinitePosition();
+
+            Vector3 forward = Forward;
+            Vector3 right = Vector3.Cross(forward, Vector3.UnitY);
+
+            if (!IsFinite(forward) ||
+                !IsFinite(right) ||
+                right.LengthSquared() <= 1e-12f)
+            {
+                throw new InvalidOperationException(
+                    "The camera forward direction is degenerate with the up " +
+                    "vector, so a view basis cannot be built. Keep the pitch " +
+                    "away from a right angle.");
+            }
+
+            // Compose the target in double precision and reject a target that
+            // rounds back onto the position. That happens only for an extremely
+            // large finite position, where the look direction would collapse.
+            double targetX = (double)Position.X + forward.X;
+            double targetY = (double)Position.Y + forward.Y;
+            double targetZ = (double)Position.Z + forward.Z;
+            var target = new Vector3((float)targetX, (float)targetY, (float)targetZ);
+
+            if (target == Position)
+            {
+                throw new InvalidOperationException(
+                    $"The camera position magnitude ({Position.Length():0.###e+0}) " +
+                    "cannot express a distinct look target in single precision, " +
+                    "so the view matrix would be undefined. Move the camera closer " +
+                    "to the world origin.");
+            }
+
+            Matrix4x4 view = Matrix4x4.CreateLookAt(
+                Position,
+                target,
+                Vector3.UnitY);
+
+            if (!IsFinite(view))
+            {
+                throw new InvalidOperationException(
+                    "The camera position and orientation produce a non-finite " +
+                    "view matrix. Check Position, YawRadians, and PitchRadians.");
+            }
+
+            return view;
+        }
+    }
 
     /// <summary>
     /// Creates a right-handed perspective projection for the given aspect
     /// ratio. The matrix maps depth to [0, 1], matching SDL3 GPU and Metal.
     /// </summary>
+    /// <remarks>
+    /// The projection state is validated at this boundary. An invalid field of
+    /// view, near plane, or far plane throws
+    /// <see cref="InvalidOperationException"/> naming the property instead of
+    /// returning a matrix containing NaNs or throwing from
+    /// <see cref="System.Numerics"/>.
+    /// </remarks>
     /// <param name="aspectRatio">Drawable width divided by drawable height.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="aspectRatio"/> is not a positive finite number.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The field of view is not finite and strictly between 0 and π, the near
+    /// plane is not finite and positive, the far plane is not finite and greater
+    /// than the near plane, or the resulting matrix is not finite.
+    /// </exception>
     public Matrix4x4 CreateProjectionMatrix(float aspectRatio)
     {
         if (!float.IsFinite(aspectRatio) || aspectRatio <= 0.0f)
@@ -144,11 +217,42 @@ public sealed class Camera
                 "The projection aspect ratio must be a positive finite number.");
         }
 
-        return Matrix4x4.CreatePerspectiveFieldOfView(
+        if (!float.IsFinite(FieldOfViewRadians) ||
+            FieldOfViewRadians <= 0.0f ||
+            FieldOfViewRadians >= MathF.PI)
+        {
+            throw new InvalidOperationException(
+                $"FieldOfViewRadians is {FieldOfViewRadians} but must be finite and " +
+                $"strictly between 0 and π radians ({MathF.PI}).");
+        }
+
+        if (!float.IsFinite(NearPlane) || NearPlane <= 0.0f)
+        {
+            throw new InvalidOperationException(
+                $"NearPlane is {NearPlane} but must be finite and greater than zero.");
+        }
+
+        if (!float.IsFinite(FarPlane) || FarPlane <= NearPlane)
+        {
+            throw new InvalidOperationException(
+                $"FarPlane is {FarPlane} but must be finite and greater than " +
+                $"NearPlane ({NearPlane}).");
+        }
+
+        Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(
             FieldOfViewRadians,
             aspectRatio,
             NearPlane,
             FarPlane);
+
+        if (!IsFinite(projection))
+        {
+            throw new InvalidOperationException(
+                "The camera projection parameters produce a non-finite matrix. " +
+                "Check FieldOfViewRadians, NearPlane, and FarPlane.");
+        }
+
+        return projection;
     }
 
     /// <summary>
@@ -214,6 +318,36 @@ public sealed class Camera
 
         float multiplier = sprint ? SprintMultiplier : 1.0f;
         Position += worldDirection * MoveSpeed * multiplier * deltaSeconds;
+    }
+
+    private void RequireFinitePosition()
+    {
+        if (!IsFinite(Position))
+        {
+            throw new InvalidOperationException(
+                $"Position is ({Position.X}, {Position.Y}, {Position.Z}) but must " +
+                "contain only finite components.");
+        }
+    }
+
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) &&
+            float.IsFinite(value.Y) &&
+            float.IsFinite(value.Z);
+    }
+
+    private static bool IsFinite(Matrix4x4 value)
+    {
+        return
+            float.IsFinite(value.M11) && float.IsFinite(value.M12) &&
+            float.IsFinite(value.M13) && float.IsFinite(value.M14) &&
+            float.IsFinite(value.M21) && float.IsFinite(value.M22) &&
+            float.IsFinite(value.M23) && float.IsFinite(value.M24) &&
+            float.IsFinite(value.M31) && float.IsFinite(value.M32) &&
+            float.IsFinite(value.M33) && float.IsFinite(value.M34) &&
+            float.IsFinite(value.M41) && float.IsFinite(value.M42) &&
+            float.IsFinite(value.M43) && float.IsFinite(value.M44);
     }
 
     private static float WrapRadians(float radians)

@@ -55,6 +55,7 @@
     <Project Path="tests/Nymeria.Formats.Textures.Tests/Nymeria.Formats.Textures.Tests.csproj" />
     <Project Path="tests/Nymeria.Formats.Tga.Tests/Nymeria.Formats.Tga.Tests.csproj" />
     <Project Path="tests/Nymeria.Formats.Wav.Tests/Nymeria.Formats.Wav.Tests.csproj" />
+    <Project Path="tests/Nymeria.Graphics.Tests/Nymeria.Graphics.Tests.csproj" />
     <Project Path="tests/Nymeria.Platform.Tests/Nymeria.Platform.Tests.csproj" />
   </Folder>
 </Solution>
