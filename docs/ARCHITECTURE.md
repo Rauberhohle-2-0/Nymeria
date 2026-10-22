@@ -77,6 +77,11 @@ extension is a direction, not a current feature.
   creation, and contains a reusable, SDL-independent free-fly `Camera`.
 - `examples/HelloTriangle`, a console executable that opens the window and draws
   the triangle with example-owned shaders and geometry.
+- `examples/HelloWindow`, a window-only console executable that initializes SDL
+  video, shows a resizable window, pumps the event queue, and disposes on the
+  main thread. It creates no GPU device and loads no shader, so it isolates
+  native SDL3 deployment from the GPU backend. `--smoke` pumps a fixed number of
+  events and exits without user input.
 - `examples/HelloCube`, an interactive console executable that draws multiple
   fixed-position cubes with a free-fly camera, perspective projection, depth
   testing, example-owned shaders and geometry from a format-independent model,
@@ -189,7 +194,8 @@ extension is a direction, not a current feature.
   control, zero allocation per mix block, and options validation. Device checks
   are explicitly skipped with a reason.
 - SDL3 windowing, audio playback, and GPU rendering through the pinned
-  `SDL3-CS` and `SDL3-CS.MacOS` packages.
+  `SDL3-CS` binding, with the native runtimes supplied by the `SDL3-CS.MacOS`
+  and `SDL3-CS.Windows` packages.
 - A `Repository checks` GitHub Actions workflow that validates repository
   foundations and restores, builds, and tests the solution on macOS, Windows, and
   Linux.
@@ -241,8 +247,8 @@ contains `Nymeria.Core`, `src/formats/` contains `Nymeria.Formats.Obj`,
 `Nymeria.Formats.O3d`, `Nymeria.Formats.DirectX`, `Nymeria.Formats.Png`,
 `Nymeria.Formats.Tga`, `Nymeria.Formats.Jpeg`, `Nymeria.Formats.Dds`,
 `Nymeria.Formats.Bmp`, `Nymeria.Formats.Textures`, and
-`Nymeria.Formats.Wav`, `examples/` contains `HelloTriangle`, `HelloCube`,
-`HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
+`Nymeria.Formats.Wav`, `examples/` contains `HelloTriangle`, `HelloWindow`,
+`HelloCube`, `HelloOBJ`, `HelloO3D`, `HelloX`, `HelloScene`, `HelloMaterials`,
 `HelloLighting`, `HelloCulling`, `HelloLOD`, `HelloStreaming`, `HelloPicking`,
 `HelloAudio`, `HelloAnimation`, and `HelloBenchmark`, and `tests/` contains
 `Nymeria.Core.Tests`,
@@ -301,20 +307,37 @@ small:
 - `Window.Dispose` destroys the window and shuts SDL down deterministically,
   including when creation fails after SDL initialization.
 
-Windowing uses SDL3 through two pinned NuGet packages:
+Windowing uses SDL3 through three pinned NuGet packages:
 
 | Package | Version | Purpose | License |
 | --- | --- | --- | --- |
 | `SDL3-CS` | 3.4.18 | Managed SDL3 binding | zlib |
 | `SDL3-CS.MacOS` | 3.4.18 | Native `libSDL3.dylib` for `osx-arm64` and `osx-x64` | zlib |
+| `SDL3-CS.Windows` | 3.4.18 | Native `SDL3.dll` for `win-x64`, `win-arm64`, and `win-x86` | zlib |
 
-`Nymeria.Platform.csproj` owns both package references, so examples receive the
-binding and native runtime transitively. NuGet restores the dylibs from
-nuget.org; no Homebrew installation, manual download, or custom Cocoa interop is
-involved. The macOS native runtime and Metal GPU path are validated on macOS. CI
+`Nymeria.Platform.csproj` owns all three package references, so examples receive
+the binding and the native runtime transitively. `SDL3-CS` contains only the
+managed binding; every native binary comes from a platform package. A platform
+whose native package is missing has no `SDL3` library in its output at all, and
+the process fails at the first SDL call with `Unable to load DLL 'SDL3'`.
+
+Each native package contributes RID-scoped runtime assets, so they coexist in a
+portable build: `dotnet build` keeps every `runtimes/<rid>/native/` binary and
+the .NET host resolves the one matching the current process, while a
+RID-specific build such as `dotnet build -r win-x64` copies only that binary
+beside the executable. NuGet restores the binaries from nuget.org; no Homebrew
+installation, manual download, DLL copying, or machine-wide `PATH` change is
+involved.
+
+The macOS native runtime and Metal GPU path are validated on macOS. The Windows
+native runtime deploys for windowing, and `examples/HelloWindow` is the
+supported window-only path there, but no Windows GPU backend exists yet. CI
 compiles and runs the headless tests on Windows and Linux as well, but does not
-launch a GUI there. Windows and Linux native packages are added only when those
-platforms are supported.
+launch a GUI on any platform. Linux remains unsupported and has no native
+package here.
+
+[WINDOWS_01_NATIVE_SDL3.md](WINDOWS_01_NATIVE_SDL3.md) records the native-package
+deployment, the window-only smoke test, and which checks were actually executed.
 
 SDL initialization, window creation, event processing, and disposal must all run
 on the process main thread, as macOS requires for its native windowing APIs.
@@ -920,8 +943,13 @@ authoritative contract.
 Limitations in this version:
 
 - GPU rendering is macOS-only. It requires SDL's Metal driver and MSL shader
-  source; Windows and Linux will need their own shader formats and native
-  packages, which are not implemented.
+  source; Windows and Linux will need their own shader formats, which are not
+  implemented.
+- Windowing works on Windows. The `SDL3-CS.Windows` package deploys `SDL3.dll`
+  for `win-x64`, `win-arm64`, and `win-x86`, and `examples/HelloWindow` is the
+  supported window-only path there. Windows GPU behavior is unverified: device
+  creation still requests Metal, so it fails on Windows, and Direct3D 12 is not
+  implemented.
 - Apple Silicon and Intel Macs both use Metal. The macOS native package contains
   both architectures.
 - Audio playback is verified on macOS through CoreAudio. Windows and Linux audio
@@ -1118,8 +1146,8 @@ The following choices are implemented:
 - **.NET SDK and target framework:** .NET 10, targeting `net10.0`. `global.json`
   pins SDK 10.0.402 with `latestPatch` roll-forward and no prerelease SDKs.
 - **Solution format:** `Nymeria.slnx`, built with the `dotnet` CLI.
-- **Windowing:** SDL3 3.4.18 through `SDL3-CS` 3.4.18 and the macOS native
-  package `SDL3-CS.MacOS` 3.4.18.
+- **Windowing:** SDL3 3.4.18 through `SDL3-CS` 3.4.18 and the native packages
+  `SDL3-CS.MacOS` 3.4.18 and `SDL3-CS.Windows` 3.4.18.
 - **GPU rendering:** SDL3's GPU API with the Metal backend and MSL shader source,
   reached through `SDL3-CS`. `Nymeria.Graphics` provides the reusable
   `GpuDevice`, including buffer, RGBA and block-compressed texture, sampler, and

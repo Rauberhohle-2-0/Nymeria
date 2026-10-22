@@ -15,6 +15,7 @@
     <Project Path="examples/HelloScene/HelloScene.csproj" />
     <Project Path="examples/HelloStreaming/HelloStreaming.csproj" />
     <Project Path="examples/HelloTriangle/HelloTriangle.csproj" />
+    <Project Path="examples/HelloWindow/HelloWindow.csproj" />
     <Project Path="examples/HelloX/HelloX.csproj" />
   </Folder>
   <Folder Name="/src/" />

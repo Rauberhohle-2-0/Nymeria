@@ -1,8 +1,10 @@
-# macOS Manual Smoke Test: Window, GPU, and Audio Examples
+# Manual Smoke Test: Window, GPU, and Audio Examples
 
-This checklist validates behavior that headless CI cannot verify. Run it on a
-macOS machine after the solution builds. Record the macOS version, CPU
-architecture, GPU model, audio output device, and date with the result.
+This checklist validates behavior that headless CI cannot verify. Run the macOS
+sections on a macOS machine and the
+[Windows window-only section](#windows-window-only-smoke-test) on a Windows
+machine. Record the macOS version, CPU architecture, GPU model, audio output
+device, and date with the result.
 
 ## Setup
 
@@ -45,6 +47,47 @@ there is no shader compiler step and no external shader file to deploy.
 Run each interactive example checklist separately. The failure-path checks at
 the end apply to all fourteen interactive examples; `HelloBenchmark` has its own
 automated checks below.
+
+## Windows window-only smoke test
+
+This section validates native SDL3 deployment and window creation on Windows. It
+does not validate rendering: `GpuDevice` still requests the Metal backend, so
+every GPU example is expected to stop at device creation on Windows.
+
+Setup:
+
+1. **Build.** From the repository root run `dotnet build Nymeria.slnx`. It must
+   report no warnings and no errors.
+2. **Native library is deployed.** Confirm that
+   `examples/HelloWindow/bin/Debug/net10.0/runtimes/win-x64/native/SDL3.dll`
+   exists (use `win-arm64` or `win-x86` on those architectures), or that
+   `SDL3.dll` sits beside `HelloWindow.exe` after
+   `dotnet build -r win-x64`.
+3. **Run the checks below.**
+
+### HelloWindow checks
+
+1. **Smoke run passes.** Run
+   `dotnet run --project examples/HelloWindow/HelloWindow.csproj -- --smoke`.
+   The console prints one `host:` line, one `window:` line, `event pump: 30
+   cycles`, and `window smoke test passed`. No `DllNotFoundException` or
+   `BadImageFormatException` appears, and a normal exit reports status code `0`.
+2. **Reported sizes are plausible.** The `window:` line shows `960x540 logical`
+   and a drawable size of 960 × 540 at 100% display scaling, or a larger value
+   at higher scaling.
+3. **Interactive run works.** Run the example with no arguments. The window
+   appears, resizes, and stays responsive. Closing it prints
+   `window closed by the user` and exits with status code `0`.
+4. **No native copy is required.** Run the example from a clean build without
+   placing any DLL in the output directory by hand.
+5. **The unusable GPU path is expected.** Running `HelloTriangle` on Windows
+   stops at GPU device creation with a Metal-specific error. Record the message;
+   that is the expected state until a Windows GPU backend exists.
+
+Record the Windows version, CPU architecture, and date with the result.
+
+**Not claimed:** this section does not validate rendering, input mapping, the
+swapchain, or audio on Windows.
 
 ## HelloTriangle checks
 

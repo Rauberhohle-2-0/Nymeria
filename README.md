@@ -38,6 +38,7 @@ interactive, depth-tested cube scene.
   `examples/HelloCollision`, the audio and spatial-sound `examples/HelloAudio`,
   the transform-animation `examples/HelloAnimation`,
   the CPU-profiling `examples/HelloBenchmark`,
+  the window-only `examples/HelloWindow`,
   bounded frame-timing diagnostics, headless mesh-bounds, visibility, LOD,
   streaming, raycasting, collision, audio, and animation helpers,
   platform-independent unit tests,
@@ -49,15 +50,23 @@ interactive, depth-tested cube scene.
   graphics backends, and Windows/Linux rendering. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the authoritative distinction.
 
-## Prerequisites (macOS)
+## Prerequisites
 
-- macOS 12 or newer on Apple Silicon or Intel.
 - [.NET SDK 10.0.402](https://dotnet.microsoft.com/download/dotnet/10.0).
   `global.json` pins this SDK with patch-level roll-forward.
 
+macOS:
+
+- macOS 12 or newer on Apple Silicon or Intel.
+
+Windows:
+
+- Windows 10 or newer on x64, x86, or arm64, for building the solution and for
+  the window-only example. GPU rendering is not implemented on Windows yet.
+
 No Homebrew SDL installation, Xcode installation, or manual native-library
-download is required. NuGet restores the pinned SDL3 binding and its macOS native
-`libSDL3.dylib` for the current architecture.
+download is required. NuGet restores the pinned SDL3 binding and the native
+`libSDL3.dylib` or `SDL3.dll` for the current platform and architecture.
 
 Verify the SDK:
 
@@ -75,6 +84,8 @@ From the repository root:
 dotnet restore Nymeria.slnx
 dotnet build Nymeria.slnx
 dotnet run --project examples/HelloTriangle/HelloTriangle.csproj
+dotnet run --project examples/HelloWindow/HelloWindow.csproj
+dotnet run --project examples/HelloWindow/HelloWindow.csproj -- --smoke
 dotnet run --project examples/HelloCube/HelloCube.csproj
 dotnet run --project examples/HelloOBJ/HelloOBJ.csproj
 dotnet run --project examples/HelloO3D/HelloO3D.csproj
@@ -97,7 +108,10 @@ dotnet run --project examples/HelloPicking/HelloPicking.csproj
 dotnet run --project examples/HelloBenchmark/HelloBenchmark.csproj --configuration Release -- --instances 2048
 ```
 
-A resizable native window titled `Nymeria` opens at 960 × 540. `HelloTriangle`
+A resizable native window titled `Nymeria` opens at 960 × 540. `HelloWindow`
+opens only the window, prints its logical and drawable sizes, and pumps events
+without drawing anything; pass `--smoke` to pump a fixed number of events and
+exit without user input. `HelloTriangle`
 draws one red/green/blue triangle. `HelloCube` draws seven cubes at fixed
 positions with perspective projection and depth testing, plus a free-fly camera.
 `HelloOBJ` loads its checked-in cube fixture and renders it through the same
@@ -329,8 +343,12 @@ All fourteen interactive examples skip rendering while minimized and recover
 when a drawable is available again. [examples/README.md](examples/README.md) records the matrix
 order, handedness, shader layout, depth convention, and run commands.
 
-This path is macOS-only for now. Windows and Linux need their own native SDL3
-packages and shader formats; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The GPU path is macOS-only for now. Windows deploys the native `SDL3.dll` and can
+build and run the window-only `HelloWindow` example, but it has no GPU backend
+yet: `GpuDevice` still requests Metal, and Direct3D 12 is not implemented.
+Linux is unsupported and ships no native package. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
+[docs/WINDOWS_01_NATIVE_SDL3.md](docs/WINDOWS_01_NATIVE_SDL3.md).
 GPU output is validated manually with [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md),
 not in CI.
 
@@ -387,10 +405,10 @@ src/formats/    Nymeria.Formats.Obj, O3d, DirectX, Png, Tga, Jpeg, Dds, Bmp,
                 Textures, and Wav
 src/graphics/   Nymeria.Graphics reusable GPU infrastructure and camera math
 src/platform/   Nymeria.Platform native window project
-examples/       HelloTriangle, HelloCube, HelloOBJ, HelloO3D, HelloX, HelloScene,
-                HelloMaterials, HelloLighting, HelloCulling, HelloCollision,
-                HelloAudio, HelloAnimation, HelloLOD, HelloStreaming,
-                HelloPicking, and HelloBenchmark
+examples/       HelloTriangle, HelloWindow, HelloCube, HelloOBJ, HelloO3D, HelloX,
+                HelloScene, HelloMaterials, HelloLighting, HelloCulling,
+                HelloCollision, HelloAudio, HelloAnimation, HelloLOD,
+                HelloStreaming, HelloPicking, and HelloBenchmark
 tests/          Headless unit tests for audio, core, formats, and platform
                 projects
 ```
@@ -419,6 +437,7 @@ tests/          Headless unit tests for audio, core, formats, and platform
 - [Security checklist](docs/SECURITY_CHECKLIST.md)
 - [Security audit 01](docs/SECURITY_AUDIT_01.md)
 - [Security audit 02](docs/SECURITY_AUDIT_02.md)
+- [Windows native SDL3 deployment](docs/WINDOWS_01_NATIVE_SDL3.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)
 - [Agent instructions](AGENTS.md)
