@@ -80,8 +80,17 @@ and "D3D12: DXIL is not supported and DXBC is not being provided".
 
 ## Build integration
 
-`examples/HelloTriangle/HelloTriangle.csproj` gains one target,
-`CompileHlslShadersToDxil`, plus the resource wiring it feeds:
+`examples/HelloTriangle/HelloTriangle.csproj` declares one `NymeriaHlslShader` item
+per stage, supplies the resource wiring, and imports
+`examples/Shared/DxilShaders.targets`, which provides the
+`CompileHlslShadersToDxil` target and the compiler it runs:
+
+```xml
+<NymeriaHlslShader Include="Shaders/Triangle.hlsl" Profile="vs_6_0" EntryPoint="VSMain" OutputName="Triangle.vert.dxil" />
+<NymeriaHlslShader Include="Shaders/Triangle.hlsl" Profile="ps_6_0" EntryPoint="PSMain" OutputName="Triangle.frag.dxil" />
+```
+
+which expands to:
 
 ```
 dxc -T vs_6_0 -E VSMain -Fo obj/dxil/Triangle.vert.dxil Shaders/Triangle.hlsl
@@ -106,39 +115,37 @@ dxc -T ps_6_0 -E PSMain -Fo obj/dxil/Triangle.frag.dxil Shaders/Triangle.hlsl
   either output reruns both stages. A clean or rebuilt tree regenerates them with
   no manual copy step.
 - **Compiler discovery.** `DxcPath` overrides everything and is validated: a path
-  that does not exist fails the build with a message naming it. Otherwise `dxc` is
-  taken from `PATH`; when it is missing, `where.exe dxc` is probed so the build
-  fails with guidance rather than an `Exec` error that only repeats the command.
+  that does not exist fails the build with a message naming it. Otherwise the
+  build uses a cached compiler, then one already on `PATH`, and finally
+  provisions a pinned DXC release; see
+  [WINDOWS_03_1_DXC_PROVISIONING.md](WINDOWS_03_1_DXC_PROVISIONING.md).
 - **Platform gating.** `DxilShadersEnabled` is true only when `$(OS)` is
   `Windows_NT` and the build is not a design-time build. macOS builds neither run
   dxc nor reference a DXIL resource, so the MSL workflow and its "no shader
   compiler" property are preserved. Cross-building a Windows binary from macOS or
   Linux does not produce DXIL and is not supported.
-- **No shader compiler dependency in the repository.** No toolchain is vendored,
-  no target downloads anything, and no `.dxil` or compiler binary is tracked.
+- **No shader compiler dependency in the repository.** No toolchain is vendored
+  into version control, no `.dxil` or compiler binary is tracked, and the compiler
+  itself is provisioned and checksum-verified as described in
+  [WINDOWS_03_1_DXC_PROVISIONING.md](WINDOWS_03_1_DXC_PROVISIONING.md).
 
 ### DXC version and acquisition
 
-- **Supported version.** Any DirectX Shader Compiler release that supports shader
-  model 6.0, which every release from 1.0 onward does. The reference for this
-  task is **DXC 1.9.2602** (the February 2026 release) or the `dxc.exe` bundled
-  with the Windows 10/11 SDK (**10.0.26100**), which is what a Visual Studio Build
-  Tools install already provides.
-- **Reproducible acquisition.** Either install the Windows SDK through the Visual
-  Studio Build Tools installer, or download a pinned release archive from the
-  [DXC releases page](https://github.com/microsoft/DirectXShaderCompiler/releases)
-  and extract it. Because the repository never downloads the compiler, the
-  version pin lives in this document rather than in an automated step: if you
-  fetch an archive yourself, pin the release tag, record
-  `Get-FileHash -Algorithm SHA256 <archive>` alongside it, and verify that value
-  before extracting. **No checksum is recorded here**, because none was computed
-  from a downloaded archive by this task, and an unverified hash would be worse
-  than none.
-- **CI.** The `windows-latest` image of the repository checks includes the Windows
-  SDK, so a `windows-latest` job finds `dxc` only if it is on `PATH` or `DxcPath`
-  is passed. Nothing in
-  [.github/workflows/repository-checks.yml](../.github/workflows/repository-checks.yml)
-  was changed by this task; see the open items below.
+W03 originally required a manually installed compiler. W03.1 replaced that with
+provisioning: the build downloads one pinned release
+(**DXC 1.9.2609**, `dxc_2026_09_29.zip`, SHA-256
+`ad31b1fc8443175d204f77a611fdb3ef2ec42759bdc2f1167368de24a4a7e7f1`), verifies it
+before extracting, caches it under `%LOCALAPPDATA%\Nymeria\dxc`, and reuses it.
+`DxcPath` and a `dxc` already on `PATH` still take precedence, so the manual
+install documented here originally remains a supported path. Requirements: any
+DXC release that supports shader model 6.0. The pin and the reproducible
+acquisition procedure are recorded in
+[WINDOWS_03_1_DXC_PROVISIONING.md](WINDOWS_03_1_DXC_PROVISIONING.md).
+
+**CI.** A `windows-latest` job now provisions DXC on its first shader build, so
+it no longer depends on `dxc` being on `PATH`. That path is unverified, and
+[.github/workflows/repository-checks.yml](../.github/workflows/repository-checks.yml)
+was not changed by W03 or W03.1.
 
 ## Runtime shader selection
 
@@ -260,16 +267,16 @@ locations line up with `TEXCOORD0`/`TEXCOORD1`.
   `(b[n], space1)`/`(b[n], space3)` register mapping is recorded but not exercised.
 - DXIL generation is limited to Windows builds. macOS never runs dxc, and a
   Windows binary cross-built on another platform will not embed DXIL.
-- The `windows-latest` CI job builds the solution. Because the target fails the
-  build when dxc is unavailable, that job needs `dxc` on `PATH` (the Windows SDK
-  provides it for a `dotnet build` started from a developer prompt) or
-  `-p:DxcPath=…`. This task did not change CI; see the next section.
+- The `windows-latest` CI job builds the solution. Since W03.1 the build
+  provisions DXC itself when it is not already available, so the job no longer
+  needs a manual install; the first run downloads about 32 MB. That CI path is
+  unverified and no workflow was changed.
 
 ## Open items
 
-- **CI on `windows-latest`.** If the image's `dxc.exe` is not on `PATH`, the
-  Windows job fails the build rather than skipping shader compilation. Changing
-  that would be a workflow-policy change and needs maintainer approval.
+- **CI on `windows-latest`.** Provisioning removes the manual-install dependency,
+  but the job itself was not run, and caching `NymeriaDxcCacheRoot` between runs
+  would be a workflow-policy change that needs maintainer approval.
 - **DXIL container acceptance by SDL.** Whether SDL's DXIL validation accepts the
   container produced by the pinned dxc on Windows is unverified.
 - **No `dxil.dll` dependency is assumed.** The pinned native library contains no

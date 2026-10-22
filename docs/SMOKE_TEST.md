@@ -67,11 +67,14 @@ its device and then stop at shader creation.
 Setup:
 
 1. **Build.** From the repository root run `dotnet build Nymeria.slnx`. It must
-   report no warnings and no errors. The Windows build compiles
-   `examples/HelloTriangle/Shaders/Triangle.hlsl` to DXIL, so `dxc` must be on
-   `PATH` or passed as `-p:DxcPath=<path to dxc.exe>`; the Windows SDK includes
-   `dxc.exe`. A missing compiler fails the build with guidance rather than
-   silently producing an assembly without DXIL.
+   report no warnings and no errors. The build compiles
+   `examples/HelloTriangle/Shaders/Triangle.hlsl` to DXIL; on a machine without a
+   shader compiler it downloads a pinned, checksum-verified DirectX Shader
+   Compiler once (about 32 MB) and prints a `Nymeria:` line naming the compiler it
+   used. Later builds reuse the cache. An installed `dxc` on `PATH` or
+   `-p:DxcPath=<path to dxc.exe>` takes precedence; see
+   [WINDOWS_03_1_DXC_PROVISIONING.md](WINDOWS_03_1_DXC_PROVISIONING.md) if the
+   download is blocked.
 2. **Native library is deployed.** Confirm that
    `examples/HelloWindow/bin/Debug/net10.0/runtimes/win-x64/native/SDL3.dll`
    exists (use `win-arm64` or `win-x86` on those architectures), or that

@@ -106,9 +106,13 @@ for events between frames, so idle redraws stay near ten per second.
   `HelloTriangle/Shaders/Triangle.hlsl`, which the build compiles to DXIL with the
   DirectX Shader Compiler and embeds as
   `HelloTriangle.Shaders.Triangle.vert.dxil` and `.frag.dxil`. That build step is
-  the only example-level toolchain requirement, it applies to Windows only, and
-  it needs `dxc` on `PATH` or `-p:DxcPath=<path to dxc.exe>`; see
-  [../docs/WINDOWS_03_HLSL_DXIL_SHADERS.md](../docs/WINDOWS_03_HLSL_DXIL_SHADERS.md).
+  the only example-level toolchain requirement and it applies to Windows only. The
+  build provisions a pinned, checksum-verified compiler itself when one is not
+  already available, so no manual installation is needed; `-p:DxcPath=<path to
+  dxc.exe>` overrides it. See
+  [../docs/WINDOWS_03_HLSL_DXIL_SHADERS.md](../docs/WINDOWS_03_HLSL_DXIL_SHADERS.md)
+  and
+  [../docs/WINDOWS_03_1_DXC_PROVISIONING.md](../docs/WINDOWS_03_1_DXC_PROVISIONING.md).
 - Shader asset selection: `ShaderProgram` picks the MSL or DXIL asset from the
   format the GPU device reports, so the renderer and its pipeline are identical on
   both platforms.

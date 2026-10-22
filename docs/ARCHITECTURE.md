@@ -544,10 +544,13 @@ holds `VSMain` and `PSMain`, and an MSBuild target in the example's project file
 compiles them to `obj/dxil/Triangle.vert.dxil` and `Triangle.frag.dxil` with
 Microsoft's DirectX Shader Compiler, then embeds them as
 `HelloTriangle.Shaders.Triangle.vert.dxil` and `.frag.dxil`. The target runs only
-on Windows builds, recompiles when the HLSL or either output changes, and fails
-with guidance instead of silently omitting the bytecode when `dxc` is missing.
-This is the only shader toolchain in the repository, and it produces no committed
-artifact. Its HLSL uses `TEXCOORD0`/`TEXCOORD1` vertex inputs and `SV_Position`
+on Windows builds and recompiles when the HLSL or either output changes. The
+compiler is resolved from `DxcPath`, then an already-provisioned cache, then
+`PATH`, and otherwise downloaded from one pinned URL and verified against a
+repository-pinned SHA-256 before extraction; the cache lives under
+`%LOCALAPPDATA%`, outside the repository. This is the only shader toolchain in the
+repository, and it produces no committed artifact. See
+[WINDOWS_03_1_DXC_PROVISIONING.md](WINDOWS_03_1_DXC_PROVISIONING.md). Its HLSL uses `TEXCOORD0`/`TEXCOORD1` vertex inputs and `SV_Position`
 outputs, matching SDL3's documented Direct3D 12 semantic convention for attribute
 locations 0 and 1.
 

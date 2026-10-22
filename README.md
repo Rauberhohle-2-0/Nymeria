@@ -64,10 +64,14 @@ Windows:
 - Windows 10 or newer on x64, x86, or arm64, with a Direct3D 12-capable graphics
   driver for the GPU examples. `HelloTriangle` renders through Direct3D 12 with
   DXIL; the other GPU examples are still MSL only.
-- The DirectX Shader Compiler (`dxc`) on `PATH`, or `-p:DxcPath=<path to
-  dxc.exe>`, because a Windows build compiles HLSL to DXIL. The Windows SDK ships
-  `dxc.exe`. See
-  [docs/WINDOWS_03_HLSL_DXIL_SHADERS.md](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md).
+- No shader compiler installation is required. The first Windows build that
+  compiles HLSL downloads a pinned, checksum-verified DirectX Shader Compiler into
+  `%LOCALAPPDATA%\Nymeria\dxc` and reuses it afterwards; an installed `dxc` on
+  `PATH` is preferred when present, and `-p:DxcPath=<path to dxc.exe>` overrides
+  both. See
+  [docs/WINDOWS_03_HLSL_DXIL_SHADERS.md](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md)
+  and
+  [docs/WINDOWS_03_1_DXC_PROVISIONING.md](docs/WINDOWS_03_1_DXC_PROVISIONING.md).
 
 No Homebrew SDL installation, Xcode installation, or manual native-library
 download is required. NuGet restores the pinned SDL3 binding and the native
@@ -454,6 +458,7 @@ tests/          Headless unit tests for audio, core, formats, and platform
 - [Windows native SDL3 deployment](docs/WINDOWS_01_NATIVE_SDL3.md)
 - [Windows Direct3D 12 backend selection](docs/WINDOWS_02_D3D12_BACKEND.md)
 - [Windows HLSL and DXIL shaders](docs/WINDOWS_03_HLSL_DXIL_SHADERS.md)
+- [Windows DXC toolchain provisioning](docs/WINDOWS_03_1_DXC_PROVISIONING.md)
 - [Git guidelines](docs/GIT_GUIDELINES.md)
 - [macOS smoke test](docs/SMOKE_TEST.md)
 - [Agent instructions](AGENTS.md)
