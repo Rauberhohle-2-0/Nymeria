@@ -348,9 +348,9 @@ parity.
 10. **User-supplied path works.** Run the example with the fixture path passed
     explicitly, for example
     `dotnet run --project examples/HelloO3D/HelloO3D.csproj -- examples/HelloO3D/Assets/cube.o3d`.
-    The same cube renders. If you also have a lawfully obtained unscrambled
-    static OMSI model, record what it shows, including any diagnostic; a failure
-    there is useful evidence, not a checklist pass.
+    The same cube renders. If you also have a lawfully obtained static OMSI
+    model, plain or scrambled, record what it shows, including any diagnostic; a
+    failure there is useful evidence, not a checklist pass.
 11. **Close button exits.** Click the red close button. The process ends, the
     terminal prompt returns, and `echo $?` reports `0`. The cursor is visible.
 12. **Standard quit exits.** Launch again, focus the window, and press `Cmd+Q`.
@@ -1079,10 +1079,13 @@ These checks are optional and must not modify tracked files.
   example, the same header as the fixture but a truncated vertex section.
   `HelloO3D` must print the byte offset and the reason, then exit with status
   code `1` without an unhandled exception or partial geometry.
-- **Unsupported O3D feature:** if you have a scrambled, bone, or animation O3D
-  file, `HelloO3D` must reject it with a message that names the unsupported
-  feature, then exit with status code `1`. Do not treat a guessed or partially
-  drawn result as a pass.
+- **Unsupported O3D feature:** if you have a bone or animation O3D file,
+  `HelloO3D` must reject it with a message that names the unsupported feature,
+  then exit with status code `1`. Do not treat a guessed or partially drawn
+  result as a pass.
+- **Scrambled O3D file:** a version 4+ file whose key is not `0xFFFFFFFF` must
+  load and show its geometry. Check that it is not shredded or inside out; the
+  decoder reproduces OMSI's transform but cannot prove a key matches the data.
 - **OBJ without normals:** create a temporary OBJ outside tracked paths with
   positions and faces but no `vn` records. `HelloLighting` must print that normals
   are required and exit with status code `1` before a window is created. It must

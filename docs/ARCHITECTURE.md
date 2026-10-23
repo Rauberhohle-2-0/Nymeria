@@ -36,7 +36,8 @@ extension is a direction, not a current feature.
 - `Nymeria.Formats.Obj`, a dependency-free Wavefront OBJ parser implementing
   `IModelParser` for a documented polygonal subset.
 - `Nymeria.Formats.O3d`, a dependency-free OMSI O3D parser implementing
-  `IModelParser` for a documented unscrambled static-mesh subset.
+  `IModelParser` for a documented static-mesh subset, including the version 4+
+  vertex scrambling.
 - `Nymeria.Formats.DirectX`, a dependency-free text DirectX `.x` parser
   implementing `IModelParser` for a documented static-mesh subset with baked
   frame transforms, normals, texture coordinates, and material-name subsets.
@@ -208,8 +209,8 @@ extension is a direction, not a current feature.
 The following are future work and are **not** implemented or approved in detail:
 
 - Engine-level input handling and an engine loop.
-- Further O3D features beyond the documented unscrambled static-mesh subset,
-  such as scrambled vertices, bones, animation, and material rendering.
+- Further O3D features beyond the documented static-mesh subset, such as bones,
+  animation, and material rendering.
 - Additional graphics backends and a rendering abstraction.
 
 Names and responsibilities in this section are planning boundaries, not
@@ -390,12 +391,12 @@ as subsets; and reports malformed input with source-line diagnostics. It ignores
 of its supported subset and limitations.
 
 `Nymeria.Formats.O3d.O3dModelParser` is the binary-format implementation. It
-reads the O3D signature, version, flags, and unscrambled-key header; imports the
-vertex, triangle, and material-name sections; validates and discards the pivot
-matrix; converts the Direct3D frame to Nymeria's frame; and rejects scrambled
-vertices, bones, unknown tags, and unsupported versions or flags with
-offset-based diagnostics. [O3D.md](O3D.md) is the authoritative statement of its
-supported subset and limitations.
+reads the O3D signature, version, flags, and key header; imports the vertex,
+triangle, and material-name sections, un-scrambling version 4+ vertex records
+whose key is not `0xFFFFFFFF`; validates and discards the pivot matrix; converts
+the Direct3D frame to Nymeria's frame; and rejects bones, unknown tags, and
+unsupported versions or flags with offset-based diagnostics. [O3D.md](O3D.md) is
+the authoritative statement of its supported subset and limitations.
 
 `Nymeria.Formats.DirectX.XModelParser` is the text `.x` implementation. It
 validates the `xof` header, skips top-level template declarations, walks nested
@@ -1086,12 +1087,14 @@ Limitations in this version:
   not load MTL materials or textures, tessellate concave or non-planar polygons,
   or import lines, points, or free-form geometry. `HelloCube` still constructs
   its cube as model data in code.
-- The O3D parser handles unscrambled static meshes of versions 1 through 7 only.
-  It rejects scrambled vertex keys, bones, unknown sections, and unknown flag
-  bits. It preserves material names but does not render materials or textures,
-  and it does not apply the pivot matrix. Its tests and fixture are synthetic;
-  ordinary stock OMSI content has not been validated. [O3D.md](O3D.md) lists the
-  exact matrix and uncertainties.
+- The O3D parser handles static meshes of versions 1 through 7, both with plain
+  vertex records and with the version 4+ scrambling. It rejects bones, unknown
+  sections, and unknown flag bits. A decode with a key that does not match the
+  data cannot be detected numerically; the fail-safe only rejects damaged records.
+  It preserves material names but does not render materials or textures, and it
+  does not apply the pivot matrix. Its tests and fixtures are synthetic; ordinary
+  stock OMSI content has not been validated. [O3D.md](O3D.md) lists the exact
+  matrix and uncertainties.
 - The text DirectX `.x` parser handles a documented static-mesh subset only. It
   rejects binary and compressed files, skinning, animation, material effects,
   and unknown objects; it bakes frame transforms, preserves
@@ -1355,8 +1358,8 @@ The following choices remain open:
   implemented but unverified on Windows hardware. Audio playback uses SDL3's
   portable API but has only been verified on macOS; Windows and Linux audio device
   testing remains open.
-- **Further O3D features:** scrambled vertices, bones, animation, and material
-  rendering are not implemented and require a separate decision.
+- **Further O3D features:** bones, animation, and material rendering are not
+  implemented and require a separate decision.
 
 ## KISS and YAGNI
 

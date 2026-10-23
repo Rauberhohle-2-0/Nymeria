@@ -329,8 +329,9 @@ dotnet run --project examples/HelloO3D/HelloO3D.csproj -- path/to/model.o3d
   and may be relative to the current directory.
 - Errors: a missing, unreadable, or malformed file prints a message that includes
   the parser's offset diagnostic when available, then exits with status code `1`
-  before a window is created. Scrambled files, bones, unknown sections, and
-  unknown versions or flags fail the same way instead of being guessed.
+  before a window is created. Bones, unknown sections, and unknown versions or
+  flags fail the same way instead of being guessed; scrambled vertex records are
+  decoded with the documented transform.
 - Geometry conversion: the importer already converts positions and normals to
   Nymeria's right-handed frame and reverses triangle winding. The example builds
   the shared position/color layout with 32-bit indices and uploads it through
@@ -339,8 +340,8 @@ dotnet run --project examples/HelloO3D/HelloO3D.csproj -- path/to/model.o3d
 - Subset colors: the six fixture labels `front`, `back`, `right`, `left`, `top`,
   and `bottom` map to six solid colors. Unknown labels use one neutral color.
   This is example presentation, not a material system.
-- Scope: no textures, lighting, animation, bones, skinning, scrambling, pivot
-  transforms, object hierarchy, or generic asset registry.
+- Scope: no textures, lighting, animation, bones, skinning, pivot transforms,
+  object hierarchy, or generic asset registry.
 
 ## HelloX
 
@@ -820,8 +821,8 @@ all. `HelloWindow` needs only a native SDL3 runtime; it runs on macOS and on
 Windows, where the `SDL3-CS.Windows` package deploys `SDL3.dll`. `HelloAudio`
 additionally uses the SDL3 audio device, which is verified
 on macOS CoreAudio only. `HelloOBJ`, `HelloO3D`, and `HelloX` use focused format subsets, not
-general material or scene importers. `HelloO3D` accepts only unscrambled static meshes
-and rejects bones and animation. `HelloCube` still constructs its model data in
+general material or scene importers. `HelloO3D` accepts static meshes, plain or
+scrambled, and rejects bones and animation. `HelloCube` still constructs its model data in
 code. `HelloScene` adds flat, transformed instances but no hierarchy.
 `HelloMaterials` adds a tint and an optional base-color texture from PNG, JPEG,
 TGA, BMP, or a documented DDS subset, not a material pipeline. DDS and BMP

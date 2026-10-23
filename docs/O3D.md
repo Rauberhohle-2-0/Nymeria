@@ -2,6 +2,8 @@
 
 `Nymeria.Formats.O3d` implements the `Nymeria.Core.Models.IModelParser` contract
 for a focused, independently authored subset of OMSI's binary `.o3d` mesh format.
+Scrambled vertex records (`key` other than `0xFFFFFFFF`, including the stock value
+`0`) are decoded with the documented transform.
 It converts static triangle geometry into the format-independent
 `ModelData`/`MeshData` types described in [MODEL_DATA.md](MODEL_DATA.md). The
 project references only the base class library and `Nymeria.Core`; it has no
@@ -54,10 +56,10 @@ limit before decoding.
 | 1 | `u16` section counts | `u16` | none | Supported, synthetic tests only |
 | 2 | `u16` section counts | `u16` | none | Supported, layout rule; not observed in upstream stock corpus |
 | 3 | `u32` section counts | flag bit 0 | none | Supported |
-| 4 | `u32` section counts | flag bit 0 | `u32` | Supported when the key is `0xFFFFFFFF` |
-| 5 | `u32` section counts | flag bit 0 | `u32` | Supported when the key is `0xFFFFFFFF` |
+| 4 | `u32` section counts | flag bit 0 | `u32` | Supported, plain and scrambled |
+| 5 | `u32` section counts | flag bit 0 | `u32` | Supported, plain and scrambled |
 | 6 | `u32` section counts | flag bit 0 | `u32` | Supported, layout rule; not observed in upstream stock corpus |
-| 7 | `u32` section counts | flag bit 0 | `u32` | Supported when the key is `0xFFFFFFFF` |
+| 7 | `u32` section counts | flag bit 0 | `u32` | Supported, plain and scrambled |
 
 The header is:
 
@@ -66,7 +68,7 @@ The header is:
 | Signature | 2 bytes | always | `84 19` |
 | Version | 1 byte | always | `1` through `7` |
 | Flags | 1 byte | version ≥ 3 | Bit 0 selects 32-bit triangle indices. Bit 1 is a scrambling hint and is inert for unscrambled files. No other bits are accepted. |
-| Key | 4 bytes, little-endian | version ≥ 4 | `0xFFFFFFFF` means unscrambled. Any other value means scrambled vertices and is rejected. |
+| Key | 4 bytes, little-endian | version ≥ 4 | `0xFFFFFFFF` means unscrambled. Any other value — `0` is the ordinary stock value — means the vertex records are scrambled and are decoded. |
 
 Upstream notes report versions 1, 3, 4, 5, and 7 in stock content. Versions 2 and
 6 are accepted because the documented layout is gated only by version ≥ 3 for
@@ -94,6 +96,71 @@ openOMSI's loader passes unknown bytes over one at a time to tolerate protected
 files. This importer deliberately fails instead, because resynchronizing could
 silently misread geometry. Files that rely on that tolerance are outside the
 supported subset.
+
+## Scrambled vertices
+
+Version 4 and later files carry a `u32` key at offset `0x04`. `0xFFFFFFFF` stores the
+vertex records plainly. Any other key, `0` included, means the records were permuted
+per vertex, and this importer undoes that before validating them.
+
+Only the `0x17` vertices section is affected. Triangle indices, material indices and
+names, the pivot matrix, and the bone section are stored plainly either way, so the
+file's structure, tags, counts, and topology are identical for a plain and a scrambled
+file of the same mesh.
+
+The transform is the documented state chain of OMSI's own loader:
+
+```text
+state = (key + version - 4 + (flags bit 1 ? 0x17D : 0)) mod 0xFDE8
+n     = vertex count mod 0xFDE8
+mix   = 0
+for each stored vertex record (x y z nx ny nz u v):
+    if key == 0: state = flags bit 1 ? 0x130 : 0
+    state = (state * n + n * mix) mod 8000
+    mix   = trunc(|frac(x) * frac(y) * frac(z)| * 600) mod 256   (stored position)
+    if state < 1000: swap(x, y)  elif state < 3000: swap(x, z)  elif state > 7000: swap(y, z)
+    if state % 4 == 0: nx = -nx   if state % 6 == 0: ny = -ny   if state % 7 == 0: nz = -nz
+    if state < 600: swap(ny, nz)  elif state > 4500: swap(nx, ny)
+    if state % 5 == 0: u -= (state % 100)^2 / 10000
+    if state % 3 == 0: v -= (state % 50)^2 / 2500
+```
+
+Details that matter for decoding a file exactly as OMSI does:
+
+- The state seed uses the key, the version, and flag bit 1; key `0` additionally
+  restarts the state at **every** vertex, so most stock content decodes as a function
+  of the vertex count and the mixing byte alone.
+- The mixing byte of a vertex comes from its **stored** position, before it is
+  un-scrambled, and it feeds the state of the **next** vertex. The first vertex uses 0.
+- The three normal sign tests are independent, not a chain: a state that is a multiple
+  of 12 flips both `nx` and `ny`.
+- The normal's component swap happens **after** the sign changes.
+- OMSI's loader and writer both test `state > 6500` for an `nx`/`nz` swap inside the
+  `state <= 4500` branch. It is unreachable, because every state above 6500 has
+  already taken the `state > 4500` branch, and this importer reproduces the reachable
+  transform rather than "fixing" an encoding no content uses.
+- The arithmetic is 32-bit unsigned with the documented moduli, exactly as OMSI does
+  it, so the state chain cannot drift through a different integer width.
+
+Files with key `0xFFFFFFFF` keep the previous behaviour byte for byte; the transform,
+and the extent check below, apply only to scrambled files.
+
+### Fail-safe
+
+The transform only permutes components, negates them, and shifts texture coordinates.
+It preserves the set of axis values and every normal's length, so a bounding-box or
+unit-normal test cannot detect a wrong key: a wrong decode produces consistently
+permuted, visibly shredded geometry rather than out-of-range numbers. What the importer
+can reject is damaged data:
+
+- every decoded position, normal, and texture coordinate must be finite;
+- the decoded position extent must be at most 10,000 units on every axis, which no
+  OMSI scenery mesh approaches.
+
+A failure is a `ModelFormatException` that names the key, the extent, and the vertex
+section offset. No unit-normal test is applied, because it would reject stock content
+whose stored normals are not unit length without detecting anything. A wrong decode
+that stays inside these bounds is a visual question, not a numeric one.
 
 ## Coordinate, winding, and transform conversion
 
@@ -160,12 +227,14 @@ The parser enforces these limits before allocating large buffers:
 | Material subsets | 65,536 |
 | Materials | `u16` count, as stored by the format |
 | Material name length | `u8`, as stored by the format |
+| Scrambled position extent | 10,000 units per axis |
 
 Checked conditions include a wrong signature, unsupported versions, unknown flag
-bits, scrambled keys, unknown or duplicate sections, empty required sections,
-counts beyond the file, counts beyond the configured limits, non-finite vertex or
-matrix values, out-of-range triangle indices, material indices without a
-matching material, and more material subsets than the limit.
+bits, unknown or duplicate sections, empty required sections, counts beyond the
+file, counts beyond the configured limits, non-finite vertex or matrix values,
+out-of-range triangle indices, material indices without a matching material, more
+material subsets than the limit, and an implausible extent in records decoded from
+a scrambled key.
 
 Ordinary I/O errors propagate from the caller's stream.
 
@@ -174,8 +243,10 @@ Ordinary I/O errors propagate from the caller's stream.
 - **No real-world compatibility claim.** The automated tests and the
   `HelloO3D` fixture are synthetic. No OMSI installation or third-party model was
   available or redistributed, so ordinary stock content has not been validated.
-- **Scrambled vertices are unsupported.** Any version 4+ key other than
-  `0xFFFFFFFF` fails clearly instead of being heuristically decoded.
+- **A wrong scramble key is only detectable visually.** The decoded extent limit and
+the finite-value checks catch damaged records, not a key that does not match the data:
+see [Scrambled vertices](#scrambled-vertices). Real Grundorf content has not been
+rendered on Windows yet.
 - **Bones, skinning, and animation are unsupported.** A `0x54` section fails
   clearly.
 - **Materials are names only.** No texture loading, material properties,
@@ -208,6 +279,10 @@ or a GPU. It covers:
 - Windows-1252 material names, empty names, material grouping, and section
   ordering;
 - the pivot matrix being validated and ignored;
+- scrambled records across versions, flags, and keys, including the documented
+  three-vertex fixture whose state chain runs 0, 168, 339, key `0xFFFFFFFF` staying
+  plain, an extent beyond the fail-safe, truncated and non-finite scrambled records,
+  and indices validated after decoding;
 - wrong signatures, truncated headers and sections, unexpected EOF, unknown
   versions, flags, keys, tags, and bones;
 - duplicate and missing sections, empty sections, oversized counts, counts

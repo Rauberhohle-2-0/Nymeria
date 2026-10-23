@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Numerics;
 using System.Text;
 using Nymeria.Core.Models;
@@ -283,18 +284,233 @@ public sealed class O3dModelParserTests
         Assert.Contains("unsupported bits", exception.Message);
     }
 
+    /// <summary>
+    /// Plain records used by the scrambling tests. The fractional parts differ
+    /// per vertex on purpose: they drive the mixing byte that feeds the next
+    /// vertex's state.
+    /// </summary>
+    private static readonly TestVertex[] ScrambledVertices =
+    [
+        new(new Vector3(1.25f, -2.5f, 3.75f), new Vector3(0f, 0.6f, 0.8f), new Vector2(0.1f, 0.9f)),
+        new(new Vector3(10.3f, 4.7f, -0.9f), new Vector3(1f, 0f, 0f), new Vector2(0.5f, 0.25f)),
+        new(new Vector3(-7.11f, 0.33f, 2.2f), new Vector3(0f, 0f, 1f), new Vector2(0.75f, 0f)),
+        new(new Vector3(0.5f, 6.6f, -1.3f), new Vector3(0.577f, 0.577f, 0.577f), new Vector2(0.25f, 0.5f)),
+    ];
+
     [Theory]
-    [InlineData((uint)0)]
-    [InlineData((uint)1)]
-    [InlineData((uint)12345)]
-    [InlineData((uint)0xDEADBEEF)]
-    public void RejectsScrambledVertexKeys(uint key)
+    [InlineData((byte)4, (byte)0, (uint)0)]
+    [InlineData((byte)4, (byte)1, (uint)0)]
+    [InlineData((byte)4, (byte)2, (uint)0)]
+    [InlineData((byte)4, (byte)3, (uint)0)]
+    [InlineData((byte)5, (byte)0, (uint)12345)]
+    [InlineData((byte)5, (byte)2, (uint)777)]
+    [InlineData((byte)5, (byte)3, (uint)0xDEAD)]
+    [InlineData((byte)6, (byte)2, (uint)40000)]
+    [InlineData((byte)7, (byte)0, (uint)0)]
+    [InlineData((byte)7, (byte)1, (uint)0xFFFFFFFE)]
+    public void DecodesScrambledVertexRecords(byte version, byte flags, uint key)
     {
-        byte[] data = new O3dTestFileBuilder(5, 0, key).Build();
+        byte[] data = ScrambledFile(version, flags, key, ScrambledVertices);
+        MeshData mesh = Assert.Single(Parse(data).Meshes);
+
+        AssertMatches(ScrambledVertices, mesh);
+        Assert.Equal("paint", Assert.Single(mesh.Subsets).MaterialName);
+    }
+
+    [Fact]
+    public void DecodesTheDocumentedScrambledFixture()
+    {
+        // A three-vertex, version 4, flags 0, key 0 fixture whose stored records
+        // were produced independently of this parser. The expectations are its
+        // plain records. It also pins the state chain: the second and third
+        // vertex states are 168 and 339, so a decode that ignored the mixing byte
+        // from the previous stored position (and used state 0 throughout) would
+        // swap and negate the wrong components here.
+        TestVertex[] plain =
+        [
+            new(new Vector3(1.25f, -2.5f, 3.75f), new Vector3(0f, 0.6f, 0.8f), new Vector2(0.1f, 0.9f)),
+            new(new Vector3(10.3f, 4.7f, -0.9f), new Vector3(1f, 0f, 0f), new Vector2(0.5f, 0.25f)),
+            new(new Vector3(-7.11f, 0.33f, 2.2f), new Vector3(0f, 0f, 1f), new Vector2(0.75f, 0f)),
+        ];
+
+        byte[] stored =
+        [
+            0x00, 0x00, 0x20, 0xC0, 0x00, 0x00, 0xA0, 0x3F,
+            0x00, 0x00, 0x70, 0x40, 0x00, 0x00, 0x00, 0x80,
+            0xCD, 0xCC, 0x4C, 0xBF, 0x9A, 0x99, 0x19, 0xBF,
+            0xCD, 0xCC, 0xCC, 0x3D, 0x66, 0x66, 0x66, 0x3F,
+            0x66, 0x66, 0x96, 0x40, 0xCD, 0xCC, 0x24, 0x41,
+            0x66, 0x66, 0x66, 0xBF, 0x00, 0x00, 0x80, 0xBF,
+            0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80,
+            0x00, 0x00, 0x00, 0x3F, 0xEE, 0x5A, 0xC2, 0x3E,
+            0xC3, 0xF5, 0xA8, 0x3E, 0x1F, 0x85, 0xE3, 0xC0,
+            0xCD, 0xCC, 0x0C, 0x40, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x40, 0x3F, 0x1A, 0xC0, 0x1B, 0x3F,
+        ];
+
+        byte[] data = new O3dTestFileBuilder(4, 0, 0)
+            .U8(0x17)
+            .Count(3)
+            .Raw(stored)
+            .Triangles(new TestTriangle(0, 1, 2))
+            .Build();
+
+        MeshData mesh = Assert.Single(Parse(data).Meshes);
+
+        AssertMatches(plain, mesh);
+    }
+
+    [Fact]
+    public void OpenKeyLeavesRecordsPlainEvenWithTheAlternateFlag()
+    {
+        byte[] data = new O3dTestFileBuilder(4, 0x02, 0xFFFFFFFF)
+            .Vertices(ScrambledVertices)
+            .Triangles(new TestTriangle(0, 1, 2), new TestTriangle(0, 2, 3))
+            .Build();
+
+        MeshData mesh = Assert.Single(Parse(data).Meshes);
+
+        AssertMatches(ScrambledVertices, mesh);
+    }
+
+    [Fact]
+    public void ScrambledRecordsAreNotReadAsPlainGeometry()
+    {
+        // Relabel scrambled records as unscrambled without changing a byte of
+        // them. A decoder that ignored the key would hand these out as geometry
+        // and silently permute every position; the parser must either reject
+        // them or produce different geometry, never the original vertices.
+        byte[] data = ScrambledFile(4, 0, 0, ScrambledVertices);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(4), 0xFFFFFFFF);
+
+        try
+        {
+            MeshData mesh = Assert.Single(Parse(data).Meshes);
+
+            Assert.NotEqual(
+                ScrambledVertices.Select(vertex => vertex.Position).ToArray(),
+                mesh.Positions.ToArray());
+        }
+        catch (ModelFormatException exception)
+        {
+            Assert.Contains("extent limit", exception.Message);
+        }
+    }
+
+    [Fact]
+    public void RejectsScrambledRecordsBeyondTheExtentLimit()
+    {
+        TestVertex[] vertices =
+        [
+            new(new Vector3(-6000f, 0f, 0f), new Vector3(0f, 0f, 1f), new Vector2(0f, 0f)),
+            new(new Vector3(6000f, 1f, 0f), new Vector3(0f, 0f, 1f), new Vector2(1f, 0f)),
+            new(new Vector3(0f, 2f, 0f), new Vector3(0f, 0f, 1f), new Vector2(0f, 1f)),
+        ];
+
+        ModelFormatException exception = ParseError(ScrambledFile(4, 0, 0, vertices));
+
+        Assert.Contains("extent limit", exception.Message);
+        Assert.Contains("0x00000000", exception.Message);
+    }
+
+    [Fact]
+    public void RejectsTruncatedScrambledVertexRecords()
+    {
+        byte[] data = ScrambledFile(4, 0, 0, ScrambledVertices);
+
+        // Header (8) + vertices tag and count (5) + one record (32) + part of the next.
+        ModelFormatException exception = ParseError(data[..(8 + 5 + 32 + 10)]);
+
+        Assert.Contains("unexpected end of file", exception.Message);
+        Assert.Contains("vertex records", exception.Message);
+    }
+
+    [Fact]
+    public void RejectsNonFiniteScrambledVertexValues()
+    {
+        TestVertex[] vertices =
+        [
+            new(new Vector3(1.25f, -2.5f, 3.75f), new Vector3(0f, 0.6f, 0.8f), new Vector2(0.1f, 0.9f)),
+            new(new Vector3(float.NaN, 0.5f, 1f), new Vector3(0f, 0f, 1f), new Vector2(0f, 0f)),
+            new(new Vector3(0f, 2f, 0f), new Vector3(0f, 0f, 1f), new Vector2(0f, 1f)),
+        ];
+
+        ModelFormatException exception = ParseError(ScrambledFile(5, 0, 0, vertices));
+
+        Assert.Contains("non-finite", exception.Message);
+    }
+
+    [Fact]
+    public void ValidatesTriangleIndicesOfScrambledFiles()
+    {
+        byte[] data = new O3dTestFileBuilder(5, 0, 0)
+            .Vertices(O3dScrambleWriter.Scramble(5, 0, 0, ScrambledVertices))
+            .Triangles(new TestTriangle(0, 1, 99))
+            .Build();
+
         ModelFormatException exception = ParseError(data);
 
-        Assert.Contains("scrambled", exception.Message);
-        Assert.Contains($"0x{key:X8}", exception.Message);
+        Assert.Contains("references vertex 99", exception.Message);
+    }
+
+    /// <summary>Builds a complete scrambled file around plain records.</summary>
+    private static byte[] ScrambledFile(
+        byte version,
+        byte flags,
+        uint key,
+        IReadOnlyList<TestVertex> vertices)
+    {
+        var triangles = new TestTriangle[Math.Max(1, vertices.Count - 2)];
+
+        for (int i = 0; i < triangles.Length; i++)
+        {
+            triangles[i] = new TestTriangle(
+                (uint)i,
+                (uint)(i + 1),
+                (uint)(i + 2));
+        }
+
+        return new O3dTestFileBuilder(version, flags, key)
+            .Vertices(O3dScrambleWriter.Scramble(version, flags, key, vertices))
+            .Triangles(triangles)
+            .Materials("paint")
+            .IdentityMatrix()
+            .Build();
+    }
+
+    /// <summary>
+    /// Asserts that a decoded mesh matches the plain records it was scrambled
+    /// from, after the importer's documented Direct3D-to-Nymeria frame change.
+    /// Positions and normals are exact because the scrambling transform only
+    /// permutes and negates; texture coordinates accumulate a float addition and
+    /// subtraction, so they are compared with a tolerance.
+    /// </summary>
+    private static void AssertMatches(
+        IReadOnlyList<TestVertex> expected,
+        MeshData mesh)
+    {
+        Assert.Equal(
+            expected.Select(vertex => new Vector3(
+                vertex.Position.X,
+                vertex.Position.Y,
+                -vertex.Position.Z)).ToArray(),
+            mesh.Positions.ToArray());
+        Assert.Equal(
+            expected.Select(vertex => new Vector3(
+                vertex.Normal.X,
+                vertex.Normal.Y,
+                -vertex.Normal.Z)).ToArray(),
+            mesh.Normals.ToArray());
+
+        for (int i = 0; i < expected.Count; i++)
+        {
+            Vector2 uv = expected[i].TextureCoordinate;
+            Vector2 actual = mesh.TextureCoordinates.Span[i];
+
+            Assert.Equal(uv.X, actual.X, 1e-5f);
+            Assert.Equal(uv.Y, actual.Y, 1e-5f);
+        }
     }
 
     [Fact]

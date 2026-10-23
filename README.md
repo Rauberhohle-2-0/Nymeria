@@ -46,7 +46,7 @@ interactive, depth-tested cube scene.
   audited dependency restore, a documented security baseline, and Dependabot
   updates for GitHub Actions and NuGet.
 - **Planned later:** engine-level input, the engine loop, further O3D features
-  (scrambled vertices, bones, animation, and material rendering), additional
+  (bones, animation, and material rendering), additional
   graphics backends, and Linux/Vulkan rendering. Windows Direct3D 12 rendering is
   implemented and its build and tests are verified in CI, while its visual
   correctness is validated manually on Windows hardware. See
@@ -264,8 +264,8 @@ limitations.
 `HelloO3D` uses the same viewer and GPU path with
 `examples/HelloO3D/Assets/cube.o3d`, a synthetic fixture generated from the
 documented O3D layout, or a path passed on the command line. The importer supports
-unscrambled static meshes of versions 1 through 7 and rejects scrambled vertices,
-bones, unknown sections, and unknown flags with offset-based diagnostics. See
+static meshes of versions 1 through 7, plain or with scrambled vertex records, and
+rejects bones, unknown sections, and unknown flags with offset-based diagnostics. See
 [docs/O3D.md](docs/O3D.md) for the exact support matrix, provenance, and known
 uncertainties.
 

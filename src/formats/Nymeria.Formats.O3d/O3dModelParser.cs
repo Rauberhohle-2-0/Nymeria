@@ -1,18 +1,21 @@
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Numerics;
 using Nymeria.Core.Models;
 
 namespace Nymeria.Formats.O3d;
 
 /// <summary>
-/// Imports an unscrambled OMSI O3D static mesh into Nymeria's format-independent
-/// model data.
+/// Imports an OMSI O3D static mesh into Nymeria's format-independent model data.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The parser reads the documented O3D header, vertex, triangle, material, and
-/// pivot-matrix sections. It does not apply the pivot matrix, decode scrambled
-/// vertex records, or import bones, animation, textures, or material shading.
+/// pivot-matrix sections. Version 4+ files whose vertex key is not
+/// <c>0xFFFFFFFF</c> store their vertex records scrambled; those records are
+/// un-scrambled with the documented per-vertex transform before they are
+/// validated. The parser does not apply the pivot matrix or import bones,
+/// animation, textures, or material shading.
 /// </para>
 /// <para>
 /// The supported version and feature matrix, conversions, and limitations are
@@ -29,7 +32,17 @@ public sealed class O3dModelParser : IModelParser
     private const byte LastSupportedVersion = 7;
     private const byte KnownFlagMask = 0x03;
     private const byte WideIndexFlag = 0x01;
+    private const byte AlternateScramblingFlag = 0x02;
     private const uint UnscrambledKey = 0xFFFFFFFF;
+
+    // Scrambling constants, named after the roles they play in the documented
+    // state chain. The header seed and the vertex-count modulus happen to share
+    // the value 0xFDE8 but are independent parameters.
+    private const uint ScramblingHeaderModulus = 0xFDE8;
+    private const uint ScramblingCountModulus = 0xFDE8;
+    private const uint ScramblingStateModulus = 8000;
+    private const ushort ScramblingAlternateOffset = 0x17D;
+    private const ushort ScramblingAlternateZeroState = 0x130;
     private const byte VerticesTag = 0x17;
     private const byte TrianglesTag = 0x49;
     private const byte MaterialsTag = 0x26;
@@ -52,6 +65,14 @@ public sealed class O3dModelParser : IModelParser
 
     /// <summary>The largest accepted number of material subsets.</summary>
     public const int MaxSubsetCount = 65_536;
+
+    /// <summary>
+    /// The largest position extent, per axis, accepted from scrambled vertex
+    /// records. The transform only permutes and negates components, so it cannot
+    /// make valid geometry implausible; an extent beyond this limit means the
+    /// records, or the key they were decoded with, are damaged.
+    /// </summary>
+    public const float MaxScrambledExtent = 10_000f;
 
     private readonly string? _sourceName;
 
@@ -177,19 +198,16 @@ public sealed class O3dModelParser : IModelParser
             }
         }
 
+        // Version 4+ files carry a vertex key. 0xFFFFFFFF leaves the vertex
+        // records plain; any other value, including the stock value 0, selects
+        // the per-vertex scrambling that OMSI's own loader undoes. Only the
+        // vertex records are affected: triangle indices, materials, the pivot
+        // matrix, and bones are stored plainly either way.
+        uint key = UnscrambledKey;
+
         if (version >= 4)
         {
-            int keyOffset = reader.Position;
-            uint key = reader.U32("the O3D vertex key");
-
-            if (key != UnscrambledKey)
-            {
-                throw reader.Error(
-                    keyOffset,
-                    $"O3D vertex data is scrambled (key 0x{key:X8}), which is not " +
-                    $"supported. Only key 0x{UnscrambledKey:X8} (unscrambled) is " +
-                    "accepted.");
-            }
+            key = reader.U32("the O3D vertex key");
         }
 
         bool wideCounts = version >= 3;
@@ -221,7 +239,14 @@ public sealed class O3dModelParser : IModelParser
                     }
 
                     hasVertices = true;
-                    ReadVertices(reader, wideCounts, out positions, out normals,
+                    ReadVertices(
+                        reader,
+                        wideCounts,
+                        version,
+                        flags,
+                        key,
+                        out positions,
+                        out normals,
                         out textureCoordinates);
                     break;
 
@@ -312,6 +337,9 @@ public sealed class O3dModelParser : IModelParser
     private static void ReadVertices(
         Reader reader,
         bool wideCounts,
+        byte version,
+        byte flags,
+        uint key,
         out Vector3[] positions,
         out Vector3[] normals,
         out Vector2[] textureCoordinates)
@@ -342,6 +370,9 @@ public sealed class O3dModelParser : IModelParser
         normals = new Vector3[vertexCount];
         textureCoordinates = new Vector2[vertexCount];
 
+        bool scrambled = version >= 4 && key != UnscrambledKey;
+        var scrambling = new VertexScrambling(version, flags, key, count);
+
         for (int i = 0; i < vertexCount; i++)
         {
             float x = reader.F32("a vertex position");
@@ -352,6 +383,15 @@ public sealed class O3dModelParser : IModelParser
             float nz = reader.F32("a vertex normal");
             float u = reader.F32("a texture coordinate");
             float v = reader.F32("a texture coordinate");
+
+            if (scrambled)
+            {
+                ushort state = scrambling.Next(x, y, z);
+
+                VertexScrambling.UnscramblePosition(state, ref x, ref y, ref z);
+                VertexScrambling.UnscrambleNormal(state, ref nx, ref ny, ref nz);
+                VertexScrambling.UnscrambleTextureCoordinate(state, ref u, ref v);
+            }
 
             if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z))
             {
@@ -381,6 +421,208 @@ public sealed class O3dModelParser : IModelParser
             positions[i] = new Vector3(x, y, -z);
             normals[i] = new Vector3(nx, ny, -nz);
             textureCoordinates[i] = new Vector2(u, v);
+        }
+
+        if (scrambled)
+        {
+            ValidateScrambledExtent(reader, sectionOffset, positions, key);
+        }
+    }
+
+    /// <summary>
+    /// Rejects decoded geometry whose extent is beyond what OMSI scenery can
+    /// hold. Unscrambled files keep their previous behaviour; the limit is a
+    /// fail-safe for records decoded with a key that does not match them.
+    /// </summary>
+    private static void ValidateScrambledExtent(
+        Reader reader,
+        int sectionOffset,
+        ReadOnlySpan<Vector3> positions,
+        uint key)
+    {
+        Vector3 min = positions[0];
+        Vector3 max = positions[0];
+
+        for (int i = 1; i < positions.Length; i++)
+        {
+            min = Vector3.Min(min, positions[i]);
+            max = Vector3.Max(max, positions[i]);
+        }
+
+        Vector3 extent = max - min;
+
+        if (extent.X <= MaxScrambledExtent &&
+            extent.Y <= MaxScrambledExtent &&
+            extent.Z <= MaxScrambledExtent)
+        {
+            return;
+        }
+
+        throw reader.Error(
+            sectionOffset,
+            $"the vertex records decoded with key 0x{key:X8} span " +
+            $"{Format(extent.X)} x {Format(extent.Y)} x {Format(extent.Z)} units, " +
+            $"which is beyond this importer's {Format(MaxScrambledExtent)}-unit " +
+            "extent limit on at least one axis. The vertex key or the vertex " +
+            "records are damaged.");
+    }
+
+    private static string Format(float value)
+    {
+        return value.ToString("0.###", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Reproduces the per-vertex state chain of OMSI's version 4+ vertex
+    /// scrambling, and undoes the permutation, sign changes, and UV shifts it
+    /// applied.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The state of each vertex depends on the key, the version, the scrambling
+    /// flag, the vertex count, and a byte derived from the fractional parts of
+    /// the <em>stored</em> position of the previous vertex. With key <c>0</c> the
+    /// state restarts at every vertex, which is why most stock content decodes
+    /// as a function of the vertex count and that byte alone.
+    /// </para>
+    /// <para>
+    /// OMSI's loader and writer both carry a <c>state &gt; 6500</c> normal swap
+    /// that can never run, because every state above 6500 has already taken the
+    /// <c>state &gt; 4500</c> branch. It is left out here rather than "fixed":
+    /// reproducing the reachable transform is what makes files decode the way
+    /// OMSI decodes them.
+    /// </para>
+    /// </remarks>
+    private struct VertexScrambling
+    {
+        private readonly uint _key;
+        private readonly bool _alternate;
+        private readonly uint _countModulus;
+        private ushort _state;
+        private uint _fractionByte;
+
+        public VertexScrambling(byte version, byte flags, uint key, uint vertexCount)
+        {
+            _key = key;
+            _alternate = (flags & AlternateScramblingFlag) != 0;
+            _countModulus = vertexCount % ScramblingCountModulus;
+
+            // The seed is non-negative for every version that carries a key, so a
+            // plain remainder is the same as a Euclidean one here.
+            long seed = (long)key + version - 4 +
+                (_alternate ? ScramblingAlternateOffset : 0);
+
+            _state = (ushort)(seed % ScramblingHeaderModulus);
+            _fractionByte = 0;
+        }
+
+        /// <summary>
+        /// Advances the state chain for one vertex and returns the state that
+        /// transforms its record.
+        /// </summary>
+        /// <param name="x">The stored, still scrambled position X.</param>
+        /// <param name="y">The stored, still scrambled position Y.</param>
+        /// <param name="z">The stored, still scrambled position Z.</param>
+        /// <returns>The state for this vertex.</returns>
+        public ushort Next(float x, float y, float z)
+        {
+            if (_key == 0)
+            {
+                _state = _alternate ? ScramblingAlternateZeroState : (ushort)0;
+            }
+
+            // Both products stay inside 32 bits: the state is below 8000 after
+            // one step, the count modulus is below 0xFDE8, and the mixing byte
+            // is below 256, exactly as in OMSI's own u32 arithmetic.
+            _state = (ushort)(
+                (((uint)_state * _countModulus) +
+                    (_countModulus * _fractionByte)) % ScramblingStateModulus);
+
+            _fractionByte = FractionByte(x, y, z);
+
+            return _state;
+        }
+
+        /// <summary>Undoes the position permutation.</summary>
+        public static void UnscramblePosition(ushort state, ref float x, ref float y, ref float z)
+        {
+            if (state < 1000)
+            {
+                (x, y) = (y, x);
+            }
+            else if (state < 3000)
+            {
+                (x, z) = (z, x);
+            }
+            else if (state > 7000)
+            {
+                (y, z) = (z, y);
+            }
+        }
+
+        /// <summary>Undoes the normal's sign changes and component swaps.</summary>
+        public static void UnscrambleNormal(ushort state, ref float x, ref float y, ref float z)
+        {
+            if (state % 4 == 0)
+            {
+                x = -x;
+            }
+
+            if (state % 6 == 0)
+            {
+                y = -y;
+            }
+
+            if (state % 7 == 0)
+            {
+                z = -z;
+            }
+
+            if (state < 600)
+            {
+                (y, z) = (z, y);
+            }
+            else if (state > 4500)
+            {
+                (x, y) = (y, x);
+            }
+        }
+
+        /// <summary>Undoes the texture-coordinate shifts.</summary>
+        public static void UnscrambleTextureCoordinate(
+            ushort state,
+            ref float u,
+            ref float v)
+        {
+            if (state % 5 == 0)
+            {
+                float shift = state % 100;
+                u -= shift * shift / 10000f;
+            }
+
+            if (state % 3 == 0)
+            {
+                float shift = state % 50;
+                v -= shift * shift / 2500f;
+            }
+        }
+
+        /// <summary>
+        /// Derives the mixing byte that feeds the next vertex's state from the
+        /// fractional parts of the stored position.
+        /// </summary>
+        private static uint FractionByte(float x, float y, float z)
+        {
+            double product = Math.Abs(Fraction(x) * Fraction(y) * Fraction(z)) * 600.0;
+
+            return (uint)(Math.Truncate(product) % 256);
+        }
+
+        private static double Fraction(float value)
+        {
+            double exact = value;
+
+            return exact - Math.Truncate(exact);
         }
     }
 
