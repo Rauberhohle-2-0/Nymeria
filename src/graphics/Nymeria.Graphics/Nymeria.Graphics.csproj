@@ -8,7 +8,7 @@
   <ItemGroup>
     <!-- The managed SDL3 binding. The native runtime is supplied by
          Nymeria.Platform, which examples reference alongside this project. -->
-    <PackageReference Include="SDL3-CS" Version="3.4.18" />
+    <PackageReference Include="SDL3-CS" Version="3.4.18.1" />
   </ItemGroup>
 
   <ItemGroup>
